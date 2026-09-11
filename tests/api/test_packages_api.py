@@ -215,6 +215,9 @@ def test_upload_accepts_registered_project(client, isolated_store, registry):
     assert "packageType" not in saved
     stored = isolated_store.load_packages()
     assert stored and stored[0]["projectCode"] == "demo-proj"
+    download = client.get(f'/download/{saved["id"]}')
+    assert download.status_code == 200
+    assert download.headers["content-type"] == "application/gzip"
 
 
 def _upkg_bytes():
@@ -245,6 +248,7 @@ def test_upkg_upload_metadata_and_download_roundtrip(client, isolated_store, reg
     assert package["metadata"]["sha256"] == hashlib.sha256(payload).hexdigest()
     download = client.get(f'/download/{package["id"]}')
     assert download.status_code == 200, download.text
+    assert download.headers["content-type"] == "application/octet-stream"
     assert download.content == payload
 
 

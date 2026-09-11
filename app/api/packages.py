@@ -569,7 +569,11 @@ def _package_file_response(package: dict[str, Any], locale: str = "zh") -> FileR
     return FileResponse(
         str(file_path),
         filename=str(package.get("name") or Path(file_path).name),
-        media_type="application/gzip",
+        media_type=(
+            "application/octet-stream"
+            if file_path.suffix.lower() == ".upkg"
+            else "application/gzip"
+        ),
     )
 
 
