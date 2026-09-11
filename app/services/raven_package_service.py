@@ -46,6 +46,10 @@ logger = logging.getLogger(__name__)
 # Special filter value selecting packages without a project association.
 UNASSOCIATED_PROJECT = "__unassociated__"
 
+# Software uploads/scans share one allow-list; configuration-manager output
+# remains independently restricted to the formats its builder generates.
+PACKAGE_UPLOAD_SUFFIXES = (".tgz", ".tar.gz", ".upkg")
+
 # ─────────────── Editable package metadata limits & validation ───────────────
 # These bound the only two fields the metadata-edit flow may change so a direct
 # API caller cannot bloat the JSON store. They are intentionally generous; the
@@ -472,10 +476,10 @@ class RavenPackageService:
             )
 
         lower_name = file.filename.lower()
-        if not (lower_name.endswith(".tgz") or lower_name.endswith(".tar.gz")):
+        if not lower_name.endswith(PACKAGE_UPLOAD_SUFFIXES):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only .tgz and .tar.gz files are allowed",
+                detail="仅支持 .tgz、.tar.gz 和 .upkg / Only .tgz, .tar.gz and .upkg files are allowed",
             )
 
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -719,7 +723,7 @@ class RavenPackageService:
                 if not file_path.is_file():
                     continue
                 lower = file_path.name.lower()
-                if not (lower.endswith(".tgz") or lower.endswith(".tar.gz")):
+                if not lower.endswith(PACKAGE_UPLOAD_SUFFIXES):
                     continue
                 # Upload/publication creates the final target with O_EXCL and
                 # keeps this marker until the bytes are fully fsynced.  Do not

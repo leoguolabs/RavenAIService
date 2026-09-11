@@ -11,6 +11,10 @@ project-scoped download, the new stats shape, and the Prometheus
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import io
+import json
+import tarfile
 from typing import Any, Optional
 
 import pytest
@@ -211,6 +215,56 @@ def test_upload_accepts_registered_project(client, isolated_store, registry):
     assert "packageType" not in saved
     stored = isolated_store.load_packages()
     assert stored and stored[0]["projectCode"] == "demo-proj"
+
+
+def _upkg_bytes():
+    """A real tar-based upgrade container; upload must preserve every byte."""
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w") as archive:
+        for name, content in (("manifest.json", b'{"name":"netconf-server","mode":"full"}'),
+                              ("payload.tar.gz", b"opaque signed payload bytes")):
+            member = tarfile.TarInfo(name)
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+    return output.getvalue()
+
+
+@pytest.mark.parametrize("filename", ["netconf-server-v1.0.28-linux-arm64.upkg", "routing-mgmtd.UPKG"])
+def test_upkg_upload_metadata_and_download_roundtrip(client, isolated_store, registry, filename):
+    payload = _upkg_bytes()
+    note = "# netconf-server\n\n### 功能更新\n- 支持完整升级包上传\n"
+    response = client.post("/upload", files={"file": (filename, payload, "application/octet-stream")},
+                           data={"projectCode": "demo-proj", "version": "v1.0.28",
+                                 "packageInfo": json.dumps({"metadata": {"description": note}})})
+    assert response.status_code == 200, response.text
+    package = response.json()["package"]
+    assert package["name"] == filename
+    assert package["version"] == "v1.0.28"
+    assert package["metadata"]["description"] == note
+    assert package["size"] == len(payload)
+    assert package["metadata"]["sha256"] == hashlib.sha256(payload).hexdigest()
+    download = client.get(f'/download/{package["id"]}')
+    assert download.status_code == 200, download.text
+    assert download.content == payload
+
+
+def test_upkg_batch_and_scan_are_supported(client, isolated_store, registry):
+    payload = _upkg_bytes()
+    response = client.post("/upload/batch", data={"projectCode": "demo-proj"},
+                           files=[("file", ("radas.upkg", payload, "application/octet-stream"))])
+    assert response.status_code == 200, response.text
+    assert not response.json().get("errors")
+    assert response.json()["packages"][0]["metadata"]["sha256"] == hashlib.sha256(payload).hexdigest()
+    (isolated_store.uploads_dir / "orphan.upkg").write_bytes(payload)
+    assert isolated_store.scan_uploads_directory() == 1
+    assert isolated_store.scan_uploads_directory() == 0
+
+
+def test_upload_still_rejects_unsupported_extension(client, isolated_store, registry):
+    response = client.post("/upload", data={"projectCode": "demo-proj"},
+                           files={"file": ("upgrade.exe", b"unsupported", "application/octet-stream")})
+    assert response.status_code == 400
+    assert not isolated_store.uploads_dir.exists() or not list(isolated_store.uploads_dir.iterdir())
 
 
 def test_upload_batch_requires_valid_project(client, isolated_store, registry):

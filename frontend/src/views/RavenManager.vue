@@ -280,7 +280,7 @@ const addFiles = (files: File[]) => {
 
   files.forEach((file) => {
     const name = file.name.toLowerCase()
-    if (name.endsWith('.tgz') || name.endsWith('.tar.gz')) {
+    if (name.endsWith('.tgz') || name.endsWith('.tar.gz') || name.endsWith('.upkg')) {
       validFiles.push(file)
     } else {
       ElMessage.warning(t('raven.fileTypeUnsupported', { name: file.name }))
@@ -799,7 +799,7 @@ onMounted(() => {
           <input
             type="file"
             multiple
-            accept=".tgz,.tar.gz"
+            accept=".tgz,.tar.gz,.upkg"
             class="rw-upload-input"
             id="raven-upload-input"
             @change="handleFileInput"
