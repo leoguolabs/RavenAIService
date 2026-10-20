@@ -88,8 +88,9 @@ class ProviderProfile:
 # supports_image_input 以该 provider 的**默认旗舰模型**为准（决定是否把原图物化
 # 进 Agent 工作区，见 chat_image_store）。若在同一 provider 下改选纯文本模型
 # （如 qwen3-coder-*），请依赖上方 OCR 链路而不是主力模型读图。
-# 公网预设目录核对于 2026-09-10；仅列当前端点公开支持的对话模型。
-# 更新 models 不自动迁移管理员已保存的模型或现有默认值。
+# 公网预设目录核对于 2026-10-20；按各端点的官方支持范围维护，而非厂商全部产品。
+# 更新预设不迁移管理员已保存的模型；仅替换正在退出服务的默认候选。
+# yhroot / yinhe 内部模型不参与公网目录更新；custom 仍由管理员填写。
 PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
     "anthropic": ProviderProfile(
         name="anthropic",
@@ -100,6 +101,9 @@ PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
         # https://platform.claude.com/docs/en/about-claude/model-deprecations
         models=(
             "claude-fable-5-1",
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-haiku-5-5",
             "claude-opus-5",
             "claude-sonnet-5",
             "claude-fable-5",
@@ -126,8 +130,13 @@ PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
         default_model="deepseek-v4-pro",
         default_small_fast_model="deepseek-v4-flash",
         # https://api-docs.deepseek.com/quick_start/pricing/
-        # deepseek-v4-flash 为仍接受的兼容别名，实际路由至 V4.1 Flash。
-        models=("deepseek-flash", "deepseek-v4-pro", "deepseek-v4-flash"),
+        # Flash 旧名称仍被接受，实际路由至 DeepSeek-V4.1-Flash-1017。
+        models=(
+            "deepseek-flash",
+            "deepseek-v4-pro",
+            "deepseek-v4-flash",
+            "deepseek-v4-flash-vision-exp",
+        ),
         supports_image_input=False,
         supports_document_input=False,
         # SDK 进程内 MCP server（create_sdk_mcp_server）通过标准 tool_use 协议
@@ -138,9 +147,10 @@ PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
         disable_parallel_tool_use_effective=False,
         # Anthropic 兼容端点支持标准 SSE 流式（content_block_delta），可发 answer_delta。
         supports_partial_streaming=True,
-        notes="DeepSeek Anthropic 兼容端点；不支持图像/文档输入与 thinking budget；"
-        "支持标准 tool use（含 SDK 进程内 MCP server）；deepseek-flash 为 V4.1 Flash，"
-        "deepseek-v4-pro 将于 2026-09-14 12:00（北京时间）转由 V4.1 Flash 提供服务",
+        notes="DeepSeek Anthropic 兼容端点；默认 V4 Pro 不支持图像/文档输入，"
+        "不支持 thinking budget；"
+        "支持标准 tool use（含 SDK 进程内 MCP server）；deepseek-flash 及 Flash 旧别名"
+        "指向 V4.1 Flash 1017，deepseek-v4-pro 仍为 V4 Pro 0813",
     ),
     "aliyun": ProviderProfile(
         name="aliyun",
@@ -159,10 +169,6 @@ PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
             "qwen3.7-max",
             "qwen3.7-max-2026-05-20",
             "qwen3.7-max-2026-06-08",
-            "qwen3.6-max-preview",
-            "qwen3-max",
-            "qwen3-max-2026-01-23",
-            "qwen3-max-preview",
             "qwen3.7-plus",
             "qwen3.7-plus-2026-05-26",
             "qwen3.6-plus",
@@ -172,7 +178,6 @@ PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
             "qwen3.5-plus-2026-02-15",
             "qwen-plus",
             "qwen-plus-latest",
-            "qwen-plus-2025-09-11",
             "qwen3.7-flash",
             "qwen3.7-flash-2026-07-15",
             "qwen3.6-flash",
@@ -181,15 +186,8 @@ PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
             "qwen3.5-flash-2026-02-23",
             "qwen-flash",
             "qwen-flash-2025-07-28",
-            "qwen-turbo",
-            "qwen3-coder-next",
-            "qwen3-coder-plus",
-            "qwen3-coder-plus-2025-09-23",
             "qwen3-coder-flash",
             "qwen3-vl-plus",
-            "qwen3-vl-flash",
-            "qwen-vl-max",
-            "qwen-vl-plus",
             "qwen3.6-27b",
             "qwen3.5-397b-a17b",
             "qwen3.5-122b-a10b",
@@ -197,23 +195,20 @@ PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
             "qwen3.5-35b-a3b",
             "qwen3.8-2.4t-a95b",
             "qwen3.8-27b",
+            "deepseek-v4.1-flash",
+            "deepseek-v4.1-flash-1017",
             "deepseek-v4-pro",
             "deepseek-v4-pro-0813",
-            "deepseek-v4-flash",
             "deepseek-v4-flash-0731",
-            "deepseek-v3.2",
             "kimi-k3",
             "kimi-k2.7-code",
             "kimi-k2.6",
             "kimi-k2.5",
-            "kimi-k2-thinking",
+            "glm-5.3",
             "glm-5.2",
             "glm-5.1",
             "glm-5",
-            "glm-4.7",
-            "glm-4.6",
             "MiniMax-M2.5",
-            "MiniMax-M2.1",
         ),
         supports_image_input=True,
         supports_document_input=False,
@@ -232,15 +227,17 @@ PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
         default_model="glm-5.2",
         default_small_fast_model="glm-5.2",
         # https://docs.bigmodel.cn/cn/guide/start/model-overview
-        # https://docs.bigmodel.cn/cn/coding-plan/tool/claude
-        models=("glm-5.3", "glm-5.3-flash", "glm-5.2"),
+        # https://docs.bigmodel.cn/cn/guide/develop/claude/introduction
+        # https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash
+        models=("glm-5.3", "glm-5.3-flash", "glm-5.3-flashx", "glm-5.2"),
         supports_image_input=False,
         supports_document_input=False,
         supports_mcp_server_tools=True,
         thinking_budget_tokens_effective=False,
         disable_parallel_tool_use_effective=False,
         supports_partial_streaming=True,
-        notes="智谱 GLM Anthropic 兼容端点；最新 glm-5.3 / glm-5.3-flash，保留 glm-5.2",
+        notes="智谱 GLM Anthropic 兼容端点；GLM-5.3 系列含 Flash / FlashX，保留 GLM-5.2；"
+        "FlashX 为按量 API 模型，暂不包含在 Coding Plan 中",
     ),
     "moonshot": ProviderProfile(
         name="moonshot",
@@ -269,25 +266,19 @@ PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
         label="MiniMax 稀宇科技",
         default_base_url="https://api.minimaxi.com/anthropic",
         default_model="MiniMax-M3",
-        default_small_fast_model="MiniMax-M2.5",
+        default_small_fast_model="MiniMax-M3",
         # https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
-        models=(
-            "MiniMax-M3",
-            "MiniMax-M2.7",
-            "MiniMax-M2.7-highspeed",
-            "MiniMax-M2.5",
-            "MiniMax-M2.5-highspeed",
-            "MiniMax-M2.1",
-            "MiniMax-M2.1-highspeed",
-            "MiniMax-M2",
-        ),
+        # https://platform.minimaxi.com/docs/faq/models
+        # M2.5 / M2.7 已停止向新用户开放；存量按量用户迁移期至 2026-11-18。
+        models=("MiniMax-M3.1-Flash", "MiniMax-M3"),
         supports_image_input=False,
         supports_document_input=False,
         supports_mcp_server_tools=True,
         thinking_budget_tokens_effective=False,
         disable_parallel_tool_use_effective=False,
         supports_partial_streaming=True,
-        notes="MiniMax Anthropic 兼容端点；M3 为最新旗舰",
+        notes="MiniMax Anthropic 兼容端点；当前预设 M3.1 Flash / M3；M2.5 / M2.7 "
+        "自 2026-10-19 停止新用户接入，存量按量 API 用户需在 2026-11-18 前迁移",
     ),
     "stepfun": ProviderProfile(
         name="stepfun",
@@ -295,34 +286,37 @@ PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
         default_base_url="https://api.stepfun.com",
         default_model="step-3.7-flash",
         default_small_fast_model="step-3.5-flash",
-        # https://platform.stepfun.com/docs/zh/guides/models/step-3.7-flash
-        models=("step-3.7-flash", "step-3.5-flash-2603", "step-3.5-flash"),
+        # https://platform.stepfun.com/docs/zh/api-reference/chat/messages-create
+        # step-router-v1 仅适用于 Step Plan，不属于本按量端点。
+        models=("step-5-preview", "step-3.7-flash", "step-3.5-flash-2603", "step-3.5-flash"),
         supports_image_input=True,
         supports_document_input=False,
         supports_mcp_server_tools=True,
         thinking_budget_tokens_effective=False,
         disable_parallel_tool_use_effective=False,
         supports_partial_streaming=True,
-        notes="阶跃星辰 Anthropic 兼容端点（按量付费）；3.7 Flash 为多模态旗舰，"
+        notes="阶跃星辰 Anthropic 兼容端点（按量付费）；Step 5 Preview 为新旗舰，"
+        "3.7 Flash 支持多模态输入，"
         "3.5 Flash 系列偏 Agent / Coding / 工具调用",
     ),
     "mimo": ProviderProfile(
         name="mimo",
         label="小米 MiMo",
         default_base_url="https://api.xiaomimimo.com/anthropic",
-        default_model="mimo-v2.5-pro",
-        default_small_fast_model="mimo-v2.5",
-        # https://mimo.mi.com/docs/quick-start/summary/model
-        # MiMo-X 仅桌面客户端邀测，尚不属于公开 API 模型目录。
-        models=("mimo-v2.5-pro", "mimo-v2.5"),
+        default_model="mimo-v2.6-pro",
+        default_small_fast_model="mimo-v2.6-flash",
+        # https://mimo.mi.com/docs/zh-CN/quick-start/summary/model
+        # ultraspeed 为需联系厂商开通的定制服务，不作为通用 API 预设。
+        # V2.5 在本次核对日仍可调用，保留至下线；已保存值仍可手工编辑。
+        models=("mimo-v2.6-pro", "mimo-v2.6-flash", "mimo-v2.5-pro", "mimo-v2.5"),
         supports_image_input=True,
         supports_document_input=False,
         supports_mcp_server_tools=True,
         thinking_budget_tokens_effective=False,
         disable_parallel_tool_use_effective=False,
         supports_partial_streaming=True,
-        notes="小米 MiMo Anthropic 兼容端点；V2.5 Pro 为旗舰 Agent 模型，"
-        "V2.5 原生支持文本 / 图片 / 视频 / 音频理解",
+        notes="小米 MiMo Anthropic 兼容端点；V2.6 Pro / Flash 支持全模态理解；"
+        "V2.5 Pro / V2.5 将于 2026-10-21 10:00（北京时间）下线，请迁移已保存配置",
     ),
     "hunyuan": ProviderProfile(
         name="hunyuan",

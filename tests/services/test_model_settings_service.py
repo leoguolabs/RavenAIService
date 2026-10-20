@@ -286,7 +286,7 @@ def test_provider_list_matches_profiles():
         ("moonshot", "https://api.moonshot.cn/anthropic", "kimi-k3"),
         ("minimax", "https://api.minimaxi.com/anthropic", "MiniMax-M3"),
         ("stepfun", "https://api.stepfun.com", "step-3.7-flash"),
-        ("mimo", "https://api.xiaomimimo.com/anthropic", "mimo-v2.5-pro"),
+        ("mimo", "https://api.xiaomimimo.com/anthropic", "mimo-v2.6-pro"),
         ("hunyuan", "https://api.hunyuan.cloud.tencent.com/anthropic", "hunyuan-2.0-thinking-20251109"),
         ("yinhe", "http://oneapi.yhroot.com", "yinhe-thinking"),
     ],
