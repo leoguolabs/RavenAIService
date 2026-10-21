@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import packages as packages_api
-from app.api.users import get_optional_user
+from app.api.users import get_current_user, get_optional_user
 from app.models.database import get_db
 from app.services import project_repo_member_service, project_repo_service
 from app.services.raven_package_service import (
@@ -401,3 +401,22 @@ def test_component_edit_authorization(client, isolated_store, tmp_path, registry
     assert _patch(client, "pkg-1", {"components": []}).status_code == expected
     if expected != 200:
         assert isolated_store.get_package("pkg-1") == before
+
+
+@pytest.mark.parametrize("role,expected", [(None, 401), ("user", 403), ("admin", 200)])
+def test_delete_package_requires_admin(client, isolated_store, tmp_path, auth, role, expected):
+    _seed(isolated_store, tmp_path, [("pkg-1", "pkg-1.tgz", "alpha")])
+    if role is None:
+        # Anonymous callers hit the real login dependency.
+        pass
+    else:
+        client.app.dependency_overrides[get_current_user] = lambda: _FakeUser("actor", role=role)
+    resp = client.delete("/packages/pkg-1")
+    assert resp.status_code == expected
+    if expected == 200:
+        assert resp.json()["success"] is True
+        assert isolated_store.get_package("pkg-1") is None
+    else:
+        assert isolated_store.get_package("pkg-1") is not None
+        if expected == 403:
+            assert "管理员" in resp.json()["detail"] or "administrator" in resp.json()["detail"].lower()

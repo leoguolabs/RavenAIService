@@ -29,7 +29,7 @@ from starlette.background import BackgroundTask
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.users import get_optional_user, get_request_locale
+from app.api.users import get_current_user, get_optional_user, get_request_locale
 from app.i18n.messages import t
 from app.models.database import get_db
 from app.services.raven_package_service import (
@@ -378,8 +378,19 @@ async def update_package_metadata(
 @router.delete("/packages/{package_id}")
 async def delete_package(
     package_id: str,
+    current_user=Depends(get_current_user),
     locale: str = Depends(get_request_locale),
 ) -> dict[str, Any]:
+    """Delete a Raven package. Global admins only.
+
+    Project members may edit description/tags/components, but removing the
+    package file is reserved for ``role == "admin"``.
+    """
+    if str(getattr(current_user, "role", "") or "").lower() != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=t("package.delete_forbidden", locale),
+        )
     if not raven_package_service.delete_package(package_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

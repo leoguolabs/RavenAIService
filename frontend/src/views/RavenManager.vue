@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useUserStore } from '@/stores/user'
 import { projectRepoApi, type ProjectRepoOption } from '@/api'
 import {
   listRavenPackages,
@@ -28,6 +29,10 @@ import WorkbenchTopbar from '@/layouts/WorkbenchTopbar.vue'
 
 const router = useRouter()
 const { t } = useI18n()
+const userStore = useUserStore()
+const isAdmin = computed(
+  () => userStore.isAuthenticated && String(userStore.profile?.role || '').toLowerCase() === 'admin'
+)
 
 const filters = reactive({
   search: '',
@@ -267,7 +272,8 @@ const deletePackage = async (pkg: RavenPackage) => {
   } catch (error: any) {
     if (error === 'cancel' || error === 'close') return
     console.error(error)
-    ElMessage.error(error.message || t('raven.deleteFail'))
+    const detail = error?.response?.data?.detail
+    ElMessage.error(detail || error.message || t('raven.deleteFail'))
   }
 }
 
@@ -755,7 +761,7 @@ onMounted(() => {
                 <div class="rw-row-actions" @click.stop>
                   <button class="rw-btn-ghost" @click="openPackageDetail(row.id)">{{ t('common.detail') }}</button>
                   <button class="rw-btn-ghost" @click="downloadPackage(row)">{{ t('common.download') }}</button>
-                  <button class="rw-btn-ghost rw-btn-ghost-danger" @click="deletePackage(row)">{{ t('common.delete') }}</button>
+                  <button v-if="isAdmin" class="rw-btn-ghost rw-btn-ghost-danger" @click="deletePackage(row)">{{ t('common.delete') }}</button>
                 </div>
               </template>
             </el-table-column>

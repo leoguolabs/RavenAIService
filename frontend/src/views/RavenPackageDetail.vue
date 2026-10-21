@@ -2,10 +2,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-
-const { t } = useI18n()
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useUserStore } from '@/stores/user'
 import {
+  deleteRavenPackage,
   getRavenPackageDetail,
   ravenBaseUrl,
   getRavenPackageDownloadUrl,
@@ -16,10 +16,17 @@ import { renderMarkdown } from '@/utils/markdownRenderer'
 import { normalizeComponents, useRavenMetadataEditor } from '@/composables/useRavenMetadataEditor'
 import type { RavenPackage } from '@/types'
 
+const { t } = useI18n()
+
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
+const isAdmin = computed(
+  () => userStore.isAuthenticated && String(userStore.profile?.role || '').toLowerCase() === 'admin'
+)
 
 const loading = ref(false)
+const deleting = ref(false)
 const pkg = ref<RavenPackage | null>(null)
 const errorMessage = ref('')
 const projectOptions = ref<ProjectRepoOption[]>([])
@@ -191,6 +198,33 @@ const downloadPackage = (value: RavenPackage) => {
   ElMessage.success(t('raven.downloadStart'))
 }
 
+const deletePackage = async (value: RavenPackage) => {
+  if (!isAdmin.value || deleting.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('raven.deleteConfirmMsg', { name: value.name || value.id }),
+      t('raven.deletingConfirm'),
+      {
+        type: 'warning',
+        confirmButtonText: t('common.delete'),
+        cancelButtonText: t('common.cancel'),
+      }
+    )
+    deleting.value = true
+    const { data } = await deleteRavenPackage(value.id)
+    if (!data?.success) throw new Error(data?.message || t('raven.deleteFail'))
+    ElMessage.success(t('raven.deleteSuccess'))
+    router.push({ name: 'RavenManager' })
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') return
+    console.error(error)
+    const detail = error?.response?.data?.detail
+    ElMessage.error(detail || error.message || t('raven.deleteFail'))
+  } finally {
+    deleting.value = false
+  }
+}
+
 onMounted(() => {
   fetchDetail()
   fetchProjectOptions()
@@ -227,6 +261,14 @@ watch(
         </button>
         <button v-if="pkg" class="rw-btn-secondary" @click="copyRebuildPrompt">
           <span>{{ t('raven.copyRebuildPrompt') }}</span>
+        </button>
+        <button
+          v-if="pkg && isAdmin"
+          class="rw-btn-danger"
+          :disabled="deleting"
+          @click="deletePackage(pkg)"
+        >
+          <span>{{ t('common.delete') }}</span>
         </button>
         <button v-if="pkg" class="rw-btn-primary" @click="downloadPackage(pkg)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -597,8 +639,16 @@ watch(
 .rw-page .rw-btn-secondary:hover:not(:disabled) {
   background: var(--rw-surface-strong, #f0f0f3);
 }
+.rw-page .rw-btn-danger {
+  background: var(--rw-danger, #c0382b);
+  color: #fff;
+}
+.rw-page .rw-btn-danger:hover:not(:disabled) {
+  background: #a02f24;
+}
 .rw-page .rw-btn-primary:disabled,
-.rw-page .rw-btn-secondary:disabled {
+.rw-page .rw-btn-secondary:disabled,
+.rw-page .rw-btn-danger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
