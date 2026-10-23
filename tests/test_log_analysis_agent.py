@@ -32,9 +32,12 @@ async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, e
     prepare = AsyncMock(return_value=snapshot if available else None)
     sdk = MagicMock()
     sdk.query = _fake_query_ok
+    from claude_agent_sdk import HookMatcher
+
+    sdk.HookMatcher = HookMatcher
     with _patch_build_options() as options, _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
          patch.dict("sys.modules", {"claude_agent_sdk": sdk}), \
-         patch("app.config.settings", MagicMock(anthropic_provider=provider, anthropic_model="test-model", anthropic_request_timeout_seconds=600, agent_evidence_efficiency_enabled=enabled)), \
+         patch("app.config.settings", MagicMock(anthropic_provider=provider, anthropic_model="test-model", anthropic_max_turns=150, anthropic_request_timeout_seconds=600, agent_evidence_efficiency_enabled=enabled)), \
          patch("app.agents.evidence_policy.prepare_snapshot", prepare), \
          patch("app.agents.evidence_tools.get_evidence_mcp_server", return_value={}) as server:
         result = await LogAnalysisAgent().run(workspace_ctx)
@@ -45,6 +48,10 @@ async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, e
     assert ("证据收集执行策略" in actual["system_prompt"]) == active
     assert server.call_count == int(active)
     assert bool(actual.get("hooks")) == active
+    if active:
+        stop = actual["hooks"]["Stop"][0].hooks[0]
+        assert (await stop({"hook_event_name": "Stop"}, None, {}))["decision"] == "block"
+        assert await stop({"hook_event_name": "Stop"}, None, {}) == {}
     assert prepare.await_count == int(enabled and provider == "yinhe")
     assert "Skill" in actual["allowed_tools"]
     assert not any(name in ALLOWED_TOOLS for name in TOOL_NAMES)

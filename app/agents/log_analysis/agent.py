@@ -1288,11 +1288,14 @@ class LogAnalysisAgent:
 
         system_prompt += required_skill_prompt
         evidence_hooks = None
+        evidence_review = None
         if evidence_snapshot is not None:
             from app.agents.evidence_policy import execution_hooks, snapshot_prompt
+            from app.agents.evidence_review import FinalEvidenceReview
 
             system_prompt += snapshot_prompt(evidence_snapshot, ctx.locale)
-            evidence_hooks = execution_hooks(ctx.locale, ctx.task_id, ctx.temp_dir)
+            evidence_review = FinalEvidenceReview(ctx.locale, ctx.task_id, settings.anthropic_max_turns)
+            evidence_hooks = execution_hooks(ctx.locale, ctx.task_id, ctx.temp_dir, final_review=evidence_review)
 
         def _make_options(endpoint: Optional[Any]) -> Any:
             return build_options(
@@ -1367,6 +1370,8 @@ class LogAnalysisAgent:
                     _log_workflow(ctx.task_id, "cancelled", reason="cancel_event_set")
                     _emit_cancel_requested(state)
                     raise AgentCancelled()
+                if evidence_review is not None:
+                    evidence_review.observe(message)
                 _emit_for_message(message, state=state)
 
         except AgentCancelled:

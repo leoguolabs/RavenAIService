@@ -52,3 +52,14 @@ When efficiency is enabled, successful line-number source searches MAY receive b
 #### Scenario: Concurrent or subsequent run
 - **WHEN** another Agent run starts
 - **THEN** its added-context deduplication is independent of previous runs
+
+### Requirement: Bounded final evidence review
+An enabled candidate MAY request one final evidence review within its existing SDK session, preserving supported findings, citations and the output schema. The review SHALL NOT inject reference answers, change the turn cap, or claim that self-review establishes factual correctness. Its extra continuation cost SHALL be included in end-to-end timing.
+
+#### Scenario: Natural completion with turn headroom
+- **WHEN** the Agent first attempts to finish and observed parent responses leave review headroom
+- **THEN** it receives one evidence and uncertainty consistency check and the service parses the final terminal result
+
+#### Scenario: Repeated stop or near turn cap
+- **WHEN** review has already been requested, stop_hook_active is true, or observed responses are near the unchanged turn cap
+- **THEN** the hook does not request another review or force early termination

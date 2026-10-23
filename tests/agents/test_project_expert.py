@@ -216,6 +216,10 @@ async def test_evidence_snapshot_retains_project_expert_scope(tmp_path, availabl
     assert result["status"] == "ok"
     actual = options.call_args.kwargs
     assert bool(actual.get("hooks")) == available
+    if available:
+        stop = actual["hooks"]["Stop"][0].hooks[0]
+        assert (await stop({"hook_event_name": "Stop"}, None, {}))["decision"] == "block"
+        assert await stop({"hook_event_name": "Stop"}, None, {}) == {}
     assert all((name in actual["allowed_tools"]) == available for name in TOOL_NAMES)
     assert "不能把参考项目的行为写成所选项目的实现" in actual["system_prompt"]
     assert "请用户改选正确项目" in actual["system_prompt"]
