@@ -13,6 +13,7 @@
 - [x] 2.5 Resolve duplicate startup-read instructions before user interpolation; add bounded requested search context and tail reads; verify exact evidence and continuation before local trials.
 - [x] 2.6 Reject duplicate fields in corrupted terminal results, prevent optional-Skill success fallback, and replay retained outputs without altering original benchmark evidence.
 - [x] 2.7 Add a separately gated deterministic log overview with exact per-file coverage, bounded samples and native fallback; verify against original files before paired measurement.
+- [x] 2.8 Coalesce short native source reads under a separate default-off switch, preserving every requested line and native fallback; verify range bounds and actual SDK execution before paired measurement.
 
 ## 3. Performance and quality acceptance
 

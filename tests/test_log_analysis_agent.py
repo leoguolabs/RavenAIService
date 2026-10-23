@@ -25,7 +25,8 @@ def isolate_mock_sdk_from_endpoint_credentials():
     (True, False, "yinhe"), (True, True, "unsupported-test"),
 ])
 @pytest.mark.parametrize("source_context,final_review", [(False, False), (True, False), (False, True), (True, True)])
-async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, enabled, available, provider, source_context, final_review):
+@pytest.mark.parametrize("read_window", [False, True])
+async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, enabled, available, provider, source_context, final_review, read_window):
     from app.agents.log_analysis.agent import ALLOWED_TOOLS, LogAnalysisAgent
     from app.agents.evidence_tools import TOOL_NAMES
 
@@ -38,7 +39,7 @@ async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, e
     sdk.HookMatcher = HookMatcher
     with _patch_build_options() as options, _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
          patch.dict("sys.modules", {"claude_agent_sdk": sdk}), \
-         patch("app.config.settings", MagicMock(anthropic_provider=provider, anthropic_model="test-model", anthropic_max_turns=150, anthropic_request_timeout_seconds=600, agent_evidence_efficiency_enabled=enabled, agent_evidence_source_context_enabled=source_context, agent_evidence_final_review_enabled=final_review)), \
+         patch("app.config.settings", MagicMock(anthropic_provider=provider, anthropic_model="test-model", anthropic_max_turns=150, anthropic_request_timeout_seconds=600, agent_evidence_efficiency_enabled=enabled, agent_evidence_source_context_enabled=source_context, agent_evidence_final_review_enabled=final_review, agent_evidence_read_window_enabled=read_window)), \
          patch("app.agents.evidence_policy.prepare_snapshot", prepare), \
          patch("app.agents.evidence_tools.get_evidence_mcp_server", return_value={}) as server:
         result = await LogAnalysisAgent().run(workspace_ctx)
@@ -51,6 +52,10 @@ async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, e
     hooks = actual.get("hooks") or {}
     assert ("PostToolUse" in hooks) == (active and source_context)
     assert ("Stop" in hooks) == (active and final_review)
+    assert ("PreToolUse" in hooks) == (active and read_window)
+    if active and read_window:
+        assert hooks["PreToolUse"][0].matcher == "Read"
+    assert all(name in actual["allowed_tools"] for name in ("Read", "Grep", "Glob", "Bash"))
     if active and final_review:
         stop = actual["hooks"]["Stop"][0].hooks[0]
         assert (await stop({"hook_event_name": "Stop"}, None, {}))["decision"] == "block"

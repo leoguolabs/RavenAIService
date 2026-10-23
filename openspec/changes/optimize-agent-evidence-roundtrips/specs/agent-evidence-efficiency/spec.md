@@ -76,6 +76,21 @@ Log Analysis MAY append a bounded structural log overview only when its separate
 - **WHEN** the separate switch is disabled, the startup snapshot is unavailable or scanning raises an error
 - **THEN** the original native evidence workflow remains available without an overview
 
+### Requirement: Optional coalescing of short native source reads
+Log Analysis MAY expand a short native source Read when a separate default-off switch, the efficiency gate and a complete startup snapshot are present. The actual range SHALL contain every originally requested line and retain native output semantics, all tools and the turn cap. Added context SHALL be bounded and identified to the model, without claiming whole-file coverage or adding a model continuation.
+
+#### Scenario: Short source read fits the context budget
+- **WHEN** an explicit valid range under 80 lines targets UTF-8 source within a workspace repository
+- **THEN** the SDK may read a surrounding range up to 160 lines and 8000 source/line-format bytes, retaining the entire requested range and reporting actual coordinates
+
+#### Scenario: Original request or file cannot be safely expanded
+- **WHEN** the input is a log, Skill, external path, oversized or unsupported file, invalid range, or the original range itself exceeds the expansion budget
+- **THEN** the hook returns no modification and native Read handles the original request
+
+#### Scenario: Byte-count cache sees a different file identity
+- **WHEN** the device, inode, size, modification time or change time differs
+- **THEN** cached line byte counts are replaced before expansion; cache state remains bounded and isolated per run
+
 ### Requirement: Automatic source context for native searches
 When efficiency and the separate source-context switch are enabled, successful line-number source searches MAY receive bounded additional source excerpts without an extra model request. The source-context switch SHALL default off. The server SHALL verify that each source path is inside a workspace repository and that its referenced line matches the search output. Original tool outputs, tool access, total turn budget, necessary retries and evidence requirements SHALL remain unchanged. Added-context state SHALL be isolated per run.
 

@@ -49,7 +49,7 @@ def use_snapshot_in_templates(system_prompt: str, user_template: str) -> tuple[s
     return system_prompt, user_template
 
 
-def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, source_context: bool = False, final_review=None) -> dict:
+def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, source_context: bool = False, read_window: bool = False, final_review=None) -> dict:
     from claude_agent_sdk import HookMatcher
     from app.agents.evidence_context import SourceContextEnricher
 
@@ -59,6 +59,11 @@ def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, sour
     if source_context:
         enricher = SourceContextEnricher(workspace, task_id, locale)
         hooks["PostToolUse"] = [HookMatcher(matcher="Bash", hooks=[enricher.after_tool])]
+    if read_window:
+        from app.agents.evidence_read_window import SourceReadWindow
+
+        window = SourceReadWindow(workspace, task_id, locale)
+        hooks["PreToolUse"] = [HookMatcher(matcher="Read", hooks=[window.before_tool])]
     if final_review is not None:
         hooks["Stop"] = [HookMatcher(hooks=[final_review.before_stop])]
     return hooks

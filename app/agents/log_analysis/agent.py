@@ -1332,6 +1332,7 @@ class LogAnalysisAgent:
             evidence_hooks = execution_hooks(
                 ctx.locale, ctx.task_id, ctx.temp_dir,
                 source_context=settings.agent_evidence_source_context_enabled is True,
+                read_window=settings.agent_evidence_read_window_enabled is True,
                 final_review=evidence_review,
             )
 
