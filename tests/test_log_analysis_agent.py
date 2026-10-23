@@ -44,6 +44,7 @@ async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, e
     assert all((name in actual["allowed_tools"]) == active for name in TOOL_NAMES)
     assert ("证据收集执行策略" in actual["system_prompt"]) == active
     assert server.call_count == int(active)
+    assert bool(actual.get("hooks")) == active
     assert prepare.await_count == int(enabled and provider == "yinhe")
     assert "Skill" in actual["allowed_tools"]
     assert not any(name in ALLOWED_TOOLS for name in TOOL_NAMES)

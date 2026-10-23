@@ -1,6 +1,7 @@
 """Optional startup evidence snapshot; no extra model call or reduced turn cap."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 
@@ -16,6 +17,86 @@ _TASK_FIELDS = (
 _REPO_FIELDS = ("id", "project_code", "project_name", "project_card", "default_branch", "source", "has_repo")
 _ATTACHMENT_FIELDS = ("log_id", "filename", "path", "kind")
 _CATALOG_FIELDS = ("id", "project_code", "project_name", "project_card", "has_repo", "enabled_agent_keys")
+
+
+class EvidenceExecutionGuide:
+    """Per-run checkpoints, without rejecting calls or replacing tool evidence.
+
+    Startup instructions alone were often forgotten in long native-tool loops.
+    An SDK post-tool context reminder makes batching and evidence gaps visible
+    during the investigation. It never invokes another model, shortens the turn
+    limit, suppresses a repeat read, or accepts an unverified conclusion.
+    """
+
+    def __init__(self, locale: str, task_id: str = ""):
+        self.locale = locale
+        self.task_id = task_id
+        self.calls = 0
+        self.seen_ids: set[str] = set()
+        self.signatures: set[str] = set()
+
+    async def after_tool(self, input_data, tool_use_id, context):
+        if not isinstance(input_data, dict) or input_data.get("hook_event_name") != "PostToolUse":
+            return {}
+        name = input_data.get("tool_name", "")
+        if name not in ("Bash", "Read", "Grep", "Glob") and not str(name).startswith("mcp__evidence__"):
+            return {}
+        identifier = tool_use_id or input_data.get("tool_use_id")
+        if identifier and identifier in self.seen_ids:
+            return {}
+        if identifier:
+            self.seen_ids.add(identifier)
+        self.calls += 1
+        signature = hashlib.sha256(json.dumps(
+            [name, input_data.get("cwd"), input_data.get("tool_input")],
+            sort_keys=True, ensure_ascii=False, default=str,
+        ).encode()).hexdigest()
+        repeated = signature in self.signatures
+        self.signatures.add(signature)
+        # Keep state bounded even if a future SDK uses a much larger turn cap.
+        if len(self.seen_ids) > 1024:
+            self.seen_ids.clear()
+        if len(self.signatures) > 1024:
+            self.signatures.clear()
+        if self.calls % 8 and not repeated:
+            return {}
+        if self.locale == "en":
+            reminder = (
+                f"Evidence checkpoint after {self.calls} tool calls. Before another search, identify the specific "
+                "unresolved claim or counterevidence that could change the answer. Group all currently independent "
+                "checks into one mcp__evidence__search_evidence/mcp__evidence__read_evidence batch, including source checks; dependent follow-ups "
+                "may remain sequential. Reuse evidence already read instead of re-discovering it. Do not expand "
+                "into unrelated anomalies just to produce a longer report. When decisive gaps are resolved, "
+                "write the required final JSON; otherwise continue investigating the gaps. Before answering, "
+                "cross-check timestamps/order, enum values, units and recommended paths against the actual evidence. "
+                "A sent request is not proof of its effect, missing records are not proof of absence, and "
+                "partial progress is not completion. Keep these qualifications in both answer and summary. "
+                "This is a checkpoint, not a stop or a lower turn limit."
+            )
+            if repeated:
+                reminder += " These same tool arguments appeared before; reuse valid evidence, or explain a retry, incomplete result, or changed scope/data."
+        else:
+            reminder = (
+                f"证据检查点：已执行 {self.calls} 次取证工具调用。下一次检索前，明确哪个未解决的事实或反证会改变答案。"
+                "把当前已知且互不依赖的检查（包括源码核验）合并进一次 mcp__evidence__search_evidence/mcp__evidence__read_evidence 批次；"
+                "有真实依赖的后续检查仍可顺序执行。复用已读取的证据，避免重新定位同一事实。"
+                "不要为了写更长的报告扩展到无关异常。关键缺口已解决时输出规定的最终 JSON，否则继续查证缺口。"
+                "答复前对照实际证据核验时间先后、枚举值、单位和建议中的路径：已发送不等于已生效，"
+                "缺少记录不等于没有发生，中间进度不等于完成；正文和摘要都须保留相同的限定。"
+                "这只是检查点，不是停止指令，也没有降低轮数上限。"
+            )
+            if repeated:
+                reminder += " 此工具参数此前已出现；复用有效证据，或明确重试、结果不完整、范围或数据改变等再次读取的理由。"
+        logger.info("Evidence execution checkpoint task_id=%s calls=%d repeated_arguments=%s",
+                    self.task_id, self.calls, repeated)
+        return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": reminder}}
+
+
+def execution_hooks(locale: str, task_id: str = "") -> dict:
+    from claude_agent_sdk import HookMatcher
+
+    guide = EvidenceExecutionGuide(locale, task_id)
+    return {"PostToolUse": [HookMatcher(hooks=[guide.after_tool])]}
 
 
 def _pick(value: dict, fields: tuple) -> dict:

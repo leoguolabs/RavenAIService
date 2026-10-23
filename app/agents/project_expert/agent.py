@@ -426,10 +426,12 @@ class ProjectExpertAgent:
             system_prompt += "\n\n" + clarification.prompt_addendum
 
         system_prompt += required_skill_prompt
+        evidence_hooks = None
         if evidence_snapshot is not None:
-            from app.agents.evidence_policy import snapshot_prompt
+            from app.agents.evidence_policy import execution_hooks, snapshot_prompt
 
             system_prompt += snapshot_prompt(evidence_snapshot, ctx.locale)
+            evidence_hooks = execution_hooks(ctx.locale, ctx.task_id)
 
         def _make_options(endpoint: Optional[Any]) -> Any:
             return build_options(
@@ -444,6 +446,7 @@ class ProjectExpertAgent:
                 mcp_servers=mcp_servers,
                 setting_sources=setting_sources,
                 endpoint=endpoint,
+                **({"hooks": evidence_hooks} if evidence_hooks else {}),
             )
 
         def _on_endpoint(endpoint: Any) -> None:

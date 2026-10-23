@@ -158,7 +158,9 @@ async def _fake_query_plain_skill_answer(*_args, **_kwargs) -> AsyncIterator[Any
 
 
 def _patch_agent_common(fake_query):
-    fake_sdk = SimpleNamespace(query=fake_query)
+    from claude_agent_sdk import HookMatcher
+
+    fake_sdk = SimpleNamespace(query=fake_query, HookMatcher=HookMatcher)
     return patch.dict("sys.modules", {"claude_agent_sdk": fake_sdk})
 
 
@@ -213,6 +215,7 @@ async def test_evidence_snapshot_retains_project_expert_scope(tmp_path, availabl
         result = await ProjectExpertAgent().run(ctx)
     assert result["status"] == "ok"
     actual = options.call_args.kwargs
+    assert bool(actual.get("hooks")) == available
     assert all((name in actual["allowed_tools"]) == available for name in TOOL_NAMES)
     assert "不能把参考项目的行为写成所选项目的实现" in actual["system_prompt"]
     assert "请用户改选正确项目" in actual["system_prompt"]

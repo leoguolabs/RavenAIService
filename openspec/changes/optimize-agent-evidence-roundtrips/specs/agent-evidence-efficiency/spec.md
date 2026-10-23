@@ -25,3 +25,14 @@ Batch tools SHALL accept only workspace-contained read operations, preserve per-
 #### Scenario: Independent evidence requests
 - **WHEN** a model submits several independent searches or file ranges
 - **THEN** the server executes them with bounded concurrency and returns separately attributed results in request order
+
+### Requirement: Non-blocking investigation checkpoints
+When efficiency is enabled, the Agent SHALL receive periodic execution feedback to batch independent checks and identify unresolved evidence gaps. Feedback SHALL keep original tool outputs, tool access, total turn budget, necessary retries and evidence requirements unchanged, without an additional model request. State SHALL be isolated per run.
+
+#### Scenario: Long or repeated native-tool investigation
+- **WHEN** eight evidence calls complete or the same tool arguments recur
+- **THEN** the SDK supplies a context reminder while retaining the original result and allowing further investigation
+
+#### Scenario: Concurrent or subsequent run
+- **WHEN** another Agent run starts
+- **THEN** its counters and duplicate detection are independent of previous runs
