@@ -96,6 +96,53 @@ def test_unfenced_non_analysis_or_incomplete_json_is_not_a_complete_result():
     assert _extract_fenced_json('{"status": "ok", "answer": "unfinished"') is None
 
 
+@pytest.mark.parametrize("body", [
+    '{"status":"ok","severity":"info","answer":"original","answer":"retry fragment"}',
+    '{"status":"ok","severity":"info","answer":"original","summary":"first","summary":"second",',
+    '{"status":"ok","severity":"info","answer":"original","root_cause_hypotheses":[{"hypothesis":"first","hypothesis":"second"}]}',
+    '{"status":"ok","severity":"info","answer":"original","root_cause_hypotheses":[{"hypothesis":"first","hypothesis":"second"},',
+])
+def test_duplicate_result_fields_are_never_recovered(body):
+    from app.agents.log_analysis.agent import _extract_fenced_json, extract_recoverable_result_fields
+
+    for text in (body, f"```json\n{body}\n```"):
+        assert _extract_fenced_json(text) is None
+        assert extract_recoverable_result_fields(text) == {}
+
+
+def test_repeated_field_names_inside_answer_text_are_not_duplicate_keys():
+    from app.agents.log_analysis.agent import _extract_fenced_json
+
+    expected = {"status": "ok", "severity": "info", "answer": 'The log contains "summary": twice: "summary":.'}
+    assert _extract_fenced_json(f"```json\n{json.dumps(expected)}\n```") == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fenced", [False, True])
+async def test_corrupt_result_cannot_fall_back_to_plain_skill_answer(workspace_ctx, fenced):
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+
+    body = '{"status":"ok","severity":"info","answer":"original","summary":"first","summary":"retry fragment"}'
+    terminal = f"```json\n{body}\n```" if fenced else body
+    calls = []
+
+    async def query(*args, **kwargs):
+        calls.append(True)
+        yield FakeResultMessage(result=terminal)
+
+    sdk = MagicMock()
+    sdk.query = query
+    with _patch_build_options(), _patch_mcp_server(), _patch_prompts(), \
+         patch("app.services.skills_service.materialize_relevant_enabled_skills", return_value=["optional-test-skill"]), \
+         patch.dict("sys.modules", {"claude_agent_sdk": sdk}), \
+         patch("app.config.settings", MagicMock(anthropic_provider="yinhe", anthropic_model="test", anthropic_request_timeout_seconds=60, agent_evidence_efficiency_enabled=False)):
+        result = await LogAnalysisAgent().run(workspace_ctx)
+    assert result["status"] == "schema_mismatch"
+    assert result["answer"] == ""
+    assert result["raw"] == terminal
+    assert len(calls) == 1
+
+
 # ─────────────────────── Fake SDK Message Types ────────────────────
 
 @dataclass

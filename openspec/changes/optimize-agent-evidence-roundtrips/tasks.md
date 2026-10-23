@@ -11,6 +11,7 @@
 - [x] 2.3 Verify provider compatibility, project selection, required skills and complete evidence access; update matching documentation.
 - [x] 2.4 Remove independently reproduced title-metrics writer contention after Agent completion, preserving answers and concurrent title edits; verify with real SQLite regression tests.
 - [x] 2.5 Resolve duplicate startup-read instructions before user interpolation; add bounded requested search context and tail reads; verify exact evidence and continuation before local trials.
+- [x] 2.6 Reject duplicate fields in corrupted terminal results, prevent optional-Skill success fallback, and replay retained outputs without altering original benchmark evidence.
 
 ## 3. Performance and quality acceptance
 

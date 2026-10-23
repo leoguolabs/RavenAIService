@@ -86,6 +86,19 @@ AGENT_KEY = "log_analysis"
 TraceEmitter = Callable[[AgentTraceEvent], None]
 
 
+class _DuplicateResultField(ValueError):
+    """An ambiguous object cannot be repaired by selecting one of its values."""
+
+
+def _unique_json_object(pairs: List[tuple[str, Any]]) -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateResultField(key)
+        result[key] = value
+    return result
+
+
 def _parse_partial_array(text: str, start: int, decoder: json.JSONDecoder) -> tuple[List[Any], int]:
     """Parse completed items from a possibly truncated JSON array."""
     items: List[Any] = []
@@ -217,6 +230,15 @@ def _parse_string_value_prefix(
 
 
 def _parse_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
+    try:
+        return _parse_unique_json_object_prefix(text)
+    except _DuplicateResultField:
+        # Retain the raw terminal response for diagnosis, but never pick an
+        # earlier/later answer from a corrupt response and report success.
+        return None
+
+
+def _parse_unique_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
     """Parse a JSON object, keeping complete top-level members if truncated.
 
     Claude-compatible providers occasionally stop after emitting a large JSON
@@ -229,12 +251,12 @@ def _parse_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
     if not body:
         return None
     try:
-        parsed = json.loads(body)
+        parsed = json.loads(body, object_pairs_hook=_unique_json_object)
         return parsed if isinstance(parsed, dict) else None
     except json.JSONDecodeError:
         pass
 
-    decoder = json.JSONDecoder()
+    decoder = json.JSONDecoder(object_pairs_hook=_unique_json_object)
     i = 0
     length = len(body)
     while i < length and body[i].isspace():
@@ -257,6 +279,8 @@ def _parse_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
             break
         if not isinstance(key, str):
             break
+        if key in result:
+            raise _DuplicateResultField(key)
         i = end
         while i < length and body[i].isspace():
             i += 1
@@ -309,7 +333,9 @@ def _extract_fenced_json(text: str) -> Optional[Dict[str, Any]]:
     stripped = (text or "").strip()
     if stripped.startswith("{"):
         try:
-            bare = json.loads(stripped)
+            bare = json.loads(stripped, object_pairs_hook=_unique_json_object)
+        except _DuplicateResultField:
+            return None
         except json.JSONDecodeError:
             pass
         else:

@@ -432,6 +432,28 @@ async def test_agent_recovers_grounded_answer_with_unescaped_inner_quotes(tmp_pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("fenced", [False, True])
+async def test_agent_rejects_duplicate_fields_even_with_optional_skill(tmp_path, fenced):
+    from app.agents.project_expert.agent import ProjectExpertAgent
+
+    body = '{"status":"ok","severity":"info","answer":"original","answer":"retry fragment"}'
+    terminal = f"```json\n{body}\n```" if fenced else body
+
+    async def query(*_args, **_kwargs):
+        yield FakeResultMessage(result=terminal)
+
+    with _patch_agent_common(query), \
+        patch("app.agents.anthropic_client.build_options", return_value=MagicMock()), \
+        patch("app.services.skills_service.materialize_relevant_enabled_skills", return_value=["skill-verifier"]), \
+        patch("app.agents.log_analysis.mcp_tools.get_mcp_server", return_value=MagicMock()):
+        result = await ProjectExpertAgent().run(_make_ctx(tmp_path))
+
+    assert result["status"] == "schema_mismatch"
+    assert result["answer"] == ""
+    assert result["raw"] == terminal
+
+
+@pytest.mark.asyncio
 async def test_agent_wraps_plain_text_skill_answer(tmp_path):
     from app.agents.project_expert.agent import ProjectExpertAgent
 

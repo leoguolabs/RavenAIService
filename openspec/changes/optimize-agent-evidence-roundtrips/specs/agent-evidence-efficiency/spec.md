@@ -15,6 +15,17 @@ The optimized Agent SHALL retain all attachments, project-fit checks, original e
 - **WHEN** snapshot preparation fails
 - **THEN** the Agent retains the original discovery and task reading workflow
 
+### Requirement: Reject ambiguous structured terminal output
+Log Analysis and Project Expert SHALL reject repeated JSON object keys in complete results and recoverable prefixes, including nested objects. The raw terminal response SHALL remain available, and optional-Skill fallback SHALL NOT turn rejected JSON into a successful plain-text answer. This validation SHALL NOT add model calls or substitute an earlier draft.
+
+#### Scenario: Terminal response contains repeated answer or summary fields
+- **WHEN** the final response contains duplicate fields, even after an otherwise usable answer
+- **THEN** the service reports schema_mismatch and retains the raw final response without selecting a first or last field value
+
+#### Scenario: Unique-key result contains quoted field names
+- **WHEN** field names occur inside answer strings or a supported unique-key truncated tail is recovered
+- **THEN** existing answer content is retained without treating literal text as duplicate object fields
+
 ### Requirement: Bounded batch evidence with complete continuation
 Batch tools SHALL accept only workspace-contained read operations, preserve per-request failures, and return exact source locations plus explicit continuation whenever results are incomplete.
 

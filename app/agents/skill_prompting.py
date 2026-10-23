@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import PurePath
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -145,6 +146,10 @@ def build_plain_text_skill_answer_fields(
     """Wrap a non-JSON skill answer into the agent's structured schema fields."""
     answer = (final_text or "").strip()
     if not answer:
+        return None
+    # Callers have already tried parsing structured results. A rejected result
+    # must not become status=ok merely because an optional Skill was loaded.
+    if answer.startswith("{") or re.search(r"```json\b", answer):
         return None
 
     names: List[str] = []
