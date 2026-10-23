@@ -26,6 +26,14 @@ Batch tools SHALL accept only workspace-contained read operations, preserve per-
 - **WHEN** a model submits several independent searches or file ranges
 - **THEN** the server executes them with bounded concurrency and returns separately attributed results in request order
 
+#### Scenario: Compact evidence representation
+- **WHEN** MCP results are encoded as rows with shared column legends and derived read parameters
+- **THEN** every returned source character, location, error and continuation is preserved, and nonstandard parameters fall back to the original representation
+
+#### Scenario: Advanced regex is supported by the runtime
+- **WHEN** a query uses lookaround or backreferences and ripgrep has PCRE2 support
+- **THEN** the tool selects the compatible engine without a failed-query model round trip, retaining the same query timeout and workspace bounds
+
 ### Requirement: Automatic source context for native searches
 When efficiency is enabled, successful line-number source searches MAY receive bounded additional source excerpts without an extra model request. The server SHALL verify that each source path is inside a workspace repository and that its referenced line matches the search output. Original tool outputs, tool access, total turn budget, necessary retries and evidence requirements SHALL remain unchanged. Added-context state SHALL be isolated per run.
 

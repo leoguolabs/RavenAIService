@@ -81,7 +81,7 @@ async def search_page(root: Path, request: dict) -> dict:
     executable = shutil.which("rg")
     if not executable:
         raise ValueError("ripgrep is unavailable; use native search tools")
-    args = [executable, "--json", "--sort", "path", "--hidden", "--no-ignore",
+    args = [executable, "--json", "--engine", "auto", "--sort", "path", "--hidden", "--no-ignore",
             "--glob", "!.git/**", "--glob", "!**/.git/**"]
     if request.get("literal", False):
         args.append("--fixed-strings")
@@ -185,6 +185,40 @@ async def run_batch(workspace: str, requests: list, *, search: bool) -> dict:
     return {"results": await asyncio.gather(*(one(i, r) for i, r in enumerate(requests)))}
 
 
+def encode_evidence(payload: dict) -> str:
+    """Compact only the wire representation; retain every returned evidence row.
+
+    Repeated field names and a second copy of each source path in read_request
+    were a substantial part of actual MCP outputs. Column legends keep the
+    representation self-describing without trimming source text or pages.
+    """
+    if "results" not in payload:
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    for result in payload["results"]:
+        for line in result.get("lines", []):
+            if set(line) != {"line", "column", "text"}:
+                return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        for match in result.get("matches", []):
+            if (set(match) != {"path", "line", "column", "text", "line_excerpted", "read_request"}
+                    or match.get("read_request") != {"path": match["path"], "start_line": match["line"], "line_count": 20}):
+                # A future/nonstandard range must not silently lose metadata.
+                return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    encoded = {"results": []}
+    for result in payload["results"]:
+        row = dict(result)
+        if "lines" in row:
+            encoded["line_columns"] = ["line", "column", "text"]
+            row["lines"] = [[line[key] for key in encoded["line_columns"]] for line in row["lines"]]
+        if "matches" in row:
+            encoded["match_columns"] = ["path", "line", "column", "text", "line_excerpted"]
+            # read_request is exactly derivable from path/line; keep its shared
+            # default explicit so even an empty search remains self-describing.
+            encoded["read_match"] = {"path": "match.path", "start_line": "match.line", "line_count": 20}
+            row["matches"] = [[match[key] for key in encoded["match_columns"]] for match in row["matches"]]
+        encoded["results"].append(row)
+    return json.dumps(encoded, ensure_ascii=False, separators=(",", ":"))
+
+
 def get_evidence_mcp_server(workspace: str):
     from claude_agent_sdk import create_sdk_mcp_server, tool
 
@@ -197,11 +231,13 @@ def get_evidence_mcp_server(workspace: str):
 
     async def invoke(args, search):
         payload = await run_batch(workspace, args.get("requests"), search=search)
-        return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]}
+        return {"content": [{"type": "text", "text": encode_evidence(payload)}]}
 
     @tool("search_evidence",
           "Batch 1-8 independent regex searches in this workspace. Results include exact file/line locations, "
           "bounded excerpts and next_request when more matches exist. A partial page is not exhaustive. "
+          "Regex engine auto-selects PCRE2 for lookaround/backreferences when available. "
+          "Each match is a row described by match_columns; read_match gives the range template. "
           "Group known independent questions in one call; use read_evidence for surrounding context.",
           schema({"pattern": {"type": "string"}, "path": {"type": "string"},
                   "glob": {"type": "string"}, "literal": {"type": "boolean"},
@@ -213,11 +249,12 @@ def get_evidence_mcp_server(workspace: str):
     @tool("read_evidence",
           "Read 1-8 independent UTF-8 file ranges together, with source line numbers. start_line is 1-based; "
           "column is a 0-based character offset for long-line continuation. Each range has an 8000-character "
-          "budget; follow next_request to retrieve remaining content. Original files remain available.",
+          "budget; each line is a [line, column, text] row. Follow next_request to retrieve remaining content. "
+          "Original files remain available.",
           schema({"path": {"type": "string"}, "start_line": {"type": "integer", "minimum": 1},
                   "line_count": {"type": "integer", "minimum": 1, "maximum": 2000},
                   "column": {"type": "integer", "minimum": 0}}, ["path"]))
     async def read(args):
         return await invoke(args, False)
 
-    return create_sdk_mcp_server(name="evidence", version="1.0.0", tools=[search, read])
+    return create_sdk_mcp_server(name="evidence", version="1.1.0", tools=[search, read])
