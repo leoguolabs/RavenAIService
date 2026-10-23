@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, AsyncIterator, List, Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -191,6 +191,32 @@ def _make_ctx(tmp_path: Path) -> WorkspaceContext:
         task_json_path=str(task_json),
         metadata={"question": "鉴权在哪里实现？", "hints": ""},
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("available", [True, False])
+async def test_evidence_snapshot_retains_project_expert_scope(tmp_path, available):
+    from app.agents.project_expert.agent import ProjectExpertAgent
+    from app.agents.evidence_tools import TOOL_NAMES
+
+    ctx = _make_ctx(tmp_path)
+    snapshot = {"task": {}, "project_catalog": {"count": 0, "projects": [], "truncated": False}}
+    options = MagicMock(return_value=MagicMock())
+    with _patch_agent_common(_fake_query_with_clone), \
+         patch("app.agents.anthropic_client.build_options", options), \
+         patch("app.services.model_router.candidates", return_value=[]), \
+         patch("app.agents.log_analysis.mcp_tools.get_mcp_server", return_value={}), \
+         patch("app.agents.evidence_tools.get_evidence_mcp_server", return_value={}), \
+         patch("app.agents.evidence_policy.prepare_snapshot", AsyncMock(return_value=snapshot if available else None)), \
+         patch("app.config.settings.agent_evidence_efficiency_enabled", True), \
+         patch("app.config.settings.anthropic_provider", "yinhe"):
+        result = await ProjectExpertAgent().run(ctx)
+    assert result["status"] == "ok"
+    actual = options.call_args.kwargs
+    assert all((name in actual["allowed_tools"]) == available for name in TOOL_NAMES)
+    assert "不能把参考项目的行为写成所选项目的实现" in actual["system_prompt"]
+    assert "请用户改选正确项目" in actual["system_prompt"]
+    assert "humanizer-zh" in actual["system_prompt"]
 
 
 def _decode_sse_event(chunk: str) -> dict:

@@ -11,6 +11,44 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolate_mock_sdk_from_endpoint_credentials():
+    # These tests exercise Agent result/trace handling, not endpoint selection.
+    # Their partial Settings mocks must not be parsed as a real API key pool.
+    with patch("app.services.model_router.candidates", return_value=[]):
+        yield
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled,available,provider", [
+    (False, True, "yinhe"), (True, True, "yinhe"),
+    (True, False, "yinhe"), (True, True, "unsupported-test"),
+])
+async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, enabled, available, provider):
+    from app.agents.log_analysis.agent import ALLOWED_TOOLS, LogAnalysisAgent
+    from app.agents.evidence_tools import TOOL_NAMES
+
+    snapshot = {"task": {"question": "What failed?"}, "project_catalog": {"projects": [], "count": 0, "truncated": False}}
+    prepare = AsyncMock(return_value=snapshot if available else None)
+    sdk = MagicMock()
+    sdk.query = _fake_query_ok
+    with _patch_build_options() as options, _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch.dict("sys.modules", {"claude_agent_sdk": sdk}), \
+         patch("app.config.settings", MagicMock(anthropic_provider=provider, anthropic_model="test-model", anthropic_request_timeout_seconds=600, agent_evidence_efficiency_enabled=enabled)), \
+         patch("app.agents.evidence_policy.prepare_snapshot", prepare), \
+         patch("app.agents.evidence_tools.get_evidence_mcp_server", return_value={}) as server:
+        result = await LogAnalysisAgent().run(workspace_ctx)
+    active = enabled and available and provider == "yinhe"
+    assert result["status"] == "ok"
+    actual = options.call_args.kwargs
+    assert all((name in actual["allowed_tools"]) == active for name in TOOL_NAMES)
+    assert ("证据收集执行策略" in actual["system_prompt"]) == active
+    assert server.call_count == int(active)
+    assert prepare.await_count == int(enabled and provider == "yinhe")
+    assert "Skill" in actual["allowed_tools"]
+    assert not any(name in ALLOWED_TOOLS for name in TOOL_NAMES)
+
+
 # ─────────────────────── Fake SDK Message Types ────────────────────
 
 @dataclass
@@ -493,10 +531,10 @@ class TestLogAnalysisAgentRun:
 
         # Locale flowed into prompt selection.
         assert captured_locale["value"] == locale
-        # The matching response-language directive is appended last to the
-        # system prompt that reaches the SDK.
+        # Required Skill instructions can follow the language directive; both
+        # remain in the actual prompt delivered to the SDK.
         system_prompt = mock_build_options.call_args.kwargs["system_prompt"]
-        assert system_prompt.endswith(response_language_directive(locale))
+        assert response_language_directive(locale) in system_prompt
         assert captured_prompt["value"].endswith(response_language_directive(locale))
         # The other locale's directive must NOT be present.
         other = "zh" if locale == "en" else "en"

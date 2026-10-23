@@ -162,6 +162,8 @@ class Settings(BaseSettings):
     )
     agent_related_repo_max_count: int = 4
     agent_repo_clone_timeout_seconds: int = 300
+    # Opt-in until paired latency and evidence-equivalence validation passes.
+    agent_evidence_efficiency_enabled: bool = False
 
     # 上下文压缩/记忆配置
     agent_compression_strategy: str = (

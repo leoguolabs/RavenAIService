@@ -236,6 +236,20 @@ class ProjectExpertAgent:
                 provider,
             )
 
+        evidence_snapshot = None
+        if settings.agent_evidence_efficiency_enabled is True and supports_mcp:
+            from app.agents.evidence_policy import prepare_snapshot
+            from app.agents.evidence_tools import TOOL_NAMES, get_evidence_mcp_server
+
+            evidence_snapshot = await prepare_snapshot(task_data)
+            if evidence_snapshot is not None:
+                mcp_servers["evidence"] = get_evidence_mcp_server(ctx.temp_dir)
+                allowed_tools.extend(TOOL_NAMES)
+                system_prompt = system_prompt.replace(
+                    "第一次 Read 调用请使用 `{\"file_path\":\"task.json\"}`。",
+                    "任务字段已由后文启动快照提供，仅在缺少所需字段时读取 task.json。",
+                )
+
         # 物化全部启用的 Skill 到 cwd/.claude/skills/<name>/，配合
         # setting_sources=["project"] 让 SDK 按官方约定发现 Skill。
         # 相关性判定交给模型在推理中完成：提示词只给出 name+description 菜单，
@@ -353,6 +367,7 @@ class ProjectExpertAgent:
             project_code=project_code,
             project_card=project_card,
             catalog_available=supports_mcp,
+            catalog_preloaded=evidence_snapshot is not None,
             locale=ctx.locale,
             selected_project_is_target=True,
         )
@@ -411,6 +426,10 @@ class ProjectExpertAgent:
             system_prompt += "\n\n" + clarification.prompt_addendum
 
         system_prompt += required_skill_prompt
+        if evidence_snapshot is not None:
+            from app.agents.evidence_policy import snapshot_prompt
+
+            system_prompt += snapshot_prompt(evidence_snapshot, ctx.locale)
 
         def _make_options(endpoint: Optional[Any]) -> Any:
             return build_options(
