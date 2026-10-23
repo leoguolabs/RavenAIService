@@ -160,8 +160,8 @@ async def test_ignores_non_search_failed_interrupted_and_huge_source(workspace):
 
 @pytest.mark.asyncio
 async def test_hook_factory_and_different_runs_keep_independent_context(workspace):
-    first = execution_hooks("zh", "task-1", str(workspace))["PostToolUse"][0].hooks[0]
-    second = execution_hooks("zh", "task-2", str(workspace))["PostToolUse"][0].hooks[0]
+    first = execution_hooks("zh", "task-1", str(workspace), source_context=True)["PostToolUse"][0].hooks[0]
+    second = execution_hooks("zh", "task-2", str(workspace), source_context=True)["PostToolUse"][0].hooks[0]
     data = event("repo/first.c:20:line 20 first.c")
     assert await first(data, "1", {})
     assert await second(data, "1", {})

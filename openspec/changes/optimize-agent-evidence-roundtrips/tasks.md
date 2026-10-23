@@ -13,7 +13,12 @@
 
 ## 3. Performance and quality acceptance
 
-- [ ] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target.
-- [ ] 3.2 Complete at least 10 distinct holdout log analyses and paired factual/evidence/uncertainty review.
+- [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.
+- [x] 3.2 Complete at least 10 distinct holdout log analyses and paired factual/evidence/uncertainty review. All ten reviewed; the combined candidate failed quality acceptance.
 - [ ] 3.3 Investigate every failed/discrepant case; rerun changes transparently without dropping unfavorable results.
 - [ ] 3.4 Verify local end-to-end browser results, review diff, run focused checks and commit scoped changes without pushing or production deployment.
+
+## 4. Separate failed combined mechanisms
+
+- [x] 4.1 Gate automatic source context and final review independently, default both off, and verify both Agents retain batching and fallback behavior.
+- [ ] 4.2 Measure the resulting candidate against the frozen baseline without reusing unsuccessful runs as successful timing samples; preserve all previous cohorts and require independent quality review.

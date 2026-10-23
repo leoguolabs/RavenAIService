@@ -21,6 +21,8 @@ Non-goals: production deployment, changing model to claim an optimization, reduc
 
 ## Risks / Trade-offs
 
+The combined v9 trial completed all 20 timing pairs and 10 separate holdout pairs but failed latency and factual/uncertainty acceptance. Automatic source context and final review therefore have separate, default-off settings under the main efficiency gate. This permits testing batching and lossless representation without adding source excerpts or a mandatory model continuation. Enabling either extra mechanism still requires a complete startup snapshot and provider compatibility. A valid earlier draft is not substituted for a corrupt terminal review result in benchmark evidence.
+
 - Changed prompting can change answers → opt-in plus paired full-answer review; fail acceptance on material discrepancy.
 - Batch truncation can hide evidence → explicit totals/continuations and tests of exhaustive pagination.
 - Symlinks/path traversal can escape a workspace → resolve paths, reject escapes, and test malicious paths.

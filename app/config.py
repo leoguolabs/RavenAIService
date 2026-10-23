@@ -164,6 +164,9 @@ class Settings(BaseSettings):
     agent_repo_clone_timeout_seconds: int = 300
     # Opt-in until paired latency and evidence-equivalence validation passes.
     agent_evidence_efficiency_enabled: bool = False
+    # Independently opt in: added context/review failed the combined trial.
+    agent_evidence_source_context_enabled: bool = False
+    agent_evidence_final_review_enabled: bool = False
 
     # 上下文压缩/记忆配置
     agent_compression_strategy: str = (

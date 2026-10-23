@@ -197,7 +197,8 @@ def _make_ctx(tmp_path: Path) -> WorkspaceContext:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("available", [True, False])
-async def test_evidence_snapshot_retains_project_expert_scope(tmp_path, available):
+@pytest.mark.parametrize("source_context,final_review", [(False, False), (True, False), (False, True), (True, True)])
+async def test_evidence_snapshot_retains_project_expert_scope(tmp_path, available, source_context, final_review):
     from app.agents.project_expert.agent import ProjectExpertAgent
     from app.agents.evidence_tools import TOOL_NAMES
 
@@ -211,12 +212,16 @@ async def test_evidence_snapshot_retains_project_expert_scope(tmp_path, availabl
          patch("app.agents.evidence_tools.get_evidence_mcp_server", return_value={}), \
          patch("app.agents.evidence_policy.prepare_snapshot", AsyncMock(return_value=snapshot if available else None)), \
          patch("app.config.settings.agent_evidence_efficiency_enabled", True), \
+         patch("app.config.settings.agent_evidence_source_context_enabled", source_context), \
+         patch("app.config.settings.agent_evidence_final_review_enabled", final_review), \
          patch("app.config.settings.anthropic_provider", "yinhe"):
         result = await ProjectExpertAgent().run(ctx)
     assert result["status"] == "ok"
     actual = options.call_args.kwargs
-    assert bool(actual.get("hooks")) == available
-    if available:
+    hooks = actual.get("hooks") or {}
+    assert ("PostToolUse" in hooks) == (available and source_context)
+    assert ("Stop" in hooks) == (available and final_review)
+    if available and final_review:
         stop = actual["hooks"]["Stop"][0].hooks[0]
         assert (await stop({"hook_event_name": "Stop"}, None, {}))["decision"] == "block"
         assert await stop({"hook_event_name": "Stop"}, None, {}) == {}

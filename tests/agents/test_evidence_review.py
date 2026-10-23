@@ -63,13 +63,24 @@ async def test_old_sdk_without_response_ids_skips_conservatively_and_runs_are_in
 @pytest.mark.asyncio
 async def test_hook_wiring_is_optional_and_retains_source_hook(tmp_path):
     review = FinalEvidenceReview("zh", "task", 150)
-    hooks = execution_hooks("zh", "task", str(tmp_path), final_review=review)
+    hooks = execution_hooks("zh", "task", str(tmp_path), source_context=True, final_review=review)
     assert hooks["PostToolUse"][0].matcher == "Bash"
     stop = hooks["Stop"][0]
     assert stop.matcher is None
     assert (await stop.hooks[0]({"hook_event_name": "Stop"}, None, {}))["decision"] == "block"
     assert "Stop" not in execution_hooks("zh", "task", str(tmp_path))
     assert execution_hooks("zh", final_review=review) == {}
+
+
+@pytest.mark.asyncio
+async def test_review_and_source_context_can_be_enabled_independently(tmp_path):
+    assert execution_hooks("zh", "task", str(tmp_path)) == {}
+    source_only = execution_hooks("zh", "task", str(tmp_path), source_context=True)
+    assert set(source_only) == {"PostToolUse"}
+    review = FinalEvidenceReview("zh", "task", 150)
+    review_only = execution_hooks("zh", "task", str(tmp_path), final_review=review)
+    assert set(review_only) == {"Stop"}
+    assert (await review_only["Stop"][0].hooks[0]({"hook_event_name": "Stop"}, None, {}))["decision"] == "block"
 
 
 def test_terminal_reviewed_result_is_parsed_instead_of_first_draft():

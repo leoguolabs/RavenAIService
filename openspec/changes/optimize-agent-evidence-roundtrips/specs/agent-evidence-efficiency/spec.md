@@ -39,7 +39,11 @@ Batch tools SHALL accept only workspace-contained read operations, preserve per-
 - **THEN** searches, subsequent reads and source verification use the same native LF line numbers and preserve those characters within the returned line
 
 ### Requirement: Automatic source context for native searches
-When efficiency is enabled, successful line-number source searches MAY receive bounded additional source excerpts without an extra model request. The server SHALL verify that each source path is inside a workspace repository and that its referenced line matches the search output. Original tool outputs, tool access, total turn budget, necessary retries and evidence requirements SHALL remain unchanged. Added-context state SHALL be isolated per run.
+When efficiency and the separate source-context switch are enabled, successful line-number source searches MAY receive bounded additional source excerpts without an extra model request. The source-context switch SHALL default off. The server SHALL verify that each source path is inside a workspace repository and that its referenced line matches the search output. Original tool outputs, tool access, total turn budget, necessary retries and evidence requirements SHALL remain unchanged. Added-context state SHALL be isolated per run.
+
+#### Scenario: Batch tools enabled without automatic context
+- **WHEN** efficiency is enabled but the source-context switch is off
+- **THEN** batch tools and the startup snapshot remain available without registering the source-enrichment hook
 
 #### Scenario: Native search locates a source definition
 - **WHEN** a native line-number search returns a verified repository source reference
@@ -58,7 +62,11 @@ When efficiency is enabled, successful line-number source searches MAY receive b
 - **THEN** its added-context deduplication is independent of previous runs
 
 ### Requirement: Bounded final evidence review
-An enabled candidate MAY request one final evidence review within its existing SDK session, preserving supported findings, citations and the output schema. The review SHALL NOT inject reference answers, change the turn cap, or claim that self-review establishes factual correctness. Its extra continuation cost SHALL be included in end-to-end timing.
+An enabled candidate with the separate final-review switch enabled MAY request one final evidence review within its existing SDK session, preserving supported findings, citations and the output schema. The final-review switch SHALL default off and SHALL be independent of automatic source context. The review SHALL NOT inject reference answers, change the turn cap, or claim that self-review establishes factual correctness. Its extra continuation cost SHALL be included in end-to-end timing.
+
+#### Scenario: Batch tools enabled without final review
+- **WHEN** efficiency is enabled but the final-review switch is off
+- **THEN** the Agent uses its natural terminal result without a review continuation or Stop hook
 
 #### Scenario: Natural completion with turn headroom
 - **WHEN** the Agent first attempts to finish and observed parent responses leave review headroom

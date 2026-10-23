@@ -1294,8 +1294,13 @@ class LogAnalysisAgent:
             from app.agents.evidence_review import FinalEvidenceReview
 
             system_prompt += snapshot_prompt(evidence_snapshot, ctx.locale)
-            evidence_review = FinalEvidenceReview(ctx.locale, ctx.task_id, settings.anthropic_max_turns)
-            evidence_hooks = execution_hooks(ctx.locale, ctx.task_id, ctx.temp_dir, final_review=evidence_review)
+            if settings.agent_evidence_final_review_enabled is True:
+                evidence_review = FinalEvidenceReview(ctx.locale, ctx.task_id, settings.anthropic_max_turns)
+            evidence_hooks = execution_hooks(
+                ctx.locale, ctx.task_id, ctx.temp_dir,
+                source_context=settings.agent_evidence_source_context_enabled is True,
+                final_review=evidence_review,
+            )
 
         def _make_options(endpoint: Optional[Any]) -> Any:
             return build_options(

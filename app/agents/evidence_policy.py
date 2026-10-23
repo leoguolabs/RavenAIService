@@ -18,14 +18,16 @@ _ATTACHMENT_FIELDS = ("log_id", "filename", "path", "kind")
 _CATALOG_FIELDS = ("id", "project_code", "project_name", "project_card", "has_repo", "enabled_agent_keys")
 
 
-def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, final_review=None) -> dict:
+def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, source_context: bool = False, final_review=None) -> dict:
     from claude_agent_sdk import HookMatcher
     from app.agents.evidence_context import SourceContextEnricher
 
     if not workspace:
         return {}
-    enricher = SourceContextEnricher(workspace, task_id, locale)
-    hooks = {"PostToolUse": [HookMatcher(matcher="Bash", hooks=[enricher.after_tool])]}
+    hooks = {}
+    if source_context:
+        enricher = SourceContextEnricher(workspace, task_id, locale)
+        hooks["PostToolUse"] = [HookMatcher(matcher="Bash", hooks=[enricher.after_tool])]
     if final_review is not None:
         hooks["Stop"] = [HookMatcher(hooks=[final_review.before_stop])]
     return hooks
