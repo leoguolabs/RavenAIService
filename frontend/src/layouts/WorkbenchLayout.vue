@@ -9,6 +9,8 @@ import { useChatSessionStore } from '@/stores/chatSession'
 import { useConversationRunsStore } from '@/stores/conversationRuns'
 import { useAnnouncementStore } from '@/stores/announcement'
 import { userApi } from '@/api/user'
+import { adminToken } from '@/api/admin'
+import { setAdminIdentity } from '@/composables/useAdminScope'
 import type { ChatSessionSummary, UserProfileRole } from '@/types'
 import {
   firstRegistrationErrorField,
@@ -262,6 +264,9 @@ const handleSaveProfile = async () => {
 
 const goToAdminConsole = () => {
   showUserMenu.value = false
+  // Enter as the current user and let the router apply their project scope.
+  adminToken.clear()
+  setAdminIdentity(userStore.adminIdentity)
   router.push('/admin')
 }
 
@@ -432,6 +437,10 @@ watch(isLoggedIn, async (loggedIn) => {
     sessionStore.reset()
     announcementStore.reset()
   }
+})
+
+watch(showUserMenu, (open) => {
+  if (open) userStore.refreshAdminAccess()
 })
 
 watch(() => appStore.loginModalRequest, (val) => {
@@ -840,7 +849,7 @@ const handleUserLogout = () => {
               </div>
             </div>
             <button
-              v-if="isAdmin"
+              v-if="userStore.canAccessAdmin"
               class="rw-user-menu-item"
               @click="goToAdminConsole"
             >

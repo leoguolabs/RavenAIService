@@ -2,6 +2,7 @@ import axios from 'axios'
 import { API_BASE_URL, localeHeaderInterceptor } from './index'
 import type {
   ApiResponse,
+  AdminIdentity,
   UserAuthPayload,
   UserProfile,
   UserProfileRole,
@@ -155,6 +156,9 @@ export const userApi = {
     userClient.post('/api/v1/users/auth/register', payload),
 
   me: (): Promise<ApiResponse<UserProfile>> => userClient.get('/api/v1/users/auth/me'),
+
+  // Probe the signed-in user's scope, even if a legacy admin session also exists.
+  adminIdentity: (): Promise<ApiResponse<AdminIdentity>> => userClient.get('/admin/auth/me'),
 
   updateProfile: (payload: UserProfileUpdatePayload): Promise<ApiResponse<UserProfile>> =>
     userClient.patch('/api/v1/users/auth/me', payload),

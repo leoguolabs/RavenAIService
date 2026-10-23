@@ -129,4 +129,32 @@ describe('userToken persistence', () => {
     expect(window.sessionStorage.getItem('raven_admin_token')).toBeNull()
     expect(adminToken.get()).toBe('admin-user-token')
   })
+
+  it('probes workbench admin access with the current user instead of a legacy admin token', async () => {
+    vi.resetModules()
+    const axios = (await import('axios')).default
+    const previousAdapter = axios.defaults.adapter
+    const adapter = vi.fn(async (config) => ({
+      data: { success: true, data: { access_level: 'project_member' } },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    }))
+    axios.defaults.adapter = adapter
+    try {
+      const { userApi, userToken } = await import('@/api/user')
+      userToken.set('current-member-token')
+      window.sessionStorage.setItem('raven_admin_token', 'legacy-admin-token')
+
+      await userApi.adminIdentity()
+
+      expect(adapter).toHaveBeenCalledTimes(1)
+      const config = adapter.mock.calls[0][0]
+      expect(config.url).toBe('/admin/auth/me')
+      expect(config.headers.get('Authorization')).toBe('Bearer current-member-token')
+    } finally {
+      axios.defaults.adapter = previousAdapter
+    }
+  })
 })

@@ -37,6 +37,21 @@ The admin frontend SHALL hide every global admin navigation item for project-mem
 - **THEN** the visible admin navigation contains the project repository entry
 - **AND** the visible admin navigation does not contain prompts, users, releases, agent Skills, model settings, or metrics
 
+#### Scenario: Project member enters from the workbench user menu
+- **WHEN** an authenticated project member opens the bottom-left workbench user menu
+- **THEN** the menu checks the current user's admin identity and shows the admin console entry
+- **AND** selecting the entry sends the user to their scoped project repository area
+- **AND** a previously stored legacy admin session does not replace the current user's scope
+
+#### Scenario: Membership changes apply without signing in again
+- **WHEN** a signed-in user is added to an enabled project or loses their last enabled project membership
+- **AND** the user opens the workbench user menu again
+- **THEN** the admin entry reflects the current backend authorization without requiring another login
+
+#### Scenario: Ordinary user does not see the admin entry
+- **WHEN** a non-admin user with no enabled project memberships opens the workbench user menu
+- **THEN** the admin console entry is hidden
+
 #### Scenario: Project member admin home redirects to projects
 - **WHEN** a project-member admin navigates to `/admin`
 - **THEN** the frontend routes the user to `/admin/project-repos`
