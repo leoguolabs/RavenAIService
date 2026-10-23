@@ -60,6 +60,41 @@ class BenchmarkEvidenceTests(unittest.TestCase):
         self.assertEqual(result["complete_timing_pairs"], 0)
         self.assertEqual(len(result["failures"]), 1)
         self.assertNotIn("median_reduction", result)
+        self.assertEqual(result["all_terminal_timing"]["pairs"], 1)
+        self.assertEqual(result["outcomes"]["candidate"]["failure_rate"], 1)
+        self.assertFalse(result["timing_target_met"])
+        self.assertFalse(result["eligible_for_acceptance"])
+
+    def test_fast_failures_cannot_pass_target_among_twenty_faster_successes(self):
+        for index in range(21):
+            for arm in ("baseline", "candidate"):
+                path = self.root / f"runs/trial/case-{index:02d}" / arm / "result.json"
+                path.parent.mkdir(parents=True)
+                failed = index == 20 and arm == "candidate"
+                server = {"status": "done", "error": "max turns"} if failed else {
+                    "status": "done", "result": {"status": "ok"},
+                }
+                path.write_text(json.dumps({"server": server, "observation_timing_valid": True,
+                                            "end_to_end_seconds": 1 if failed else 100 if arm == "baseline" else 20}))
+        summarize(self.root, "trial")
+        result = json.loads((self.root / "runs/trial/summary.json").read_text())
+        self.assertEqual(result["complete_timing_pairs"], 20)
+        self.assertEqual(result["all_terminal_timing"]["pairs"], 21)
+        self.assertGreater(result["median_reduction"], .30)
+        self.assertEqual(result["outcomes"]["candidate"]["failure"], 1)
+        self.assertFalse(result["timing_target_met"])
+
+    def test_failed_recovered_run_retains_both_failure_and_invalid_timing(self):
+        path = self.root / "runs/trial/case-01/candidate/result.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"server": {"status": "done", "error": "timeout"},
+                                    "observation_timing_valid": False}))
+        summarize(self.root, "trial")
+        result = json.loads((self.root / "runs/trial/summary.json").read_text())
+        self.assertEqual(result["outcomes"]["baseline"]["missing"], 1)
+        self.assertEqual(result["outcomes"]["candidate"]["failure"], 1)
+        self.assertEqual(result["outcomes"]["candidate"]["invalid_timing"], 1)
+        self.assertEqual(result["all_terminal_timing"]["pairs"], 0)
 
 
 if __name__ == "__main__":

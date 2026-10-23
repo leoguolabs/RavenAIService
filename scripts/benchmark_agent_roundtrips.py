@@ -320,32 +320,68 @@ def run_trials(root: Path, args) -> None:
 
 def summarize(root: Path, label: str) -> None:
     pairs = []
+    terminal_times = []
     failures = []
     incomplete = []
+    outcomes = {arm: {"success": 0, "failure": 0, "missing": 0, "invalid_timing": 0}
+                for arm in ("baseline", "candidate")}
     for directory in sorted((root / "runs" / label).glob("case-*")):
         arms = {}
+        all_arms = {}
         for arm in ("baseline", "candidate"):
             path = directory / arm / "result.json"
             if not path.exists():
+                outcomes[arm]["missing"] += 1
                 incomplete.append({"case": directory.name, "arm": arm, "reason": "no terminal result"})
                 continue
             result = json.loads(path.read_text())
             server = result["server"]
-            if server.get("status") != "done" or server.get("error") or (server.get("result") or {}).get("status") != "ok":
+            succeeded = (server.get("status") == "done" and not server.get("error")
+                         and (server.get("result") or {}).get("status") == "ok")
+            outcomes[arm]["success" if succeeded else "failure"] += 1
+            if not succeeded:
                 failures.append({"case": directory.name, "arm": arm, "status": server.get("status"), "error": server.get("error")})
-            elif result.get("observation_timing_valid"):
-                arms[arm] = result["end_to_end_seconds"]
+            duration = result.get("end_to_end_seconds")
+            if (result.get("observation_timing_valid") and type(duration) in (int, float)
+                    and math.isfinite(duration) and duration >= 0):
+                all_arms[arm] = duration
+                if succeeded:
+                    arms[arm] = duration
             else:
+                outcomes[arm]["invalid_timing"] += 1
                 incomplete.append({"case": directory.name, "arm": arm, "reason": "observation timing invalid after reconnect"})
+        if len(all_arms) == 2:
+            terminal_times.append({"case": directory.name, **all_arms})
         if len(arms) == 2:
             pairs.append({"case": directory.name, **arms})
     report = {"label": label, "complete_timing_pairs": len(pairs), "failures": failures, "incomplete": incomplete, "pairs": pairs,
-              "quality_acceptance": "pending independent evidence review"}
+              "metric_basis": "Successful paired analyses only; inspect all-terminal timing and failure rates before interpreting reduction.",
+              "outcomes": outcomes, "quality_acceptance": "pending independent evidence review",
+              "eligible_for_acceptance": False}
+    for counts in outcomes.values():
+        terminal_count = counts["success"] + counts["failure"]
+        counts["failure_rate"] = counts["failure"] / terminal_count if terminal_count else None
+    # A quick failure is not a faster answer. Show its time separately instead
+    # of either hiding failed runs or allowing them to establish a speedup.
+    report["all_terminal_timing"] = {
+        "pairs": len(terminal_times), "includes_failures": True,
+        "interpretation": "Time until termination, not time to a valid answer; never establishes optimization acceptance.",
+    }
+    if terminal_times:
+        for arm in ("baseline", "candidate"):
+            times = sorted(p[arm] for p in terminal_times)
+            report["all_terminal_timing"][arm] = {
+                "median": statistics.median(times), "p90": times[math.ceil(len(times) * .9) - 1],
+            }
     if pairs:
         for arm in ("baseline", "candidate"):
             times = sorted(p[arm] for p in pairs)
             report[arm] = {"median": statistics.median(times), "p90": times[math.ceil(len(times) * .9) - 1]}
         report["median_reduction"] = 1 - report["candidate"]["median"] / report["baseline"]["median"]
+    report["timing_target_met"] = (
+        len(pairs) >= 20 and not failures and not incomplete
+        and report.get("median_reduction", 0) >= .30
+    )
     write_json(root / "runs" / label / "summary.json", report)
     print(json.dumps({k: v for k, v in report.items() if k != "pairs"}, ensure_ascii=False), flush=True)
 

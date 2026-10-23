@@ -7,6 +7,10 @@ Acceptance SHALL include at least 20 paired timing rounds using unchanged produc
 - **WHEN** either arm fails or times out
 - **THEN** its evidence is retained and the pair is not silently excluded to improve the reported speedup
 
+#### Scenario: Failed runs terminate quickly
+- **WHEN** a failed analysis terminates sooner than successful analyses
+- **THEN** the report includes its duration in a separate all-terminal timing distribution and reports each arm's failure rate, while successful-pair timing is explicitly labeled and no failing cohort passes the timing target
+
 ### Requirement: Independent quality verification
 After optimization, at least 10 distinct production logs SHALL complete analysis with retained baseline/candidate answers and review of conclusions, citations, attachment coverage and expressed certainty. Material changes or unresolved checks SHALL prevent acceptance.
 
