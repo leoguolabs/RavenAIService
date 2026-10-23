@@ -33,6 +33,13 @@ def _integer(value: Any, name: str, low: int, high: int) -> int:
     return value
 
 
+def _strip_line_ending(raw: str) -> str:
+    """Remove one LF/CRLF terminator; preserve embedded or standalone CR."""
+    if raw.endswith("\r\n"):
+        return raw[:-2]
+    return raw[:-1] if raw.endswith("\n") else raw
+
+
 def read_page(root: Path, request: dict) -> dict:
     path = _path(root, request.get("path"))
     if not path.is_file():
@@ -47,14 +54,16 @@ def read_page(root: Path, request: dict) -> dict:
     with path.open("rb") as stream:
         if b"\x00" in stream.read(8192):
             raise ValueError("binary file; use a format-aware native tool")
-    with path.open(encoding="utf-8", errors="replace") as stream:
+    # Match ripgrep/native line numbers. Universal newline mode incorrectly
+    # treats terminal progress CR characters as additional numbered lines.
+    with path.open(encoding="utf-8", errors="replace", newline="\n") as stream:
         for number, raw in enumerate(stream, 1):
             if number < start:
                 continue
             if number >= start + count or budget == 0:
                 next_request = {"path": relative, "start_line": number, "line_count": count}
                 break
-            text = raw.rstrip("\r\n")
+            text = _strip_line_ending(raw)
             offset = column if number == start else 0
             if offset > len(text):
                 raise ValueError("column is beyond the requested line")
@@ -122,7 +131,7 @@ async def search_page(root: Path, request: dict) -> dict:
             # rg does not follow directory symlinks; validate explicit targets and
             # returned filenames as well, before exposing their contents.
             safe_path = _path(root, filename).relative_to(root).as_posix()
-            text = text.rstrip("\r\n")
+            text = _strip_line_ending(text)
             byte_offset = data["submatches"][0]["start"]
             first_match = len(text.encode("utf-8")[:byte_offset].decode("utf-8", errors="replace"))
             begin = max(0, first_match - 100) if len(text) > 600 else 0

@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import shlex
 
-from app.agents.evidence_tools import read_page
+from app.agents.evidence_tools import _strip_line_ending, read_page
 
 logger = logging.getLogger(__name__)
 _SOURCE_SUFFIXES = {".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".py", ".go", ".rs", ".js", ".ts", ".tsx", ".jsx", ".java", ".sh"}
@@ -145,7 +145,7 @@ class SourceContextEnricher:
             explicit.update(self._source(token, bases))
         contents: dict[Path, list[str]] = {}
         windows = []
-        for raw in stdout[:200_000].splitlines()[:300]:
+        for raw in stdout[:200_000].split("\n")[:300]:
             line = _ANSI.sub("", raw)
             match = _NAMED.match(line)
             if match:
@@ -160,7 +160,8 @@ class SourceContextEnricher:
             verified = []
             for path in candidates:
                 if path not in contents:
-                    contents[path] = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                    with path.open(encoding="utf-8", errors="replace", newline="\n") as stream:
+                        contents[path] = [_strip_line_ending(row) for row in stream]
                 lines = contents[path]
                 if 1 <= number <= len(lines) and lines[number - 1].strip() == text.strip():
                     verified.append(path)

@@ -34,6 +34,10 @@ Batch tools SHALL accept only workspace-contained read operations, preserve per-
 - **WHEN** a query uses lookaround or backreferences and ripgrep has PCRE2 support
 - **THEN** the tool selects the compatible engine without a failed-query model round trip, retaining the same query timeout and workspace bounds
 
+#### Scenario: Terminal carriage returns in a log
+- **WHEN** a file contains standalone carriage returns or Unicode separator characters within LF-delimited lines
+- **THEN** searches, subsequent reads and source verification use the same native LF line numbers and preserve those characters within the returned line
+
 ### Requirement: Automatic source context for native searches
 When efficiency is enabled, successful line-number source searches MAY receive bounded additional source excerpts without an extra model request. The server SHALL verify that each source path is inside a workspace repository and that its referenced line matches the search output. Original tool outputs, tool access, total turn budget, necessary retries and evidence requirements SHALL remain unchanged. Added-context state SHALL be isolated per run.
 

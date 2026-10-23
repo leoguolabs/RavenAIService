@@ -35,6 +35,33 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
             request = result["next_request"]
         self.assertEqual(list(restored.values()), original)
 
+    @unittest.skipUnless(shutil.which("rg"), "ripgrep required")
+    async def test_search_and_read_agree_with_native_lf_lines_and_keep_control_characters(self):
+        expected = ["first\rprogress", "second", "third\u2028still\rdata", "last\r"]
+        (self.root / "terminal.log").write_bytes(
+            "first\rprogress\nsecond\r\nthird\u2028still\rdata\nlast\r".encode()
+        )
+        result = await run_batch(str(self.root), [{"path": "terminal.log", "pattern": "progress|second|still|last"}], search=True)
+        matches = result["results"][0]["matches"]
+        self.assertEqual([m["line"] for m in matches], [1, 2, 3, 4])
+        self.assertEqual([m["text"] for m in matches], expected)
+        for match, text in zip(matches, expected):
+            page = read_page(self.root, {**match["read_request"], "line_count": 1})
+            self.assertEqual(page["lines"], [{"line": match["line"], "column": 0, "text": text}])
+
+    async def test_long_line_continuation_preserves_embedded_carriage_returns(self):
+        original = "进度\r" * MAX_READ_CHARS
+        (self.root / "progress.log").write_bytes(original.encode())
+        request = {"path": "progress.log", "line_count": 1}
+        restored = ""
+        while request:
+            page = read_page(self.root, request)
+            self.assertEqual(page["lines"][0]["line"], 1)
+            self.assertEqual(page["lines"][0]["column"], len(restored))
+            restored += page["lines"][0]["text"]
+            request = page["next_request"]
+        self.assertEqual(restored, original)
+
     async def test_read_errors_do_not_suppress_valid_batch_items(self):
         (self.root / "good").write_text("evidence")
         result = await run_batch(str(self.root), [

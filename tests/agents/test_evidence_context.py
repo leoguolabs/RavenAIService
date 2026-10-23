@@ -51,6 +51,20 @@ async def test_verified_search_expands_context_without_rewriting_original_result
 
 
 @pytest.mark.asyncio
+async def test_source_verification_and_context_use_native_lf_line_numbers(workspace):
+    (workspace / "repo/first.c").write_bytes("banner\rprogress\nmatch\u2028tail\rdata\nlast\r\n".encode())
+    result = windows(await SourceContextEnricher(str(workspace)).after_tool(
+        event("repo/first.c:2:match\u2028tail\rdata\n"), "1", {}
+    ))[0]
+    assert result["search_match_line"] == 2
+    assert result["lines"] == [
+        {"line": 1, "column": 0, "text": "banner\rprogress"},
+        {"line": 2, "column": 0, "text": "match\u2028tail\rdata"},
+        {"line": 3, "column": 0, "text": "last"},
+    ]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("command", ["rg -n target repo/first.c", "cd repo && rg -n target first.c | head", "grep -n target repo/first.c"])
 async def test_single_file_output_without_filename_and_explicit_cd(workspace, command):
     hook = SourceContextEnricher(str(workspace))
