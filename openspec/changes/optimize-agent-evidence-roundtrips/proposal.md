@@ -5,6 +5,7 @@ Production traces show minutes of Agent execution with only seconds spent in too
 ## What Changes
 
 - Add an opt-in execution policy for Log Analysis and Project Expert with a server-prepared, sanitized startup snapshot and bounded batch search/read tools.
+- Commit chat exchanges before optional title generation to remove the independently reproduced SQLite writer contention with title usage metrics. Report this post-Agent saving separately from round-trip improvements.
 - Preserve original tools, complete evidence access, output schema, required skills, project-fit checks, total turn budget, and provider routing safety boundaries.
 - Add a resumable local Docker benchmark with original production archives/questions, immutable input hashes and source revisions, alternating baseline/candidate runs, and durable full results/traces.
 - Run at least 20 paired timing rounds targeting a 30% median reduction, followed by at least 10 distinct production-log analyses with paired quality verification. No production deployment is included.

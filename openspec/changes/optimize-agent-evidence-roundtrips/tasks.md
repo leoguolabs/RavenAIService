@@ -9,6 +9,7 @@
 - [x] 2.1 Implement bounded workspace search/read batches with pagination and regression coverage.
 - [x] 2.2 Add opt-in sanitized startup snapshot and efficiency guidance to log/project Agents, preserving original behavior when disabled.
 - [x] 2.3 Verify provider compatibility, project selection, required skills and complete evidence access; update matching documentation.
+- [x] 2.4 Remove independently reproduced title-metrics writer contention after Agent completion, preserving answers and concurrent title edits; verify with real SQLite regression tests.
 
 ## 3. Performance and quality acceptance
 

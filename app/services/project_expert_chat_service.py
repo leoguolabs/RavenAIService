@@ -43,6 +43,7 @@ from app.config import settings
 from app.models.chat import ChatMessage, ImageAttachment
 from app.models.user import User
 from app.services import chat_image_store, ocr_service
+from app.services.agent_session_title import PendingSessionTitle, generate_after_commit
 from app.services.chat_history_service import chat_history_service
 
 logger = logging.getLogger(__name__)
@@ -710,7 +711,7 @@ class ProjectExpertChatService:
         try:
             async with db_manager.session_factory() as db:
                 try:
-                    await self._persist_exchange(
+                    pending_title = await self._persist_exchange(
                         db=db,
                         user_id=job.user_id,
                         session_id=job.session_id,
@@ -723,6 +724,7 @@ class ProjectExpertChatService:
                 except Exception:
                     await db.rollback()
                     raise
+            await generate_after_commit(pending_title, db_manager.session_factory)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "project-expert chat: failed to persist job result session_id=%s: %s",
@@ -999,8 +1001,8 @@ class ProjectExpertChatService:
         answer: str,
         project_code: Optional[str],
         images_json: Optional[str] = None,
-    ) -> None:
-        """Persist the user / assistant exchange. Caller owns commit/rollback."""
+    ) -> Optional[PendingSessionTitle]:
+        """Persist exchange; caller commits before generating the optional title."""
         user_content = question
         if project_code:
             user_content = f"{question}\n\n[项目专家] 项目: {project_code}"
@@ -1013,28 +1015,7 @@ class ProjectExpertChatService:
             title_hint=question,
             user_images_json=images_json,
         )
-        if (session.message_count or 0) <= 2:
-            try:
-                from app.services.ai_chat_service import ai_chat_service
-
-                title = await asyncio.wait_for(
-                    ai_chat_service.generate_session_title(
-                        user_content,
-                        answer,
-                        user_id=str(user_id) if user_id is not None else None,
-                        session_id=session_id,
-                    ),
-                    timeout=8,
-                )
-                if title:
-                    await chat_history_service.update_session_title(
-                        db,
-                        user_id=user_id,
-                        session_id=session_id,
-                        title=title,
-                    )
-            except Exception:
-                pass
+        return PendingSessionTitle.from_exchange(session, user_content, answer)
 
     def _load_context(
         self,

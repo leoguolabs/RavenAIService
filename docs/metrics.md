@@ -305,6 +305,13 @@ storage or Prometheus update failure is logged and counted
 chat, log analysis, project expert, package search, title generation, upload, or
 download operation to fail.
 
+Log Analysis and Project Expert commit and close the chat exchange transaction
+before generating the optional initial title. The title's independent usage
+transaction therefore does not wait behind a SQLite writer lock held by that
+same workflow. Title usage remains recorded; title failure cannot roll back a
+saved answer. End-to-end benchmarks report this post-Agent waiting separately
+from Agent/tool execution improvements.
+
 ## 6. Privacy contract
 
 The `metric_events` table and every export honor an **allowlist**:

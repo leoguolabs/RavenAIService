@@ -44,6 +44,7 @@ from app.models.chat import ChatMessage, ImageAttachment
 from app.models.log import LogLevel, LogMetadata, LogStatus, LogUploadRequest
 from app.models.user import User
 from app.services import chat_image_store, ocr_service
+from app.services.agent_session_title import PendingSessionTitle, generate_after_commit
 from app.services.chat_history_service import chat_history_service
 from app.services.log_service import log_service
 from app.utils.validation import file_validator
@@ -946,6 +947,7 @@ class LogAnalysisChatService:
             logger.warning("log-analysis chat: db not initialized; skipping persistence")
             return
 
+        pending_title = None
         try:
             async with db_manager.session_factory() as db:
                 try:
@@ -956,7 +958,7 @@ class LogAnalysisChatService:
                         question=job.question,
                     )
                     if job.remember and job.user_id is not None:
-                        await self._persist_exchange(
+                        pending_title = await self._persist_exchange(
                             db=db,
                             user_id=job.user_id,
                             session_id=job.session_id,
@@ -970,6 +972,7 @@ class LogAnalysisChatService:
                 except Exception:
                     await db.rollback()
                     raise
+            await generate_after_commit(pending_title, db_manager.session_factory)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "log-analysis chat: failed to persist job result session_id=%s: %s",
@@ -1378,8 +1381,8 @@ class LogAnalysisChatService:
         filename: Optional[str],
         locale: Optional[str] = None,
         images_json: Optional[str] = None,
-    ) -> None:
-        """Persist the user / assistant exchange. Caller owns commit/rollback."""
+    ) -> Optional[PendingSessionTitle]:
+        """Persist exchange; caller commits before generating the optional title."""
         user_content = question
         if filename:
             user_content = f"{question}\n\n[日志附件] {filename}"
@@ -1392,29 +1395,7 @@ class LogAnalysisChatService:
             title_hint=question,
             user_images_json=images_json,
         )
-        if (session.message_count or 0) <= 2:
-            try:
-                from app.services.ai_chat_service import ai_chat_service
-
-                title = await asyncio.wait_for(
-                    ai_chat_service.generate_session_title(
-                        user_content,
-                        answer,
-                        user_id=str(user_id) if user_id is not None else None,
-                        session_id=session_id,
-                        locale=locale,
-                    ),
-                    timeout=8,
-                )
-                if title:
-                    await chat_history_service.update_session_title(
-                        db,
-                        user_id=user_id,
-                        session_id=session_id,
-                        title=title,
-                    )
-            except Exception:
-                pass
+        return PendingSessionTitle.from_exchange(session, user_content, answer, locale)
 
     async def _save_analysis_result(
         self,

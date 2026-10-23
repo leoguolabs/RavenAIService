@@ -67,3 +67,14 @@ An enabled candidate MAY request one final evidence review within its existing S
 #### Scenario: Repeated stop or near turn cap
 - **WHEN** review has already been requested, stop_hook_active is true, or observed responses are near the unchanged turn cap
 - **THEN** the hook does not request another review or force early termination
+
+### Requirement: Title generation outside the answer writer transaction
+Log Analysis and Project Expert chat services SHALL commit their chat exchange before generating an optional initial title. Title metrics SHALL retain their independent persistence without waiting on an uncommitted exchange owned by the caller. This persistence correction SHALL NOT modify analysis text and its measured saving SHALL be reported separately from Agent execution improvements.
+
+#### Scenario: Title generation fails or is cancelled
+- **WHEN** title generation times out, fails or is cancelled after the exchange commits
+- **THEN** the saved question and answer remain durable with the existing title
+
+#### Scenario: User changes the session during title generation
+- **WHEN** the session is renamed, deleted, changes owner or receives another message before the title returns
+- **THEN** the generated title does not overwrite the newer session state
