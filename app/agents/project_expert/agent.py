@@ -431,7 +431,7 @@ class ProjectExpertAgent:
             from app.agents.evidence_policy import execution_hooks, snapshot_prompt
 
             system_prompt += snapshot_prompt(evidence_snapshot, ctx.locale)
-            evidence_hooks = execution_hooks(ctx.locale, ctx.task_id)
+            evidence_hooks = execution_hooks(ctx.locale, ctx.task_id, ctx.temp_dir)
 
         def _make_options(endpoint: Optional[Any]) -> Any:
             return build_options(

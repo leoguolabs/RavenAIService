@@ -26,13 +26,17 @@ Batch tools SHALL accept only workspace-contained read operations, preserve per-
 - **WHEN** a model submits several independent searches or file ranges
 - **THEN** the server executes them with bounded concurrency and returns separately attributed results in request order
 
-### Requirement: Non-blocking investigation checkpoints
-When efficiency is enabled, the Agent SHALL receive periodic execution feedback to batch independent checks and identify unresolved evidence gaps. Feedback SHALL keep original tool outputs, tool access, total turn budget, necessary retries and evidence requirements unchanged, without an additional model request. State SHALL be isolated per run.
+### Requirement: Automatic source context for native searches
+When efficiency is enabled, successful line-number source searches MAY receive bounded additional source excerpts without an extra model request. The server SHALL verify that each source path is inside a workspace repository and that its referenced line matches the search output. Original tool outputs, tool access, total turn budget, necessary retries and evidence requirements SHALL remain unchanged. Added-context state SHALL be isolated per run.
 
-#### Scenario: Long or repeated native-tool investigation
-- **WHEN** eight evidence calls complete or the same tool arguments recur
-- **THEN** the SDK supplies a context reminder while retaining the original result and allowing further investigation
+#### Scenario: Native search locates a source definition
+- **WHEN** a native line-number search returns a verified repository source reference
+- **THEN** the SDK can add a bounded surrounding excerpt with exact lines and continuation while retaining the original search result
+
+#### Scenario: Ambiguous or unsupported search output
+- **WHEN** a path escapes the repository, a line does not match, or output cannot be resolved unambiguously
+- **THEN** no excerpt is added for that reference and the original tool workflow remains available
 
 #### Scenario: Concurrent or subsequent run
 - **WHEN** another Agent run starts
-- **THEN** its counters and duplicate detection are independent of previous runs
+- **THEN** its added-context deduplication is independent of previous runs
