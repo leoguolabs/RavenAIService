@@ -118,6 +118,28 @@ def test_repeated_field_names_inside_answer_text_are_not_duplicate_keys():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("enabled,snapshot_available,scan_fails", [(False, True, False), (True, False, False), (True, True, False), (True, True, True)])
+async def test_log_overview_is_independent_opt_in_with_native_fallback(workspace_ctx, enabled, snapshot_available, scan_fails):
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+
+    snapshot = {"task": {}, "project_catalog": {"projects": [], "count": 0, "truncated": False}}
+    sdk = MagicMock()
+    sdk.query = _fake_query_ok
+    scan = MagicMock(side_effect=OSError("unavailable") if scan_fails else None, return_value={"format": "raven-log-overview-v1"})
+    with _patch_build_options() as options, _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch.dict("sys.modules", {"claude_agent_sdk": sdk}), \
+         patch("app.config.settings", MagicMock(anthropic_provider="yinhe", anthropic_model="test", anthropic_request_timeout_seconds=60, agent_evidence_efficiency_enabled=True, agent_evidence_log_overview_enabled=enabled)), \
+         patch("app.agents.evidence_policy.prepare_snapshot", AsyncMock(return_value=snapshot if snapshot_available else None)), \
+         patch("app.agents.evidence_tools.get_evidence_mcp_server", return_value={}), \
+         patch("app.agents.log_overview.collect_log_overview", scan):
+        result = await LogAnalysisAgent().run(workspace_ctx)
+    assert result["status"] == "ok"
+    assert scan.call_count == int(enabled and snapshot_available)
+    assert ("raven-log-overview-v1" in options.call_args.kwargs["system_prompt"]) == (enabled and snapshot_available and not scan_fails)
+    assert all(tool in options.call_args.kwargs["allowed_tools"] for tool in ("Bash", "Read", "Grep", "Glob"))
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("fenced", [False, True])
 async def test_corrupt_result_cannot_fall_back_to_plain_skill_answer(workspace_ctx, fenced):
     from app.agents.log_analysis.agent import LogAnalysisAgent

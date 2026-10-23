@@ -1319,6 +1319,14 @@ class LogAnalysisAgent:
             from app.agents.evidence_review import FinalEvidenceReview
 
             system_prompt += snapshot_prompt(evidence_snapshot, ctx.locale)
+            if settings.agent_evidence_log_overview_enabled is True:
+                from app.agents.log_overview import collect_log_overview, log_overview_prompt
+
+                try:
+                    overview = await asyncio.to_thread(collect_log_overview, ctx.temp_dir, ctx.logs_dir)
+                    system_prompt += log_overview_prompt(overview, ctx.locale)
+                except Exception:
+                    logger.warning("Log overview unavailable; retaining native evidence access")
             if settings.agent_evidence_final_review_enabled is True:
                 evidence_review = FinalEvidenceReview(ctx.locale, ctx.task_id, settings.anthropic_max_turns)
             evidence_hooks = execution_hooks(

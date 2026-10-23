@@ -167,6 +167,7 @@ class Settings(BaseSettings):
     # Independently opt in: added context/review failed the combined trial.
     agent_evidence_source_context_enabled: bool = False
     agent_evidence_final_review_enabled: bool = False
+    agent_evidence_log_overview_enabled: bool = False
 
     # 上下文压缩/记忆配置
     agent_compression_strategy: str = (

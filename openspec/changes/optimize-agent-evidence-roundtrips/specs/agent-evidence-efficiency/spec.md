@@ -61,6 +61,21 @@ Batch tools SHALL accept only workspace-contained read operations, preserve per-
 - **WHEN** a file contains standalone carriage returns or Unicode separator characters within LF-delimited lines
 - **THEN** searches, subsequent reads and source verification use the same native LF line numbers and preserve those characters within the returned line
 
+### Requirement: Optional deterministic log overview
+Log Analysis MAY append a bounded structural log overview only when its separate default-off switch and the main efficiency gate are enabled with a complete startup snapshot. The overview SHALL retain per-file boundaries, native LF references, scan coverage and explicit omissions, SHALL NOT claim semantic diagnosis or deduplicated events, and SHALL preserve native evidence access without additional model calls.
+
+#### Scenario: Original files are fully scanned
+- **WHEN** files fit the time, byte, line and preview budgets and remain unchanged
+- **THEN** the overview reports physical record counts and exact first/last sample locations without treating severity or frequency as a cause
+
+#### Scenario: Input or output exceeds the overview budget
+- **WHEN** a file is skipped, changes, has unrecognized lines, or exceeds a scan/preview limit
+- **THEN** the overview reports the corresponding coverage limits and does not imply missing results are absent from the originals
+
+#### Scenario: Overview fails or is disabled
+- **WHEN** the separate switch is disabled, the startup snapshot is unavailable or scanning raises an error
+- **THEN** the original native evidence workflow remains available without an overview
+
 ### Requirement: Automatic source context for native searches
 When efficiency and the separate source-context switch are enabled, successful line-number source searches MAY receive bounded additional source excerpts without an extra model request. The source-context switch SHALL default off. The server SHALL verify that each source path is inside a workspace repository and that its referenced line matches the search output. Original tool outputs, tool access, total turn budget, necessary retries and evidence requirements SHALL remain unchanged. Added-context state SHALL be isolated per run.
 
