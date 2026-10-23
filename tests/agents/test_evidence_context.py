@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from app.agents.evidence_context import MAX_SOURCE_BYTES, SourceContextEnricher
+from app.agents.evidence_context import MAX_CONTEXT_BYTES, MAX_SOURCE_BYTES, SourceContextEnricher
 from app.agents.evidence_policy import execution_hooks
-from app.agents.evidence_tools import MAX_READ_CHARS
+from app.agents.evidence_tools import MAX_READ_CHARS, read_page
 
 
 @pytest.fixture
@@ -25,7 +25,12 @@ def event(stdout, command="rg -n target repo", **extra):
 
 def windows(result):
     text = result["hookSpecificOutput"]["additionalContext"]
-    return json.loads(text.split("\n", 1)[1])["source_context"]
+    assert len(text.encode("utf-8")) <= MAX_CONTEXT_BYTES
+    result = json.loads(text.split("\n", 1)[1])["source_context"]
+    for window in result:
+        assert all(isinstance(line, list) and len(line) == 3 for line in window["lines"])
+        window["lines"] = [{"line": n, "column": c, "text": t} for n, c, t in window["lines"]]
+    return result
 
 
 @pytest.mark.asyncio
@@ -39,7 +44,10 @@ async def test_verified_search_expands_context_without_rewriting_original_result
     result = windows(result)[0]
     assert result["path"] == "repo/first.c" and result["search_match_line"] == 20
     assert result["lines"][0] == {"line": 12, "column": 0, "text": "line 12 first.c"}
-    assert result["has_more"] and result["next_request"]["start_line"] == 172
+    assert result["has_more"]
+    continuation = result["next_request"]
+    last = result["lines"][-1]
+    assert continuation["start_line"] == last["line"] + (not continuation.get("column", 0))
 
 
 @pytest.mark.asyncio
@@ -74,6 +82,38 @@ async def test_windows_and_characters_are_bounded_and_exact(workspace):
     for item in result:
         assert sum(len(line["text"]) for line in item["lines"]) <= MAX_READ_CHARS
         assert item["has_more"] and item["next_request"]["column"] > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("locale", ["zh", "en"])
+async def test_entire_utf8_payload_fits_sdk_and_continuations_lose_no_characters(workspace, locale):
+    source = '源代码\\"\t' * 2500
+    for name in ("first.c", "second.c"):
+        (workspace / "repo" / name).write_text("match\n" + source)
+    data = event("repo/first.c:1:match\nrepo/second.c:1:match")
+    result = windows(await SourceContextEnricher(str(workspace), locale=locale).after_tool(data, "1", {}))
+    assert len(result) == 2
+    for window in result:
+        chunks = [line["text"] for line in window["lines"] if line["line"] == 2]
+        continuation = window["next_request"]
+        while continuation:
+            page = read_page(workspace, continuation)
+            chunks.extend(line["text"] for line in page["lines"] if line["line"] == 2)
+            continuation = page["next_request"]
+        assert "".join(chunks) == source
+
+
+@pytest.mark.asyncio
+async def test_large_prefix_does_not_hide_match_or_deduplicate_unseen_source(workspace):
+    source = workspace / "repo/first.c"
+    source.write_text("天" * 12000 + "\nmatch\n" + "天" * 12000 + "\nlast")
+    hook = SourceContextEnricher(str(workspace))
+    first = windows(await hook.after_tool(event("repo/first.c:2:match"), "1", {}))[0]
+    assert first["lines"][0] == {"line": 2, "column": 0, "text": "match"}
+    assert first["next_request"]["start_line"] == 3
+    assert first["next_request"]["column"] > 0
+    second = windows(await hook.after_tool(event("repo/first.c:4:last"), "2", {}))[0]
+    assert second["lines"][0] == {"line": 4, "column": 0, "text": "last"}
 
 
 @pytest.mark.asyncio

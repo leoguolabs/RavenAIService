@@ -37,6 +37,10 @@ When efficiency is enabled, successful line-number source searches MAY receive b
 - **WHEN** a path escapes the repository, a line does not match, or output cannot be resolved unambiguously
 - **THEN** no excerpt is added for that reference and the original tool workflow remains available
 
+#### Scenario: Source excerpts exceed the SDK inline output budget
+- **WHEN** the encoded source context would exceed the complete hook payload budget
+- **THEN** the server returns exact bounded prefixes with character-column continuation, including UTF-8 and JSON overhead in the limit, and does not mark omitted or partial lines as fully covered
+
 #### Scenario: Concurrent or subsequent run
 - **WHEN** another Agent run starts
 - **THEN** its added-context deduplication is independent of previous runs
