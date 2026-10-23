@@ -15,6 +15,8 @@ from typing import Any
 MAX_BATCH = 8
 MAX_READ_CHARS = 8_000
 MAX_SEARCH_MATCHES = 40
+MAX_CONTEXT_MATCHES = 3
+MAX_SEARCH_CONTEXT_CHARS = 4_000
 SEARCH_TIMEOUT = 15
 TOOL_NAMES = ["mcp__evidence__search_evidence", "mcp__evidence__read_evidence"]
 
@@ -40,14 +42,28 @@ def _strip_line_ending(raw: str) -> str:
     return raw[:-1] if raw.endswith("\n") else raw
 
 
-def read_page(root: Path, request: dict) -> dict:
+def read_page(root: Path, request: dict, *, _budget: int = MAX_READ_CHARS) -> dict:
     path = _path(root, request.get("path"))
     if not path.is_file():
         raise ValueError("read requires a regular file")
-    start = _integer(request.get("start_line", 1), "start_line", 1, 10**9)
+    total_lines = None
+    if "tail_lines" in request:
+        if any(key in request for key in ("start_line", "column", "line_count")):
+            raise ValueError("tail_lines cannot be combined with start_line, column or line_count")
+        tail = _integer(request["tail_lines"], "tail_lines", 1, 2000)
+        total_lines = 0
+        last = b""
+        with path.open("rb") as stream:
+            while chunk := stream.read(64 * 1024):
+                total_lines += chunk.count(b"\n")
+                last = chunk[-1:]
+        total_lines += int(bool(last) and last != b"\n")
+        start = max(1, total_lines - tail + 1)
+    else:
+        start = _integer(request.get("start_line", 1), "start_line", 1, 10**9)
     column = _integer(request.get("column", 0), "column", 0, 10**9)
-    count = _integer(request.get("line_count", 80), "line_count", 1, 2000)
-    budget = MAX_READ_CHARS
+    count = _integer(request.get("line_count", 80) if total_lines is None else tail, "line_count", 1, 2000)
+    budget = _budget
     lines = []
     next_request = None
     relative = path.relative_to(root).as_posix()
@@ -76,8 +92,49 @@ def read_page(root: Path, request: dict) -> dict:
                     "column": offset + len(fragment), "line_count": count,
                 }
                 break
-    return {"path": relative, "encoding": "utf-8 (replacement on invalid bytes)",
-            "lines": lines, "has_more": next_request is not None, "next_request": next_request}
+    result = {"path": relative, "encoding": "utf-8 (replacement on invalid bytes)",
+              "lines": lines, "has_more": next_request is not None, "next_request": next_request}
+    if total_lines is not None:
+        result["total_lines"] = total_lines
+    return result
+
+
+def _search_context(root: Path, matches: list[dict], radius: int) -> dict:
+    """Read a bounded set of exact ranges in the same retrieval round trip.
+
+    Search matches are never dropped. Context is explicitly limited to the
+    first three matches on this page, and overlapping ranges are merged.
+    """
+    ranges = []
+    for match in matches[:MAX_CONTEXT_MATCHES]:
+        start, end = max(1, match["line"] - radius), match["line"] + radius
+        if ranges and ranges[-1][0] == match["path"] and start <= ranges[-1][2] + 1:
+            ranges[-1][2] = max(ranges[-1][2], end)
+        else:
+            ranges.append([match["path"], start, end])
+    budget = MAX_SEARCH_CONTEXT_CHARS
+    windows = []
+    for path, start, end in ranges:
+        request = {"path": path, "start_line": start, "line_count": end - start + 1}
+        window = {"path": path, "start_line": start, "end_line": end,
+                  "lines": [], "range_complete": False, "next_request": request}
+        if budget:
+            try:
+                page = read_page(root, request, _budget=budget)
+                window["lines"] = page["lines"]
+                budget -= sum(max(1, len(line["text"])) for line in page["lines"])
+                continuation = page["next_request"]
+                if continuation and continuation["start_line"] <= end:
+                    window["next_request"] = {**continuation, "line_count": end - continuation["start_line"] + 1}
+                else:
+                    window.update(range_complete=True, next_request=None)
+            except (OSError, ValueError) as exc:
+                # Context failure must not discard successful search matches.
+                window["error"] = str(exc)
+        windows.append(window)
+    return {"context_windows": windows,
+            "context_matches_requested": min(len(matches), MAX_CONTEXT_MATCHES),
+            "context_matches_not_expanded": max(0, len(matches) - MAX_CONTEXT_MATCHES)}
 
 
 async def search_page(root: Path, request: dict) -> dict:
@@ -87,6 +144,7 @@ async def search_page(root: Path, request: dict) -> dict:
     path = _path(root, request.get("path", "."))
     offset = _integer(request.get("offset", 0), "offset", 0, 10**9)
     limit = _integer(request.get("limit", 20), "limit", 1, MAX_SEARCH_MATCHES)
+    context_lines = _integer(request.get("context_lines", 0), "context_lines", 0, 40)
     executable = shutil.which("rg")
     if not executable:
         raise ValueError("ripgrep is unavailable; use native search tools")
@@ -168,10 +226,13 @@ async def search_page(root: Path, request: dict) -> dict:
     if not more and process.returncode not in (0, 1):
         raise ValueError(f"search failed ({process.returncode}): {error_text}")
     next_request = {**request, "offset": offset + len(matches)} if more else None
-    return {"matches": matches, "matching_lines_total": None if more else seen,
-            "matching_lines_at_least": seen, "complete": not more,
-            "next_request": next_request, "warning": error_text or None,
-            "scope": "text files; .git and symlinks excluded; pagination requires unchanged files"}
+    result = {"matches": matches, "matching_lines_total": None if more else seen,
+              "matching_lines_at_least": seen, "complete": not more,
+              "next_request": next_request, "warning": error_text or None,
+              "scope": "text files; .git and symlinks excluded; pagination requires unchanged files"}
+    if context_lines:
+        result.update(await asyncio.to_thread(_search_context, root, matches, context_lines))
+    return result
 
 
 async def run_batch(workspace: str, requests: list, *, search: bool) -> dict:
@@ -204,7 +265,10 @@ def encode_evidence(payload: dict) -> str:
     if "results" not in payload:
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     for result in payload["results"]:
-        for line in result.get("lines", []):
+        lines = list(result.get("lines", []))
+        for window in result.get("context_windows", []):
+            lines.extend(window.get("lines", []))
+        for line in lines:
             if set(line) != {"line", "column", "text"}:
                 return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         for match in result.get("matches", []):
@@ -224,6 +288,12 @@ def encode_evidence(payload: dict) -> str:
             # default explicit so even an empty search remains self-describing.
             encoded["read_match"] = {"path": "match.path", "start_line": "match.line", "line_count": 20}
             row["matches"] = [[match[key] for key in encoded["match_columns"]] for match in row["matches"]]
+        if "context_windows" in row:
+            encoded["line_columns"] = ["line", "column", "text"]
+            row["context_windows"] = [
+                {**window, "lines": [[line[key] for key in encoded["line_columns"]] for line in window["lines"]]}
+                for window in row["context_windows"]
+            ]
         encoded["results"].append(row)
     return json.dumps(encoded, ensure_ascii=False, separators=(",", ":"))
 
@@ -247,11 +317,15 @@ def get_evidence_mcp_server(workspace: str):
           "bounded excerpts and next_request when more matches exist. A partial page is not exhaustive. "
           "Regex engine auto-selects PCRE2 for lookaround/backreferences when available. "
           "Each match is a row described by match_columns; read_match gives the range template. "
-          "Group known independent questions in one call; use read_evidence for surrounding context.",
+          "Group known independent questions in one call. Set context_lines (0-40 lines each side) to retrieve "
+          "nearby evidence in this same call: first 3 matches per request, overlapping ranges merged, total 4000 "
+          "context characters per request. Unexpanded matches and range continuations are explicit. "
+          "Use read_evidence only for missing decisive context; range_complete never means whole-file coverage.",
           schema({"pattern": {"type": "string"}, "path": {"type": "string"},
                   "glob": {"type": "string"}, "literal": {"type": "boolean"},
                   "ignore_case": {"type": "boolean"}, "offset": {"type": "integer", "minimum": 0},
-                  "limit": {"type": "integer", "minimum": 1, "maximum": MAX_SEARCH_MATCHES}}, ["pattern"]))
+                  "limit": {"type": "integer", "minimum": 1, "maximum": MAX_SEARCH_MATCHES},
+                  "context_lines": {"type": "integer", "minimum": 0, "maximum": 40}}, ["pattern"]))
     async def search(args):
         return await invoke(args, True)
 
@@ -259,11 +333,13 @@ def get_evidence_mcp_server(workspace: str):
           "Read 1-8 independent UTF-8 file ranges together, with source line numbers. start_line is 1-based; "
           "column is a 0-based character offset for long-line continuation. Each range has an 8000-character "
           "budget; each line is a [line, column, text] row. Follow next_request to retrieve remaining content. "
-          "Original files remain available.",
+          "For a file tail, use tail_lines (1-2000) instead of start_line/column/line_count; it returns native LF line numbers "
+          "and total_lines, so no separate line-count request is needed. Original files remain available.",
           schema({"path": {"type": "string"}, "start_line": {"type": "integer", "minimum": 1},
                   "line_count": {"type": "integer", "minimum": 1, "maximum": 2000},
-                  "column": {"type": "integer", "minimum": 0}}, ["path"]))
+                  "column": {"type": "integer", "minimum": 0},
+                  "tail_lines": {"type": "integer", "minimum": 1, "maximum": 2000}}, ["path"]))
     async def read(args):
         return await invoke(args, False)
 
-    return create_sdk_mcp_server(name="evidence", version="1.1.0", tools=[search, read])
+    return create_sdk_mcp_server(name="evidence", version="1.2.0", tools=[search, read])

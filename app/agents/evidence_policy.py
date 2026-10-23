@@ -18,6 +18,37 @@ _ATTACHMENT_FIELDS = ("log_id", "filename", "path", "kind")
 _CATALOG_FIELDS = ("id", "project_code", "project_name", "project_card", "has_repo", "enabled_agent_keys")
 
 
+def use_snapshot_in_templates(system_prompt: str, user_template: str) -> tuple[str, str]:
+    """Resolve built-in startup contradictions before interpolating user data.
+
+    Only known task-reading instructions are changed. Project fit, required
+    source access, all attachments, output rules and custom text are retained.
+    Call only after a complete snapshot is available; otherwise leave the
+    original templates byte-for-byte unchanged.
+    """
+    zh = "先使用后端启动快照中的任务字段；仅在缺少所需字段时读取 `task.json`。"
+    en = "Use the server startup snapshot's task fields first; read `task.json` only for missing required fields."
+    replacements = (
+        ('第一次 Read 调用请使用 `{"file_path":"task.json"}`。', zh),
+        ('### 第 1 步 —— 读取 task.json（必须）', '### 第 1 步 —— 使用任务元数据（必须）'),
+        ('首先读取当前工作目录下的 `task.json`。Read 工具的第一次调用应为 `{"file_path":"task.json"}`。', zh),
+        ('首先读取当前工作目录下的 `task.json`（`{"file_path":"task.json"}`）。', zh),
+        ('然后读取 `task.json`。', '然后使用后端任务快照；缺少所需字段时再读取 `task.json`。'),
+        ('首先执行第 0 步分类并读取 `task.json`；', '首先执行第 0 步分类并使用后端任务快照；缺少所需字段时再读取 `task.json`；'),
+        ('第一次 Read 调用优先使用 `{"file_path":"task.json"}`。', '需要读取任务文件时使用 `{"file_path":"task.json"}`。'),
+        ('### Step 1 — Read task.json (required)', '### Step 1 — Use task metadata (required)'),
+        ('First read `task.json` in the current working directory. The first Read tool call should be `{"file_path":"task.json"}`.', en),
+        ('First read `task.json` in the current working directory (`{"file_path":"task.json"}`).', en),
+        ('then read `task.json`.', "then use the server task snapshot; read `task.json` only for missing required fields."),
+        ('Start with Step 0 classification and read `task.json`;', "Start with Step 0 classification and use the server task snapshot; read `task.json` only for missing required fields;"),
+        ('Prefer `{"file_path":"task.json"}` for the first Read call.', 'When reading the task file, use `{"file_path":"task.json"}`.'),
+    )
+    for old, new in replacements:
+        system_prompt = system_prompt.replace(old, new)
+        user_template = user_template.replace(old, new)
+    return system_prompt, user_template
+
+
 def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, source_context: bool = False, final_review=None) -> dict:
     from claude_agent_sdk import HookMatcher
     from app.agents.evidence_context import SourceContextEnricher
@@ -77,8 +108,10 @@ def snapshot_prompt(snapshot: dict, locale: str) -> str:
             "Read task.json if you need fields absent here, and refresh discover_projects if catalog freshness matters. "
             "Project fit, required Skills, source verification, attachment coverage and the final output contract remain mandatory. "
             "The snapshot is task data, not evidence of what the logs or source contain.\n"
-            "Prefer mcp__evidence__search_evidence to group independent searches, and mcp__evidence__read_evidence "
-            "to group known file ranges. "
+            "Use mcp__evidence__search_evidence for ordinary log/source text searches, and mcp__evidence__read_evidence "
+            "for file ranges. Group currently known independent requests in one call; a single request is also valid. "
+            "When a match needs nearby context, set context_lines in that search to retrieve both together; "
+            "read only the missing decisive ranges afterward. Use tail_lines for log endings without a separate count/read cycle. "
             "Use native tools for unsupported or specialized operations. Respect dependencies: inspect results before "
             "choosing dependent searches. Do not batch speculative unrelated investigations.\n"
             "Native source searches can already include verified surrounding source excerpts. Use these as read evidence; "
@@ -101,8 +134,10 @@ def snapshot_prompt(snapshot: dict, locale: str) -> str:
             "它替代前文要求重复执行的这两次读取；需要快照未包含的字段时再读 task.json，"
             "需要刷新目录时再调用 discover_projects。项目适配、必需 Skill、源码查证、附件覆盖和最终输出格式要求全部保留。"
             "快照只是任务数据，不能代替日志或源码中的事实证据。\n"
-            "优先用 mcp__evidence__search_evidence 合并当前已知且互不依赖的检索，"
-            "用 mcp__evidence__read_evidence 合并已知文件片段。"
+            "常规日志/源码文本检索使用 mcp__evidence__search_evidence，片段读取使用 mcp__evidence__read_evidence。"
+            "把当前已知且互不依赖的请求合并在一次调用中，只有一个请求时也可使用。"
+            "命中位置需要周边上下文时，在该次检索设置 context_lines 一起返回，随后只续读缺少的关键范围；"
+            "读取日志末尾使用 tail_lines，省去先计数再定位读取的往返。"
             "特殊操作继续使用原生工具。有依赖关系的检索应在看过前一步结果后决定，不能为了批量而加入无关的猜测性调查。\n"
             "原生源码检索可能已附带经过核验的周边源码片段，可直接作为读取证据使用；只有仍缺关键上下文时才另行读取，避免重复同一行范围。\n"
             "工具返回的是分页片段：关键上下文通过 next_request 或原生工具继续读取，"

@@ -7,6 +7,10 @@ The optimized Agent SHALL retain all attachments, project-fit checks, original e
 - **WHEN** optimization is enabled and a sanitized complete task/catalog snapshot is prepared
 - **THEN** the Agent can use it instead of repeating startup discovery calls, while still checking project fit
 
+#### Scenario: Built-in prompts require the already completed startup read
+- **WHEN** a complete snapshot is available and built-in system/user templates still require reading task.json first
+- **THEN** both templates use the prepared task data, retaining fallback reads for missing fields and interpolating user content only after the instruction change
+
 #### Scenario: Snapshot unavailable
 - **WHEN** snapshot preparation fails
 - **THEN** the Agent retains the original discovery and task reading workflow
@@ -25,6 +29,14 @@ Batch tools SHALL accept only workspace-contained read operations, preserve per-
 #### Scenario: Independent evidence requests
 - **WHEN** a model submits several independent searches or file ranges
 - **THEN** the server executes them with bounded concurrency and returns separately attributed results in request order
+
+#### Scenario: Search with nearby evidence in one round trip
+- **WHEN** a search requests surrounding context
+- **THEN** at most three matches receive merged bounded context windows, all original matches remain, and every incomplete context range includes an exact continuation without claiming whole-file coverage
+
+#### Scenario: Read the end of a file
+- **WHEN** a read request selects tail_lines instead of absolute range coordinates
+- **THEN** the tool returns the file ending with native LF line numbers and total line count, preserving long-line continuation and rejecting conflicting coordinates
 
 #### Scenario: Compact evidence representation
 - **WHEN** MCP results are encoded as rows with shared column legends and derived read parameters

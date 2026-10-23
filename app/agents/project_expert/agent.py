@@ -171,14 +171,6 @@ class ProjectExpertAgent:
         except Exception:
             pass
 
-        user_prompt = render_user_prompt(
-            user_prompt_template,
-            task_id=ctx.task_id,
-            workspace_dir=ctx.temp_dir,
-            question=ctx.metadata.get("question") or task_data.get("question", ""),
-            hints=ctx.metadata.get("hints") or task_data.get("hints", ""),
-        )
-
         # Resolve effective model before run for logging & result.
         # Endpoint selection happens here, not at build_options time: RUN_START
         # below names the model and is already streamed to the browser by the
@@ -245,10 +237,17 @@ class ProjectExpertAgent:
             if evidence_snapshot is not None:
                 mcp_servers["evidence"] = get_evidence_mcp_server(ctx.temp_dir)
                 allowed_tools.extend(TOOL_NAMES)
-                system_prompt = system_prompt.replace(
-                    "第一次 Read 调用请使用 `{\"file_path\":\"task.json\"}`。",
-                    "任务字段已由后文启动快照提供，仅在缺少所需字段时读取 task.json。",
-                )
+                from app.agents.evidence_policy import use_snapshot_in_templates
+
+                system_prompt, user_prompt_template = use_snapshot_in_templates(system_prompt, user_prompt_template)
+
+        user_prompt = render_user_prompt(
+            user_prompt_template,
+            task_id=ctx.task_id,
+            workspace_dir=ctx.temp_dir,
+            question=ctx.metadata.get("question") or task_data.get("question", ""),
+            hints=ctx.metadata.get("hints") or task_data.get("hints", ""),
+        )
 
         # 物化全部启用的 Skill 到 cwd/.claude/skills/<name>/，配合
         # setting_sources=["project"] 让 SDK 按官方约定发现 Skill。

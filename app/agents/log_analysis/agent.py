@@ -1055,15 +1055,6 @@ class LogAnalysisAgent:
                 "metadata.json 的项目发现并进入克隆与调查。\n"
             )
 
-        user_prompt = render_user_prompt(
-            user_prompt_template,
-            task_id=ctx.task_id,
-            workspace_dir=ctx.temp_dir,
-            question=ctx.metadata.get("question") or task_data.get("question", ""),
-            project_code=(task_data.get("repo_info") or {}).get("project_code") if isinstance(task_data.get("repo_info"), dict) else None,
-            hints=task_data.get("hints", ""),
-        )
-
         # Resolve effective model before run for logging & result.
         # Endpoint selection happens here, not at build_options time: RUN_START
         # below names the model and is already streamed to the browser by the
@@ -1131,10 +1122,18 @@ class LogAnalysisAgent:
             if evidence_snapshot is not None:
                 mcp_servers["evidence"] = get_evidence_mcp_server(ctx.temp_dir)
                 allowed_tools.extend(TOOL_NAMES)
-                system_prompt = system_prompt.replace(
-                    "第一次 Read 调用请使用 `{\"file_path\":\"task.json\"}`。",
-                    "任务字段已由后文启动快照提供，仅在缺少所需字段时读取 task.json。",
-                )
+                from app.agents.evidence_policy import use_snapshot_in_templates
+
+                system_prompt, user_prompt_template = use_snapshot_in_templates(system_prompt, user_prompt_template)
+
+        user_prompt = render_user_prompt(
+            user_prompt_template,
+            task_id=ctx.task_id,
+            workspace_dir=ctx.temp_dir,
+            question=ctx.metadata.get("question") or task_data.get("question", ""),
+            project_code=(task_data.get("repo_info") or {}).get("project_code") if isinstance(task_data.get("repo_info"), dict) else None,
+            hints=task_data.get("hints", ""),
+        )
 
         # 先按用户问题、提示和附件名筛选候选 Skill，再物化到工作区供 SDK
         # 按需调用。未命中时保持为空，不能回退为全部启用 Skill。
