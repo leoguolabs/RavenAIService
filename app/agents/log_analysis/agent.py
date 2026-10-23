@@ -298,11 +298,27 @@ def _parse_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
 
 
 def _extract_fenced_json(text: str) -> Optional[Dict[str, Any]]:
-    """Extract and parse the first ```json ... ``` block from text.
+    """Extract a fenced result or a complete, bare analysis JSON object.
 
     If the model emitted an opening fence but was truncated before the closing
-    fence, parse the completed JSON prefix as a best-effort recovery.
+    fence, parse the completed JSON prefix as a best-effort recovery. A provider
+    can omit the fence without changing the JSON payload; do not let the plain
+    Skill-answer fallback wrap that payload and discard its structured fields.
+    Bare objects must be complete and recognizable as an analysis result.
     """
+    stripped = (text or "").strip()
+    if stripped.startswith("{"):
+        try:
+            bare = json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if (
+                isinstance(bare, dict)
+                and isinstance(bare.get("status"), str)
+                and any(isinstance(bare.get(key), str) and bare[key].strip() for key in ("answer", "summary"))
+            ):
+                return bare
     m = re.search(r"```json\s*", text or "")
     if not m:
         return None

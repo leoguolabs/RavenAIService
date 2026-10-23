@@ -49,6 +49,42 @@ async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, e
     assert not any(name in ALLOWED_TOOLS for name in TOOL_NAMES)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fenced", [False, True])
+async def test_complete_result_keeps_structured_evidence_and_uncertainty(workspace_ctx, fenced):
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+
+    expected = {
+        "status": "ok", "question_type": "root_cause", "severity": "warn",
+        "answer": "Progress was observed; completion is unknown. Example: ```json {} ```",
+        "summary": "Completion is unknown.",
+        "root_cause_hypotheses": [{"hypothesis": "Driver failure", "evidence": ["log:test.log:17"]}],
+        "recommended_actions": ["Collect the missing terminal record"],
+        "related_keywords": ["driver"], "requires_code_fix": False, "proposed_fixes": [],
+    }
+
+    async def query(*args, **kwargs):
+        body = json.dumps(expected)
+        yield FakeResultMessage(result=f"```json\n{body}\n```" if fenced else body)
+
+    sdk = MagicMock()
+    sdk.query = query
+    with _patch_build_options(), _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch.dict("sys.modules", {"claude_agent_sdk": sdk}), \
+         patch("app.config.settings", MagicMock(anthropic_provider="yinhe", anthropic_model="test", anthropic_request_timeout_seconds=60, agent_evidence_efficiency_enabled=False)):
+        result = await LogAnalysisAgent().run(workspace_ctx)
+    for key, value in expected.items():
+        assert result[key] == value
+    assert "parse_warning" not in result
+
+
+def test_unfenced_non_analysis_or_incomplete_json_is_not_a_complete_result():
+    from app.agents.log_analysis.agent import _extract_fenced_json
+
+    assert _extract_fenced_json('{"rows": [1, 2]}') is None
+    assert _extract_fenced_json('{"status": "ok", "answer": "unfinished"') is None
+
+
 # ─────────────────────── Fake SDK Message Types ────────────────────
 
 @dataclass

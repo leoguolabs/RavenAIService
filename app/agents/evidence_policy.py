@@ -95,4 +95,9 @@ def snapshot_prompt(snapshot: dict, locale: str) -> str:
             "摘要、正文和建议的确定程度必须一致，不能先断言成功、再在末尾降为可能；使用间接推断时应就地标明推断及其关联假设。"
             "本策略没有降低总轮数限制，也不强制提前终止。\n"
         )
-    return guidance + "\n```json\n" + json.dumps(snapshot, ensure_ascii=False) + "\n```\n"
+    contract = (
+        "The snapshot above is input data. Your final answer must still use the original workflow's fenced JSON result schema."
+        if locale == "en" else
+        "上方快照只是输入数据。最终答复仍须使用原工作流规定的 JSON 围栏和结果字段，不能把启动快照当作答复格式。"
+    )
+    return guidance + "\n```json\n" + json.dumps(snapshot, ensure_ascii=False) + "\n```\n" + contract

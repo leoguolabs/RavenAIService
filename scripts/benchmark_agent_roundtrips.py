@@ -243,7 +243,8 @@ def run_one(root: Path, case: dict, arm: str, label: str, endpoint: dict, projec
         if status["status"] == "not_found":
             raise RuntimeError(f"Existing run {state['session_id']} is not cached; reconcile persisted DB/trace before retrying")
         if status["status"] == "done":
-            write_json(result_path, {"state": state, "resumed": True, "observation_timing_valid": False, "server": status})
+            write_json(result_path, {"state": state, "resumed": True, "observation_timing_valid": False,
+                                     "server": status, "checkout_evidence": checkout_evidence(endpoint, status, directory)})
             return json.loads(result_path.read_text())
         fields = {"session_id": state["session_id"], "message": ""}
         files = []
@@ -289,8 +290,10 @@ def run_trials(root: Path, args) -> None:
     projects = {r["project_code"]: r["id"] for r in json.loads((root / "production-projects.json").read_text())}
     directory = root / "runs" / args.label
     directory.mkdir(parents=True, exist_ok=True)
-    with (directory / "runner.lock").open("w") as lock:
+    with (directory / "runner.lock").open("a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock.seek(0)
+        lock.truncate()
         lock.write(str(os.getpid()))
         lock.flush()
         environment = json.loads((root / "environment.json").read_text())
@@ -305,6 +308,9 @@ def run_trials(root: Path, args) -> None:
             if image != environment[arm]["image_id"]:
                 raise RuntimeError(f"{arm} image no longer matches the frozen environment")
         for index, case in enumerate(cases):
+            if (directory / "stop-after-pair").exists():
+                print(json.dumps({"event": "stopped_between_pairs", "next_case": case["case_id"]}), flush=True)
+                return
             arms = args.arms.split(",")
             if index % 2:
                 arms.reverse()
