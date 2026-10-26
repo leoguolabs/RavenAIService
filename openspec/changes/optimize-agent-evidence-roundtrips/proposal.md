@@ -8,6 +8,7 @@ Production traces show minutes of Agent execution with only seconds spent in too
 - Commit chat exchanges before optional title generation to remove the independently reproduced SQLite writer contention with title usage metrics. Report this post-Agent saving separately from round-trip improvements.
 - Publish the saved answer's terminal state before optional title generation, retaining the same background job and guarded title update so SDK timeout cleanup does not hold the answer stream open.
 - Restrict sidebar run-status queries to metadata so polling does not hydrate full historical traces or answers; preserve ownership, latest-run selection and active-run overlays.
+- Omit empty SDK token-progress trace notices while preserving actual reasoning/answer text, evidence, routing, cancellation and idle heartbeats; measure transport savings separately from model latency.
 - Preserve original tools, complete evidence access, output schema, required skills, project-fit checks, total turn budget, and provider routing safety boundaries.
 - Add a resumable local Docker benchmark with original production archives/questions, immutable input hashes and source revisions, alternating baseline/candidate runs, and durable full results/traces.
 - Run at least 20 paired timing rounds targeting a 30% median reduction, followed by at least 10 distinct production-log analyses with paired quality verification. No production deployment is included.

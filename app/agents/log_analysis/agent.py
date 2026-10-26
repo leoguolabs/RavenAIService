@@ -910,15 +910,21 @@ def _emit_for_message(message: Any, *, state: _RunState) -> None:
                 subtype=str(subtype),
                 detail=_truncate_for_log(str(summary_text)) if summary_text else None,
             )
-        state.emit(
-            build_event(
-                SYSTEM_NOTICE,
-                task_id=state.task_id,
-                seq_counter=state.seq_counter,
-                subtype=str(subtype),
-                detail=detail,
+        # SDK token-progress messages can arrive once per reasoning token.
+        # An empty notice carries no text or counter on our wire protocol;
+        # retaining thousands of these only inflates SSE, replay and storage.
+        # Keep descriptive notices and actual ThinkingBlock/text deltas. The
+        # caller still observes every SDK message for cancellation/routing.
+        if str(subtype) != "thinking_tokens" or detail:
+            state.emit(
+                build_event(
+                    SYSTEM_NOTICE,
+                    task_id=state.task_id,
+                    seq_counter=state.seq_counter,
+                    subtype=str(subtype),
+                    detail=detail,
+                )
             )
-        )
 
     raw_result = getattr(message, "result", None)
     if isinstance(raw_result, str) and raw_result:

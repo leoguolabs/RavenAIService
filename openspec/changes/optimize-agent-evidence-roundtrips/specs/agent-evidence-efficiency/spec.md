@@ -1,5 +1,16 @@
 ## ADDED Requirements
 
+### Requirement: Avoid empty token-progress trace amplification
+The shared SDK trace translator SHALL omit `thinking_tokens` system notices with empty translated detail while preserving actual thinking and answer text, tool evidence, descriptive notices, other system subtypes and terminal parsing. It SHALL NOT filter SDK messages before routing or cancellation checks, change model inputs, or remove idle transport heartbeats.
+
+#### Scenario: Per-token progress floods a run
+- **WHEN** SDK progress messages contain no translated detail
+- **THEN** they do not allocate trace sequence numbers, enter replay/persistence buffers or produce SSE frames, while the same useful evidence and final answer remain available
+
+#### Scenario: Cancellation during progress or a descriptive notice
+- **WHEN** cancellation is requested while only token progress is arriving, or a progress message contains a description
+- **THEN** cancellation is still checked on that SDK message and the descriptive notice remains eligible for normal masked emission
+
 ### Requirement: Independently gated verified SDK context capacity
 Log Analysis MAY use a separately gated, default-off SDK context-capacity annotation for the verified official DeepSeek Flash endpoint and exact model alias. Resolution SHALL follow the selected endpoint and caller override, preserve the outgoing model and generation parameters, and leave unknown endpoints/models and global settings unchanged. It SHALL NOT require a prepared evidence snapshot or change other Agents.
 

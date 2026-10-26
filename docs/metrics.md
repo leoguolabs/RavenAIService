@@ -214,6 +214,10 @@ Notes:
   `packages.counts_by_project` for project distribution.
 - Pre-existing trace collectors `ai_analysis_trace_events_emitted_total{kind}`
   and `ai_analysis_trace_redis_bytes` remain unchanged.
+  Empty `thinking_tokens` notices are omitted before trace emission, so new
+  runs can have lower trace counts/bytes with identical model usage. This
+  filtering does not alter token accumulation, tool-call counts or invocation
+  metrics; it must not be interpreted as a reduction in model calls or tokens.
 
 ---
 

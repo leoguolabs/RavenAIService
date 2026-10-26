@@ -364,6 +364,53 @@ class TestEmitterEventSequence:
         assert any(ev["type"] == "thinking_end" for ev in thinking_events)
 
 
+def test_empty_token_progress_does_not_change_answer_or_evidence(workspace_ctx):
+    """A token-progress flood must not occupy replay/storage or lose content."""
+    def query_with_progress(count):
+        async def fake_query(*args, **kwargs):
+            yield FakeSystemMessage(subtype="init", data={})
+            for i in range(count):
+                yield FakeSystemMessage(subtype="thinking_tokens", data={"thinking_tokens": i})
+            yield FakeContentMessage(
+                content=[FakeThinkingBlock(thinking="检查日志中的反例。")],
+                usage=FakeUsage(input_tokens=19, output_tokens=7),
+            )
+            yield FakeContentMessage(content=[FakeToolUseBlock(name="Read", input={"file_path": "logs/a.log"}, id="tu1")])
+            yield FakeContentMessage(content=[FakeToolResultBlock(tool_use_id="tu1", content="line 1: observed")])
+            yield FakeResultMessage(result=_make_good_result_json())
+        return fake_query
+
+    results = [_run_agent(workspace_ctx, query_with_progress(n)) for n in (0, 42683)]
+    baseline, flooded = results
+    for key in ("status", "answer", "summary", "raw", "token_usage", "tool_trace"):
+        assert flooded[key] == baseline[key]
+    assert flooded["trace_summary"]["tool_call_count"] == 1
+    assert flooded["trace_summary"]["thinking_chars"] == baseline["trace_summary"]["thinking_chars"] > 0
+    # IDs/times vary across executions; every meaningful payload stays identical.
+    volatile = {"seq", "timestamp", "step_id", "duration_seconds", "trace_summary"}
+    def payloads(result):
+        return [{k: v for k, v in event.items() if k not in volatile} for event in result["trace_events"]]
+    assert payloads(flooded) == payloads(baseline)
+    assert [e["seq"] for e in flooded["trace_events"]] == list(range(1, len(flooded["trace_events"]) + 1))
+
+
+@pytest.mark.parametrize("field", ["summary", "description", "message"])
+def test_descriptive_token_progress_and_other_system_notices_are_preserved(field):
+    from app.agents.log_analysis.agent import _RunState, _emit_for_message
+
+    state = _RunState(task_id="notices", emitter=None)
+    for subtype, data in [
+        ("thinking_tokens", {field: "progress at https://secret@example.test/repo"}),
+        ("status", {}),
+        ("compact_boundary", {}),
+        ("endpoint_switch", {"message": "backup endpoint selected"}),
+    ]:
+        _emit_for_message(FakeSystemMessage(subtype=subtype, data=data), state=state)
+    assert [e["subtype"] for e in state.trace_events] == ["thinking_tokens", "status", "compact_boundary", "endpoint_switch"]
+    assert state.trace_events[0]["detail"] == "progress at https://***@example.test/repo"
+    assert state.trace_events[-1]["detail"] == "backup endpoint selected"
+
+
 class TestTraceMaskingAndPersistence:
     def test_tokens_masked_in_step_start_input(self, workspace_ctx):
         async def fake_query(*args, **kwargs):
@@ -440,7 +487,8 @@ class TestEmitterFaultIsolation:
 
 
 class TestCancelTwoPhase:
-    def test_cancel_sends_cancel_requested_then_cancelled(self, workspace_ctx):
+    @pytest.mark.parametrize("during_empty_progress", [False, True])
+    def test_cancel_sends_cancel_requested_then_cancelled(self, workspace_ctx, during_empty_progress):
         cancel_event = threading.Event()
 
         async def fake_query(*args, **kwargs):
@@ -449,7 +497,10 @@ class TestCancelTwoPhase:
             )
             cancel_event.set()
             # Subsequent message would arrive but cancel check happens first.
-            yield FakeContentMessage(content=[FakeToolResultBlock(tool_use_id="tu1", content="never")])
+            if during_empty_progress:
+                yield FakeSystemMessage(subtype="thinking_tokens", data={"thinking_tokens": 1})
+            else:
+                yield FakeContentMessage(content=[FakeToolResultBlock(tool_use_id="tu1", content="never")])
             yield FakeResultMessage(result=_make_good_result_json())
 
         captured: List[Dict[str, Any]] = []

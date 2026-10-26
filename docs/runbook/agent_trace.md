@@ -11,6 +11,19 @@ touching the agent loop itself.
 
 ---
 
+## Excessive empty token-progress notices
+
+Group trace events by `type` and `subtype` before attributing a large history to
+tool activity. Some SDK streams produce one `thinking_tokens` system message
+per reasoning token. The shared translator omits only those whose translated
+`detail` is empty; actual thinking text, answer increments, tool evidence and
+descriptive notices are retained. This applies to Agents using that translator.
+Routing and cancellation still receive every SDK message, and idle SSE
+connections retain their existing heartbeat behavior. Old stored traces remain
+readable and are not rewritten. Compare meaningful payloads and final answers
+when replaying retained evidence; measure runtime separately from event/byte
+reduction. Do not count suppressed notices as fewer model calls or tokens.
+
 ## Background model errors after changing provider
 
 If main tool calls succeed but SDK `generate_session_title` requests return HTTP

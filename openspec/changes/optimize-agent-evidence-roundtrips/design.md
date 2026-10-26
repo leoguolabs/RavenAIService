@@ -26,6 +26,20 @@ Non-goals: production deployment, changing model to claim an optimization, reduc
 
 ## Risks / Trade-offs
 
+Retained local traces contain tens of thousands of `thinking_tokens` notices
+with no translated detail, answer text or token counter. The shared translator
+already excludes these from workflow logs but still buffers and forwards them.
+Omit only empty notices at that translation boundary, after normal usage
+handling. Preserve descriptive notices and all other subtypes, actual thinking
+and answer increments, tool evidence and terminal parsing. Do not filter the
+SDK iterator: routing commitment and per-message cancellation remain unchanged.
+Existing transport heartbeats keep idle subscriptions alive. Verify a progress
+flood against the same message sequence without that noise, and replay retained
+traces without modifying originals. Changes to event counts/sequence positions
+are expected; answer and evidence semantics must be identical. This correction
+adds no model calls and changes no prompt, but byte reduction alone does not
+establish an end-to-end speedup.
+
 Sidebar status polling previously selected every column of all historical runs
 for the user's visible sessions, although it only returns small status metadata.
 Defer historical trace, answer and request payloads with a raising lazy-load guard.

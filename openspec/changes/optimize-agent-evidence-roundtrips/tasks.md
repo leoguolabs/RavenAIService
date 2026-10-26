@@ -18,6 +18,7 @@
 - [x] 2.10 Add independently gated context-capacity annotation for verified official DeepSeek Flash; verify unchanged wire model/generation parameters with the pinned SDK and endpoint isolation before a new full cohort.
 - [x] 2.11 Finish saved-answer subscriptions before optional title work in the same background job; verify durable answers, delayed/cancelled titles and unchanged concurrent-edit guards for both chat services.
 - [x] 2.12 Keep historical answer/trace payloads out of sidebar status polling; verify unchanged latest-run selection, ownership and active-run overlays with real SQLite.
+- [x] 2.13 Omit empty SDK token-progress trace notices; verify unchanged answer, usage, evidence, descriptive notices, routing commitment and cancellation under a progress flood, then replay retained traces without altering originals.
 
 ## 3. Performance and quality acceptance
 

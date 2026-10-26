@@ -370,6 +370,11 @@ URL 不会出现在工具响应。重复调用复用已有检出，成功后在 
 
 Agent 运行期间通过 `trace_emitter` 回调推送 `AgentTraceEvent`，事件类型与传输方式见 [agent_trace_protocol.md](agent_trace_protocol.md)。`LogAnalysisAgent.run` 同时把所有事件累计到结果里的 `trace_events`，便于断线重连/历史回放。
 
+共享 SDK 消息转换器不再累计或转发没有 `detail` 的 `thinking_tokens` 系统通知，避免每个推理 token
+产生一个不含正文的事件并重复进入 SSE、历史回放和数据库。实际推理文本、答案增量、工具输入输出、
+有描述的系统通知及其他通知类型仍保留；模型请求、提示词、用量累计和逐消息取消检查不变。
+这是传输与存储开销修正，不能将事件数或字节数下降解释为同等比例的模型耗时下降。
+
 ---
 
 ## 8. 维护清单

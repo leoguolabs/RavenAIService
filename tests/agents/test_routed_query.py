@@ -258,6 +258,25 @@ async def test_status_frame_does_not_commit(router_stub, clock):
     ]
 
 
+async def test_empty_token_progress_still_reaches_consumer_before_commit(router_stub, clock):
+    from app.agents.log_analysis.agent import _RunState, _emit_for_message
+
+    progress = StatusMessage()
+    progress.subtype = "thinking_tokens"
+    progress.data = {"thinking_tokens": 1}
+    fake_query, _ = sdk_yielding(
+        [InitMessage(), progress, Tick(12.0), StreamEvent()], clock=clock,
+    )
+    messages = await drain(prompt="p", make_options=OPTS, sdk_query=fake_query)
+    assert any(message is progress for message in messages)
+    assert router_stub["outcomes"] == [
+        {"slot": "primary", "outcome": "ok", "ttft_ms": 12_000}
+    ]
+    state = _RunState("progress", None)
+    _emit_for_message(progress, state=state)
+    assert state.trace_events == []
+
+
 async def test_ttft_excludes_cli_startup(router_stub, clock):
     """The init frame resets the clock — it precedes any model round trip.
 

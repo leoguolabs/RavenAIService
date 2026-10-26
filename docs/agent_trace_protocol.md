@@ -40,6 +40,14 @@ keys gracefully.
 | `clarification_request`  | `request_id`, `questions`, `run_id`, `session_id`; optional `mandatory`, `purpose`, `plan_hash`                       | The agent or service paused to ask the user. Blocks until `POST /chat/clarifications/{request_id}/resolve`, timeout, or run end. Configuration Manager packaging uses `mandatory=true`, `purpose="package_build_confirmation"`. |
 | `clarification_resolved` | `request_id`, `outcome` (`answered`/`timeout`/`cancelled`/`rejected`), `reason`; optional `mandatory`, `purpose`        | Always follows its `clarification_request`; clears the question card.                   |
 
+The shared SDK translator omits `thinking_tokens` system notices when their
+translated `detail` is empty. These per-token progress messages contain no
+answer, reasoning text or counter in this protocol. Descriptive notices, actual
+`thinking_*` / `answer_delta` content, tool evidence and other system subtypes
+remain unchanged. SDK messages still reach routing and cancellation checks;
+idle transports retain their regular heartbeats. Sequence numbers count emitted
+events, so new traces can be smaller without requiring a schema change.
+
 ### Skill availability and actual use
 
 `available_skills` contains the complete enabled Skill catalog for the selected

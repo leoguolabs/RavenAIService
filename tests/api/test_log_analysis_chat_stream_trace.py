@@ -67,6 +67,30 @@ def _patch_common(monkeypatch, service, ctx, context_meta):
 
 
 @pytest.mark.asyncio
+async def test_idle_heartbeat_survives_suppressed_token_progress(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from app.agents.log_analysis.agent import _RunState, _emit_for_message
+    from app.services.log_analysis_chat_service import AgentJob
+
+    monkeypatch.setattr("app.services.log_analysis_chat_service.settings.code_repo_clone_base_dir", str(tmp_path))
+    monkeypatch.setattr("app.services.log_analysis_chat_service._JOB_POLL_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("app.services.log_analysis_chat_service._AGENT_PROGRESS_INTERVAL_SECONDS", 0)
+    service = LogAnalysisChatService()
+    job = AgentJob(session_id="progress", task_id="progress", context_meta={}, question="q",
+                   user_id=None, remember=False, filename=None, started_at=time.monotonic())
+    state = _RunState("progress", lambda event: job.events.append({"event": "agent_trace", **event}))
+    for i in range(100):
+        _emit_for_message(SimpleNamespace(subtype="thinking_tokens", data={"thinking_tokens": i}), state=state)
+    assert job.events == []
+    stream = service._subscribe(job)
+    event = _decode_sse_event(await anext(stream))
+    assert event["type"] == "system_notice" and event["kind"] == "heartbeat"
+    job.done = True
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+
+
+@pytest.mark.asyncio
 async def test_emitter_events_flow_through_to_sse(monkeypatch, tmp_path):
     """The fake Agent emits a fixed sequence; the SSE stream MUST yield each
     event wrapped as ``{event: "agent_trace", ...payload}`` in original order,
