@@ -493,6 +493,14 @@ def build_options(
             settings.anthropic_model
             or profile.default_model
         )
+    # SDK background requests inherit process env unless pinned per run. A
+    # runtime provider switch must not send the old provider's small model to
+    # the new endpoint. EndpointChoice already resolves that slot's defaults.
+    effective_small_fast_model = (
+        (endpoint.small_fast_model or effective_model)
+        if endpoint is not None else
+        (settings.anthropic_small_fast_model or profile.default_small_fast_model or effective_model)
+    )
     if endpoint is not None:
         effective_base_url = endpoint.base_url
         effective_api_key = endpoint.api_key
@@ -578,6 +586,8 @@ def build_options(
         "env": {
             "ANTHROPIC_API_KEY": effective_api_key,
             "ANTHROPIC_BASE_URL": effective_base_url,
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": effective_small_fast_model,
+            "ANTHROPIC_SMALL_FAST_MODEL": effective_small_fast_model,
         },
     }
 

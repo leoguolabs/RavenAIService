@@ -173,6 +173,29 @@ class TestBuildOptions:
         opts = self._build(base_settings, max_turns=10)
         assert opts.max_turns == 10
 
+    @pytest.mark.parametrize("configured,expected", [
+        ("runtime-fast", "runtime-fast"),
+        (None, "deepseek-v4-flash"),
+    ])
+    def test_background_model_overrides_inherited_environment(self, base_settings, monkeypatch, configured, expected):
+        import os
+
+        base_settings.anthropic_small_fast_model = configured
+        for key in ("ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL"):
+            monkeypatch.setenv(key, "old-provider-model")
+        opts = self._build(base_settings)
+        for key in ("ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL"):
+            assert opts.env[key] == expected
+            assert os.environ[key] == "old-provider-model"
+
+    def test_custom_background_model_falls_back_to_effective_main(self, base_settings):
+        base_settings.anthropic_provider = "custom"
+        base_settings.anthropic_base_url = "https://custom.test"
+        base_settings.anthropic_model = "custom-main"
+        opts = self._build(base_settings, model="caller-main")
+        assert opts.env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "caller-main"
+        assert opts.env["ANTHROPIC_SMALL_FAST_MODEL"] == "caller-main"
+
     def test_settings_model_overrides_profile(self, base_settings):
         base_settings.anthropic_model = "deepseek-v4-flash"
         opts = self._build(base_settings)
@@ -369,6 +392,13 @@ class TestEndpointOverride:
         assert opts.env["ANTHROPIC_API_KEY"] == "sk-backup"
         assert opts.env["ANTHROPIC_BASE_URL"] == "https://backup.test/anthropic"
         assert opts.model == "backup-model"
+
+    @pytest.mark.parametrize("small_fast,expected", [("backup-fast", "backup-fast"), (None, "backup-model")])
+    def test_background_model_is_bound_to_selected_endpoint(self, base_settings, small_fast, expected):
+        base_settings.anthropic_small_fast_model = "primary-only-fast"
+        opts = self._build(base_settings, endpoint=self._endpoint(small_fast_model=small_fast))
+        assert opts.env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == expected
+        assert opts.env["ANTHROPIC_SMALL_FAST_MODEL"] == expected
 
     def test_capability_gate_uses_the_endpoint_profile(self, base_settings):
         """Tool gating must follow the endpoint actually being called.

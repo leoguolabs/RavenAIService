@@ -11,6 +11,14 @@
 
 ---
 
+## SDK 后台模型与运行时配置
+
+每轮 SDK 子进程同时设置 `ANTHROPIC_DEFAULT_HAIKU_MODEL` 和兼容旧版的
+`ANTHROPIC_SMALL_FAST_MODEL`，使用本轮端点已经解析的辅助模型；该端点未指定辅助模型时使用本轮主模型。
+不经路由器的调用按运行时设置、provider 默认辅助模型、实际主模型依次解析。
+这样在后台切换 provider 后，SDK 自带的标题等后台请求不会继承容器中旧 provider 的模型名称。
+这些设置只传给本轮子进程，不修改全局环境、主模型、分析提示词或输出 schema。
+
 ## 可选的批量取证执行策略
 
 `AGENT_EVIDENCE_EFFICIENCY_ENABLED=true` 为日志分析和项目专家启用实验性优化，默认关闭。

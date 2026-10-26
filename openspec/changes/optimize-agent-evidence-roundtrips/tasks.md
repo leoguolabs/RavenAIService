@@ -14,6 +14,7 @@
 - [x] 2.6 Reject duplicate fields in corrupted terminal results, prevent optional-Skill success fallback, and replay retained outputs without altering original benchmark evidence.
 - [x] 2.7 Add a separately gated deterministic log overview with exact per-file coverage, bounded samples and native fallback; verify against original files before paired measurement.
 - [x] 2.8 Coalesce short native source reads under a separate default-off switch, preserving every requested line and native fallback; verify range bounds and actual SDK execution before paired measurement.
+- [x] 2.9 Bind SDK background models to the current endpoint after runtime provider changes; verify stale environment and backup isolation with tests and a real SDK tool-loop probe before new paired measurement.
 
 ## 3. Performance and quality acceptance
 

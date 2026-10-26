@@ -11,6 +11,17 @@ touching the agent loop itself.
 
 ---
 
+## Background model errors after changing provider
+
+If main tool calls succeed but SDK `generate_session_title` requests return HTTP
+400 for a previous provider's model, compare the effective auxiliary model with
+the per-run `ANTHROPIC_DEFAULT_HAIKU_MODEL` and legacy
+`ANTHROPIC_SMALL_FAST_MODEL` overrides. The SDK inherits the container environment
+unless `build_options` supplies both names from the selected endpoint. Do not
+print API keys while checking this mapping. Keep provider-switch trials separate
+from earlier timing cohorts, and align these model names in both benchmark arms.
+See the [SDK background model aliases](https://code.claude.com/docs/en/model-config#environment-variables).
+
 ## Upload rejected before the SSE stream starts
 
 For `/ai-chat/log-analysis/stream`, `/project-expert/stream` and

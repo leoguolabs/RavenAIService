@@ -1,5 +1,16 @@
 ## ADDED Requirements
 
+### Requirement: Bind SDK background models to the selected endpoint
+Each SDK invocation SHALL override both current and legacy background-model environment names using its resolved endpoint auxiliary model, falling back to the effective main model when absent. Calls without an endpoint SHALL resolve runtime settings before provider defaults. This SHALL NOT mutate global environment or change the analysis model, prompt or schema.
+
+#### Scenario: Runtime provider changes while container defaults remain old
+- **WHEN** the process environment still names a previous provider's auxiliary model
+- **THEN** SDK background requests use the current run's configured auxiliary model at its selected endpoint
+
+#### Scenario: A backup endpoint differs from primary settings
+- **WHEN** a run uses a resolved backup endpoint
+- **THEN** its background model comes from that endpoint and never from the primary settings or another concurrent run
+
 ### Requirement: Preserve investigation semantics
 The optimized Agent SHALL retain all attachments, project-fit checks, original evidence access, required skills, output schema and uncertainty semantics. Disabled optimization SHALL use the existing execution path.
 
