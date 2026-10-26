@@ -126,6 +126,10 @@ by the backend's legacy `images` field.
    after answer completion and can finish later; a title timeout alone does not
    mean the analysis failed. Record pre-Agent, Agent, persistence and optional
    metadata timings separately when investigating a slow completion.
+   If health checks also stall while the workbench is open, inspect process
+   memory and database query payloads. Sidebar status polling must only select
+   run metadata, not historical trace/answer bodies. Preserve the interrupted
+   run and compare database, SDK and client timestamps before assigning cause.
 2. Reverse proxy / load balancer timeouts — most common cause.
    - `nginx` default `proxy_read_timeout` is 60s. The trace stream
      emits a `system_notice{kind: "heartbeat"}` frame every ≥ 15s of

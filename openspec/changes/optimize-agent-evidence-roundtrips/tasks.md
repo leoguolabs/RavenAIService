@@ -17,6 +17,7 @@
 - [x] 2.9 Bind SDK background models to the current endpoint after runtime provider changes; verify stale environment and backup isolation with tests and a real SDK tool-loop probe before new paired measurement.
 - [x] 2.10 Add independently gated context-capacity annotation for verified official DeepSeek Flash; verify unchanged wire model/generation parameters with the pinned SDK and endpoint isolation before a new full cohort.
 - [x] 2.11 Finish saved-answer subscriptions before optional title work in the same background job; verify durable answers, delayed/cancelled titles and unchanged concurrent-edit guards for both chat services.
+- [x] 2.12 Keep historical answer/trace payloads out of sidebar status polling; verify unchanged latest-run selection, ownership and active-run overlays with real SQLite.
 
 ## 3. Performance and quality acceptance
 

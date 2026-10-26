@@ -169,3 +169,10 @@ Log Analysis and Project Expert chat services SHALL commit their chat exchange b
 #### Scenario: Title work is cancelled after answer completion
 - **WHEN** optional title work is cancelled after the subscriber receives the saved answer
 - **THEN** the completed answer and run state remain unchanged and no new analysis error event is emitted
+
+### Requirement: Metadata-only sidebar run status
+The session-list API SHALL read only run identity, status and timestamp metadata for its latest-run summaries. It SHALL NOT hydrate historical answers, request payloads or full trace JSON, and SHALL preserve the existing ownership filter, ordering and active-run overlay.
+
+#### Scenario: Visible sessions have large historical traces
+- **WHEN** the workbench requests its session list while an Agent is running
+- **THEN** the same latest-run metadata and owner-scoped active state are returned without loading historical trace or answer payloads

@@ -26,6 +26,15 @@ Non-goals: production deployment, changing model to claim an optimization, reduc
 
 ## Risks / Trade-offs
 
+Sidebar status polling previously selected every column of all historical runs
+for the user's visible sessions, although it only returns small status metadata.
+Defer historical trace, answer and request payloads with a raising lazy-load guard.
+Keep the existing ownership filter, ordering and active-run overlay. Verify both
+the returned summaries and absence of payload hydration against real SQLite.
+This is a separate UI/backend resource correction, not a reduction in Agent model
+calls. A local interrupted stream observed alongside elevated process memory is
+not sufficient by itself to assign the interruption's cause to this query.
+
 The prompt-only pilot preserved image/model/data identity but reproduced unsupported
 exclusion and whole-window numeric claims; shortening a prompt is not acceptance.
 Its first pair also retained roughly 21–30 seconds between Agent completion and

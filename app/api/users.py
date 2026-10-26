@@ -13,6 +13,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 from app.i18n.deps import LOCALE_HEADER, resolve_locale
 from app.i18n.messages import t
 from app.models.conversation_share import ShareInfo, ShareInfoResponse
@@ -521,6 +522,17 @@ async def list_chat_sessions(
     if session_ids:
         runs_result = await db.execute(
             select(ChatAgentRun)
+            # Sidebar polling needs status metadata, never full Agent traces
+            # or answers from every historical run in these sessions.
+            .options(load_only(
+                ChatAgentRun.session_id,
+                ChatAgentRun.status,
+                ChatAgentRun.agent_kind,
+                ChatAgentRun.started_at,
+                ChatAgentRun.finished_at,
+                ChatAgentRun.updated_at,
+                raiseload=True,
+            ))
             .where(
                 ChatAgentRun.user_id == current_user.id,
                 ChatAgentRun.session_id.in_(session_ids),

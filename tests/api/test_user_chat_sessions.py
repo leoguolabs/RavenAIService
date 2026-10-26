@@ -107,6 +107,74 @@ def test_chat_session_summary_includes_latest_agent_kind(client_with_db) -> None
     assert rows[0]["active_run_id"] is None
 
 
+@pytest.mark.parametrize("active_overlay", [False, True])
+def test_sidebar_keeps_history_payloads_unloaded(client_with_db, monkeypatch, active_overlay) -> None:
+    from datetime import timedelta
+    from types import SimpleNamespace
+    import time
+
+    from sqlalchemy import event, inspect
+    from app.models.user import User
+    from app.services.chat_run_service import chat_run_service
+
+    client, factory = client_with_db
+    token, user_id = _register(client)
+    now = datetime.utcnow()
+
+    async def seed():
+        async with factory() as db:
+            db.add(User(id="other", username="other", password_hash="unused"))
+            db.add_all([
+                ChatSession(id="visible", user_id=user_id, title="历史分析", message_count=4),
+                ChatSession(id="deleted", user_id=user_id, title="已删除", is_deleted=True),
+            ])
+            await db.flush()
+            for rid, sid, owner, kind, age in [
+                ("older", "visible", user_id, "log_analysis", 2),
+                ("latest", "visible", user_id, "project_expert", 1),
+                ("foreign", "visible", "other", "device", 0),
+                ("hidden", "deleted", user_id, "device", 0),
+            ]:
+                db.add(ChatAgentRun(
+                    id=rid, session_id=sid, user_id=owner, owner_scope=f"user:{owner}",
+                    agent_kind=kind, status="succeeded", user_message="question",
+                    answer="完整答案" * 1000, request_json='{"private":"request"}',
+                    trace_events_json='[{"text":"' + 'evidence' * 262144 + '"}]',
+                    started_at=now - timedelta(minutes=age), finished_at=now,
+                ))
+            await db.commit()
+
+    asyncio.run(seed())
+    loaded = []
+
+    def on_load(run, _context):
+        loaded.append((run.id, inspect(run).unloaded.copy()))
+
+    def overlay(owner, sid):
+        assert owner == f"user:{user_id}" and sid == "visible"
+        if active_overlay:
+            return SimpleNamespace(run_id="live", status="running", agent_kind="log_analysis",
+                                   started_at=time.monotonic() - 5, updated_at=time.monotonic())
+        return None
+
+    monkeypatch.setattr(chat_run_service, "get_active_job_for_session", overlay)
+    event.listen(ChatAgentRun, "load", on_load)
+    try:
+        response = client.get("/api/v1/users/chat-sessions", headers={"Authorization": f"Bearer {token}"})
+    finally:
+        event.remove(ChatAgentRun, "load", on_load)
+
+    assert response.status_code == 200, response.text
+    rows = response.json()["data"]
+    assert len(rows) == 1 and rows[0]["id"] == "visible"
+    assert rows[0]["run_agent_kind"] == ("log_analysis" if active_overlay else "project_expert")
+    assert rows[0]["run_status"] == ("running" if active_overlay else "succeeded")
+    assert rows[0]["active_run_id"] == ("live" if active_overlay else None)
+    assert {rid for rid, _ in loaded} == {"older", "latest"}
+    assert all({"trace_events_json", "answer", "request_json", "user_message"} <= fields
+               for _, fields in loaded)
+
+
 def test_search_sessions_matches_content_and_enforces_privacy(client_with_db) -> None:
     from datetime import timedelta
     from app.models.user import ChatMessage, User
