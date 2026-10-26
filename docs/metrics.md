@@ -309,8 +309,11 @@ Log Analysis and Project Expert commit and close the chat exchange transaction
 before generating the optional initial title. The title's independent usage
 transaction therefore does not wait behind a SQLite writer lock held by that
 same workflow. Title usage remains recorded; title failure cannot roll back a
-saved answer. End-to-end benchmarks report this post-Agent waiting separately
-from Agent/tool execution improvements.
+saved answer. Both services publish completion and end answer subscriptions before
+awaiting this optional title work in the same background job. Title timeout cleanup
+therefore cannot delay the completed answer. Title usage may arrive after the
+terminal Agent metric; benchmarks distinguish answer completion from optional
+metadata work and do not attribute this scheduling change to fewer model calls.
 
 ## 6. Privacy contract
 

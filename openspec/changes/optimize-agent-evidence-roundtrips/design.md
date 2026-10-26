@@ -26,6 +26,20 @@ Non-goals: production deployment, changing model to claim an optimization, reduc
 
 ## Risks / Trade-offs
 
+The prompt-only pilot preserved image/model/data identity but reproduced unsupported
+exclusion and whole-window numeric claims; shortening a prompt is not acceptance.
+Its first pair also retained roughly 21–30 seconds between Agent completion and
+request completion, with optional title timeouts and no observed database-lock
+warning. Do not attribute that entire interval to one cause without measurement.
+Move optional title work after durable answer publication and terminal run
+finalization in the existing background job. Keep title inputs, timeout, usage
+recording and conditional update unchanged. The subscriber ends while that job may
+still be generating a title; errors or cancellation in this later phase cannot
+replace the completed answer with an error. Validate this boundary with blocked
+title requests, real SQLite persistence and the actual SSE subscriber before a
+new matched runtime experiment. This change reduces critical-path work; it does
+not reduce analysis model calls or establish a measured speedup by itself.
+
 The user-authorized switch to public DeepSeek starts a separate comparison cohort with identical effective model settings in both arms. A real SDK probe exposed an inherited `yinhe-chat` background title request returning HTTP 400 even though the runtime auxiliary model had changed. Pin both current and legacy SDK background-model environment variables per endpoint/run; never mutate process-global environment. An endpoint without a resolved auxiliary model uses its effective main model. Align the old baseline's container background-model environment with the configured model as a documented fixture correction, so that obsolete model errors do not masquerade as evidence-batching improvements. Retain the original failing probe and all previous model cohorts.
 
 A subsequent local candidate may independently enable a deterministic startup log overview under the main efficiency gate. It scans at most 64 files, 16 MiB per file, 64 MiB total and a two-second cooperative deadline. The encoded preview is bounded to 12,000 UTF-8 bytes, with explicit omitted rows, unknown lines, scan hashes and incomplete coverage. Structured severity/source-location counts and first/last message prefixes are per-file physical observations, not diagnoses, event deduplication or proof of absence. Native tools and mandatory source investigation remain available. This experiment adds no model call and applies only to Log Analysis; it is default off and must pass new paired timing and quality checks.

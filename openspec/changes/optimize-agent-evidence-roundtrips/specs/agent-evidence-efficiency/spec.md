@@ -161,3 +161,11 @@ Log Analysis and Project Expert chat services SHALL commit their chat exchange b
 #### Scenario: User changes the session during title generation
 - **WHEN** the session is renamed, deleted, changes owner or receives another message before the title returns
 - **THEN** the generated title does not overwrite the newer session state
+
+#### Scenario: Optional title request remains pending after the answer is saved
+- **WHEN** the analysis answer has been committed and its terminal state published
+- **THEN** answer subscriptions finish without waiting for optional title generation or SDK timeout cleanup, while the existing background job can finish the guarded title update
+
+#### Scenario: Title work is cancelled after answer completion
+- **WHEN** optional title work is cancelled after the subscriber receives the saved answer
+- **THEN** the completed answer and run state remain unchanged and no new analysis error event is emitted

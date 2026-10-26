@@ -592,6 +592,7 @@ class LogAnalysisChatService:
 
     async def _run_job_async(self, job: AgentJob, ctx: WorkspaceContext) -> None:
         """Background Agent task. Survives SSE disconnects; persists to DB on completion."""
+        pending_title = None
         try:
             # Sync emitter: append the raw AgentTraceEvent to job.trace_events
             # (for late-subscriber replay + final `done` payload) AND push an
@@ -617,7 +618,7 @@ class LogAnalysisChatService:
             )
             job.answer = answer_text
 
-            await self._persist_job_result(job, result, answer_text)
+            pending_title = await self._persist_job_result(job, result, answer_text)
             self._touch_context(job.session_id, result=result, answer=answer_text)
 
             # Best-effort: 分析判定需要代码修复时自动派发 Bug 修复任务。结果已在
@@ -658,6 +659,14 @@ class LogAnalysisChatService:
             # Project terminal state into chat_agent_runs + chat_run_service so
             # snapshot endpoints and sidebar overlay reflect completion.
             await self._finalize_chat_run(job)
+
+        # The subscriber can now finish with the durable answer. Optional title
+        # generation (including SDK timeout cleanup) must not delay completion.
+        if pending_title is not None:
+            from app.models.database import db_manager
+
+            if db_manager.session_factory is not None:
+                await generate_after_commit(pending_title, db_manager.session_factory)
 
     async def _maybe_dispatch_bug_fix(self, job: AgentJob) -> None:
         """Dispatch a Bug-fix task when this turn's analysis carries a code-fix signal.
@@ -935,11 +944,12 @@ class LogAnalysisChatService:
         job: AgentJob,
         result: Dict[str, Any],
         answer_text: str,
-    ) -> None:
+    ) -> Optional[PendingSessionTitle]:
         """Open a fresh DB session and persist analysis result + chat exchange.
 
         Uses its own session because the original request DB session is already
         closed by the time this method runs (Job outlives the HTTP request).
+        Return title work only after commit; the caller runs it after completion.
         """
         from app.models.database import db_manager
 
@@ -972,7 +982,7 @@ class LogAnalysisChatService:
                 except Exception:
                     await db.rollback()
                     raise
-            await generate_after_commit(pending_title, db_manager.session_factory)
+            return pending_title
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "log-analysis chat: failed to persist job result session_id=%s: %s",

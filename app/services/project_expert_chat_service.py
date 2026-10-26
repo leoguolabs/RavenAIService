@@ -453,6 +453,7 @@ class ProjectExpertChatService:
 
     async def _run_job_async(self, job: AgentJob, ctx: WorkspaceContext) -> None:
         """Background Agent task. Survives SSE disconnects; persists to DB on completion."""
+        pending_title = None
         try:
             def _emit_trace(event: Dict[str, Any]) -> None:
                 job.trace_events.append(event)
@@ -471,7 +472,7 @@ class ProjectExpertChatService:
             )
             job.answer = answer_text
 
-            await self._persist_job_result(job, result, answer_text)
+            pending_title = await self._persist_job_result(job, result, answer_text)
             self._touch_context(job.session_id, result=result, answer=answer_text)
 
             job.events.append(
@@ -506,6 +507,13 @@ class ProjectExpertChatService:
             job.done = True
             job.finished_at = time.monotonic()
             await self._finalize_chat_run(job)
+
+        # Keep optional metadata work outside the answer's completion path.
+        if pending_title is not None:
+            from app.models.database import db_manager
+
+            if db_manager.session_factory is not None:
+                await generate_after_commit(pending_title, db_manager.session_factory)
 
     async def _register_chat_run(self, job: AgentJob, ctx: WorkspaceContext) -> None:
         """Create a ``chat_agent_runs`` row and register a ChatRunJob shadow."""
@@ -697,8 +705,8 @@ class ProjectExpertChatService:
         job: AgentJob,
         result: Dict[str, Any],
         answer_text: str,
-    ) -> None:
-        """Open a fresh DB session and persist the chat exchange."""
+    ) -> Optional[PendingSessionTitle]:
+        """Commit the exchange and return optional title work for after completion."""
         from app.models.database import db_manager
 
         if db_manager.session_factory is None:
@@ -724,7 +732,7 @@ class ProjectExpertChatService:
                 except Exception:
                     await db.rollback()
                     raise
-            await generate_after_commit(pending_title, db_manager.session_factory)
+            return pending_title
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "project-expert chat: failed to persist job result session_id=%s: %s",

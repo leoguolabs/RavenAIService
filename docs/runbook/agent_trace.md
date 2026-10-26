@@ -121,6 +121,11 @@ by the backend's legacy `images` field.
    state (`celery -A app.celery_app inspect active`) or, for the chat
    path, the in-memory `AgentJob` state. If the agent finished but
    the client never received `run_complete`, the drop is downstream.
+   For Log Analysis and Project Expert chat, distinguish Agent `run_complete`
+   from the saved-answer `done` event. Optional initial-title generation now runs
+   after answer completion and can finish later; a title timeout alone does not
+   mean the analysis failed. Record pre-Agent, Agent, persistence and optional
+   metadata timings separately when investigating a slow completion.
 2. Reverse proxy / load balancer timeouts — most common cause.
    - `nginx` default `proxy_read_timeout` is 60s. The trace stream
      emits a `system_notice{kind: "heartbeat"}` frame every ≥ 15s of

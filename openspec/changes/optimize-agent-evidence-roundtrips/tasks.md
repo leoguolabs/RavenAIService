@@ -16,6 +16,7 @@
 - [x] 2.8 Coalesce short native source reads under a separate default-off switch, preserving every requested line and native fallback; verify range bounds and actual SDK execution before paired measurement.
 - [x] 2.9 Bind SDK background models to the current endpoint after runtime provider changes; verify stale environment and backup isolation with tests and a real SDK tool-loop probe before new paired measurement.
 - [x] 2.10 Add independently gated context-capacity annotation for verified official DeepSeek Flash; verify unchanged wire model/generation parameters with the pinned SDK and endpoint isolation before a new full cohort.
+- [x] 2.11 Finish saved-answer subscriptions before optional title work in the same background job; verify durable answers, delayed/cancelled titles and unchanged concurrent-edit guards for both chat services.
 
 ## 3. Performance and quality acceptance
 

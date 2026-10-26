@@ -201,6 +201,10 @@ entry point.
   Existing event types (`log_analysis_status`, `session`, `done`,
   `error`) are unchanged — older clients ignore `agent_trace` frames
   and still receive the final `done`.
+- For Log Analysis and Project Expert chat, optional initial-title generation
+  follows durable answer publication and terminal run finalization. It may still
+  be pending after the answer stream closes; it does not add trace events or
+  change the completed analysis result.
 - Storage: events live in `AgentJob.trace_events` (in-memory). The
   `_subscribe` loop replays the buffer to a reconnecting client so
   late subscribers still get the full history.

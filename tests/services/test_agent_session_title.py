@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -62,7 +65,11 @@ async def test_title_metrics_can_write_and_answer_is_already_durable(database, m
         session_id="chat", user_id="owner", remember=True, question="original question",
         context_meta={"project_code": "demo"}, images_json=None, filename="evidence.log", locale="en",
     )
-    await service._persist_job_result(job, {"status": "ok", "answer": "unchanged answer"}, "unchanged answer")
+    pending = await service._persist_job_result(
+        job, {"status": "ok", "answer": "unchanged answer"}, "unchanged answer",
+    )
+    assert not calls
+    await generate_after_commit(pending, database)
     assert len(calls) == 1
     assert calls[0][1]["locale"] == ("en" if service_type is LogAnalysisChatService else None)
     async with database() as db:
@@ -71,7 +78,8 @@ async def test_title_metrics_can_write_and_answer_is_already_durable(database, m
         assert chat.message_count == 2
         assert await db.scalar(select(func.count()).select_from(MetricEvent)) == 1
     # A follow-up saves its answer but must not generate another initial title.
-    await service._persist_job_result(job, {}, "follow-up answer")
+    pending = await service._persist_job_result(job, {}, "follow-up answer")
+    assert pending is None
     assert len(calls) == 1
     async with database() as db:
         assert (await db.get(ChatSession, "chat")).message_count == 4
@@ -89,11 +97,12 @@ async def test_title_failure_cannot_remove_saved_answer(database, monkeypatch, s
         session_id="chat", user_id="owner", remember=True, question="question", context_meta={},
         images_json=None, filename=None, locale="zh",
     )
+    pending = await service._persist_job_result(job, {}, "durable answer")
     if error is asyncio.CancelledError:
         with pytest.raises(asyncio.CancelledError):
-            await service._persist_job_result(job, {}, "durable answer")
+            await generate_after_commit(pending, database)
     else:
-        await service._persist_job_result(job, {}, "durable answer")
+        await generate_after_commit(pending, database)
     async with database() as db:
         assert (await db.get(ChatSession, "chat")).title == "question"
         messages = (await db.execute(select(ChatMessage))).scalars().all()
@@ -161,3 +170,72 @@ async def test_failed_exchange_does_not_start_title_generation(database, monkeyp
     assert not calls
     async with database() as db:
         assert await db.scalar(select(func.count()).select_from(ChatMessage)) == 0
+
+
+@pytest.mark.parametrize("service_type", [LogAnalysisChatService, ProjectExpertChatService])
+@pytest.mark.parametrize("cancel_title", [False, True])
+async def test_stream_finishes_while_title_is_pending(database, monkeypatch, service_type, cancel_title):
+    """A blocked/cancelled metadata request cannot hold SSE or change the answer."""
+    module = importlib.import_module(service_type.__module__)
+    agent_name = "LogAnalysisAgent" if service_type is LogAnalysisChatService else "ProjectExpertAgent"
+    result = {"status": "ok", "answer": "unchanged answer", "model": "test"}
+    monkeypatch.setattr(module, agent_name, lambda: SimpleNamespace(run_sync=lambda *args: result))
+    service = object.__new__(service_type)
+    monkeypatch.setattr(service, "_format_agent_result", lambda value, **kwargs: value["answer"])
+    monkeypatch.setattr(service, "_touch_context", lambda *args, **kwargs: None)
+
+    async def noop(*args):
+        pass
+
+    monkeypatch.setattr(service, "_finalize_chat_run", noop)
+    if service_type is LogAnalysisChatService:
+        monkeypatch.setattr(service, "_attach_trigger_context", lambda job, value: value)
+        monkeypatch.setattr(service, "_maybe_dispatch_bug_fix", noop)
+    title_started, release_title = asyncio.Event(), asyncio.Event()
+
+    async def title(*args, **kwargs):
+        title_started.set()
+        await release_title.wait()
+        return "Generated title"
+
+    monkeypatch.setattr(ai_chat_service, "generate_session_title", title)
+    job = SimpleNamespace(
+        session_id="chat", user_id="owner", remember=True, question="question", context_meta={},
+        images_json=None, filename=None, locale="zh", trace_events=[], events=[],
+        cancel_event=threading.Event(), clarification=None, started_at=time.monotonic(),
+        task_id="task", run_id="run", error=None, done=False,
+    )
+    task = asyncio.create_task(service._run_job_async(job, SimpleNamespace()))
+    try:
+        await asyncio.wait_for(title_started.wait(), timeout=2)
+        assert job.done and job.error is None and not task.done()
+
+        async def consume():
+            return [frame async for frame in service._subscribe(job)]
+
+        frames = await asyncio.wait_for(consume(), timeout=1)
+        assert any('"event": "done"' in frame and "unchanged answer" in frame for frame in frames)
+        assert job.result == result and job.answer == "unchanged answer"
+        async with database() as db:
+            chat = await db.get(ChatSession, "chat")
+            assert chat.title == "question" and chat.message_count == 2
+            messages = (await db.execute(select(ChatMessage))).scalars().all()
+            assert sorted(m.content for m in messages) == ["question", "unchanged answer"]
+
+        if cancel_title:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            release_title.set()
+            await task
+        assert job.done and job.error is None and job.result == result
+        async with database() as db:
+            assert (await db.get(ChatSession, "chat")).title == (
+                "question" if cancel_title else "Generated title"
+            )
+    finally:
+        release_title.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
