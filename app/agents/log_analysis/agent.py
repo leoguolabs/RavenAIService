@@ -1350,6 +1350,7 @@ class LogAnalysisAgent:
                 mcp_servers=mcp_servers,
                 setting_sources=setting_sources,
                 endpoint=endpoint,
+                use_extended_context=settings.agent_evidence_extended_context_enabled is True,
                 **({"hooks": evidence_hooks} if evidence_hooks else {}),
             )
 

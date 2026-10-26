@@ -22,6 +22,19 @@ print API keys while checking this mapping. Keep provider-switch trials separate
 from earlier timing cohorts, and align these model names in both benchmark arms.
 See the [SDK background model aliases](https://code.claude.com/docs/en/model-config#environment-variables).
 
+## Early compaction on official DeepSeek Flash
+
+Check the effective endpoint, SDK version and reported `modelUsage.contextWindow`
+before attributing repeated compaction to a provider limit. The pinned SDK
+0.2.165 uses 200,000 for plain `deepseek-flash`; the official `[1m]` marker makes
+it use 1,000,000 while keeping the outgoing model unchanged. The independently
+gated `AGENT_EVIDENCE_EXTENDED_CONTEXT_ENABLED` experiment applies only to Log
+Analysis on the verified official endpoint/model. Unknown gateways and models
+are not upgraded. See [DeepSeek's integration guide](https://api-docs.deepseek.com/guides/coding_agents/).
+Verify generation parameters and endpoint isolation with the actual SDK, retain
+all prior results, and freeze a new benchmark cohort before enabling it. Record
+compaction time separately; longer context alone does not establish a speedup.
+
 ## Upload rejected before the SSE stream starts
 
 For `/ai-chat/log-analysis/stream`, `/project-expert/stream` and

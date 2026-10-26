@@ -1,5 +1,16 @@
 ## ADDED Requirements
 
+### Requirement: Independently gated verified SDK context capacity
+Log Analysis MAY use a separately gated, default-off SDK context-capacity annotation for the verified official DeepSeek Flash endpoint and exact model alias. Resolution SHALL follow the selected endpoint and caller override, preserve the outgoing model and generation parameters, and leave unknown endpoints/models and global settings unchanged. It SHALL NOT require a prepared evidence snapshot or change other Agents.
+
+#### Scenario: Verified official endpoint with the experiment enabled
+- **WHEN** the selected provider is deepseek, model is deepseek-flash and the endpoint is the official HTTPS Anthropic path on its standard port
+- **THEN** the SDK uses deepseek-flash[1m] for local context accounting while preserving auxiliary models, tools, output limit, reasoning effort, turn cap and timeout
+
+#### Scenario: Experiment disabled or endpoint unverified
+- **WHEN** the flag is off, the selected endpoint or model is unverified, or the caller explicitly supplies a different model
+- **THEN** existing SDK model handling is retained without inferring capacity from primary settings or another run
+
 ### Requirement: Bind SDK background models to the selected endpoint
 Each SDK invocation SHALL override both current and legacy background-model environment names using its resolved endpoint auxiliary model, falling back to the effective main model when absent. Calls without an endpoint SHALL resolve runtime settings before provider defaults. This SHALL NOT mutate global environment or change the analysis model, prompt or schema.
 

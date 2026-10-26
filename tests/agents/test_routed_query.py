@@ -653,6 +653,8 @@ async def test_no_failover_after_commit(router_stub):
 async def test_pre_output_429_rotates_one_primary_key_before_backup(
     router_stub, monkeypatch
 ):
+    # This test asserts zero accounting time, not scheduler speed under load.
+    monkeypatch.setattr(rq, "_now", lambda: 1000.0)
     first = choice("primary")
     first = EndpointChoice(
         **{

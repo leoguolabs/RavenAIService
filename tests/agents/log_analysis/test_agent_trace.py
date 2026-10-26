@@ -204,6 +204,28 @@ def _run_agent(
 # ─────────────────────── Tests ─────────────────────────────────────
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_extended_context_is_independent_of_evidence_snapshot(workspace_ctx, enabled):
+    from contextlib import ExitStack
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+
+    async def fake_query(*args, **kwargs):
+        yield FakeResultMessage(result=_make_good_result_json())
+
+    with ExitStack() as stack:
+        patches = _patch_environment()
+        build = stack.enter_context(patches[0])
+        for patcher in patches[1:]:
+            stack.enter_context(patcher)
+        settings = stack.enter_context(_patch_settings())
+        settings.agent_evidence_efficiency_enabled = False
+        settings.agent_evidence_extended_context_enabled = enabled
+        stack.enter_context(patch.dict("sys.modules", {"claude_agent_sdk": MagicMock(query=fake_query)}))
+        result = asyncio.run(LogAnalysisAgent().run(workspace_ctx))
+        assert result["status"] == "ok"
+        assert build.call_args.kwargs["use_extended_context"] is enabled
+
+
 class TestEmitterEventSequence:
     def test_run_start_run_complete_bookend(self, workspace_ctx):
         async def fake_query(*args, **kwargs):
