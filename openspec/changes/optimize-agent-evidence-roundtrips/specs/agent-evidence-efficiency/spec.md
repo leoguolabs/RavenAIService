@@ -192,6 +192,15 @@ When efficiency and the separate source-context switch are enabled, successful n
 - **WHEN** the pinned SDK executes a supported literal source read
 - **THEN** an offline SDK exchange verifies that the original result and the exact added function reach the next request, while retained-command replay and this exchange remain separate from real-model latency and quality acceptance
 
+#### Scenario: Short MCP source read stops within a function
+- **WHEN** a batch read requests fewer than 80 lines at zero column and every returned row matches the indexed request, canonical repository path and stable source snapshot
+- **THEN** the same default-off hook may append missing complete C/H functions within the shared two-window/8000-byte budget and cross-tool deduplication, using `source_read_line`
+- **AND** original arguments, results, per-request errors and continuations remain unchanged; tail reads, truncated or changed rows, unsupported shapes, complete reads and over-budget functions receive no partial added excerpt
+
+#### Scenario: MCP read context reaches the real SDK
+- **WHEN** the pinned SDK executes a supported short evidence read with the registered hook
+- **THEN** an offline exchange verifies delivery of the original result and exact missing function branch to the next request, without treating replayed opportunities as measured model-call savings
+
 #### Scenario: A complete function fits the remaining context budget
 - **WHEN** verified C/H hits include an error-free function definition or a location inside that function
 - **THEN** definition hits are preferred for added context and a complete function may use the remaining total payload budget within the unchanged line bound

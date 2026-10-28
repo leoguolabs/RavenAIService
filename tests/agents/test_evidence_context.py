@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.agents.evidence_context import MAX_CONTEXT_BYTES, MAX_SOURCE_BYTES, MCP_SEARCH_TOOL, SourceContextEnricher
+from app.agents.evidence_context import MAX_CONTEXT_BYTES, MAX_SOURCE_BYTES, MCP_READ_TOOL, MCP_SEARCH_TOOL, SourceContextEnricher
 from app.agents.evidence_policy import execution_hooks
 from app.agents.evidence_tools import MAX_READ_CHARS, encode_evidence, read_page, run_batch
 
@@ -33,11 +33,131 @@ def windows(result):
     return result
 
 
-async def batch_event(workspace, requests):
-    payload = await run_batch(str(workspace), requests, search=True)
-    return {"hook_event_name": "PostToolUse", "tool_name": MCP_SEARCH_TOOL,
+async def batch_event(workspace, requests, *, search=True):
+    payload = await run_batch(str(workspace), requests, search=search)
+    return {"hook_event_name": "PostToolUse", "tool_name": MCP_SEARCH_TOOL if search else MCP_READ_TOOL,
             "tool_input": {"requests": requests},
             "tool_response": [{"type": "text", "text": encode_evidence(payload)}]}
+
+
+@pytest.mark.asyncio
+async def test_batch_read_supplies_missing_branch_and_preserves_errors_and_continuations(workspace):
+    source = "int identify(int fd) {\n    int id = 7;\n    if (fd < 0) {\n        return 0;\n    }\n    return id + 1;\n}\n"
+    (workspace / "repo/first.c").write_text(source)
+    data = await batch_event(workspace, [
+        {"path": "repo/first.c", "start_line": 3, "line_count": 2},
+        {"path": "missing", "start_line": 1, "line_count": 2},
+    ], search=False)
+    before = copy.deepcopy(data)
+    hook = SourceContextEnricher(str(workspace))
+    result = windows(await hook.after_tool(data, "read-1", {}))
+    assert data == before
+    assert len(result) == 1 and result[0]["source_read_line"] == 3
+    assert result[0]["function"] == {"name": "identify", "start_line": 1, "end_line": 7, "range_complete": True}
+    assert [row["text"] for row in result[0]["lines"]] == source.splitlines()
+    assert await hook.after_tool(data, "read-2", {}) == {}
+    assert await hook.after_tool(event("    return 0;", "sed -n 4,4p repo/first.c"), "shell-3", {}) == {}
+    assert await hook.after_tool(event("repo/first.c:1:int identify(int fd) {"), "search-4", {}) == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mutation", ["changed_text", "truncated", "partial_line", "reordered_rows", "row_bool",
+    "column", "tail", "index", "index_bool", "path", "columns", "failed", "extra_result", "long", "complete", "malformed"])
+async def test_batch_read_requires_exact_full_requested_range(workspace, mutation):
+    source = "int value(void) {\n    int n = 7;\n    return n;\n}\n"
+    (workspace / "repo/first.c").write_text(source)
+    data = await batch_event(workspace, [{"path": "repo/first.c", "start_line": 2, "line_count": 2}], search=False)
+    payload = json.loads(data["tool_response"][0]["text"])
+    result = payload["results"][0]
+    if mutation == "changed_text":
+        result["lines"][1][2] = "    return 0;"
+    elif mutation == "truncated":
+        result["lines"].pop()
+    elif mutation == "partial_line":
+        result["lines"][-1][2] = "    return"
+    elif mutation == "reordered_rows":
+        result["lines"].reverse()
+    elif mutation == "row_bool":
+        result["lines"][0][1] = False
+    elif mutation == "column":
+        data["tool_input"]["requests"][0]["column"] = 1
+    elif mutation == "tail":
+        data["tool_input"]["requests"][0]["tail_lines"] = 2
+    elif mutation in ("index", "index_bool"):
+        result["index"] = 1 if mutation == "index" else False
+    elif mutation == "path":
+        result["path"] = "repo/second.c"
+    elif mutation == "columns":
+        payload["line_columns"] = ["line", "text", "column"]
+    elif mutation == "failed":
+        result["error"] = "read failed"
+    elif mutation == "extra_result":
+        payload["results"].append(copy.deepcopy(result))
+    elif mutation == "long":
+        data["tool_input"]["requests"][0]["line_count"] = 80
+    elif mutation == "complete":
+        data = await batch_event(workspace, [{"path": "repo/first.c", "line_count": 4}], search=False)
+        payload = json.loads(data["tool_response"][0]["text"])
+    data["tool_response"][0]["text"] = "not JSON" if mutation == "malformed" else json.dumps(payload)
+    before = copy.deepcopy(data)
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "read", {}) == {}
+    assert data == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("locale", ["zh", "en"])
+async def test_batch_read_shares_budget_and_retains_missing_context_after_partial_coverage(workspace, locale):
+    from app.agents.source_function_spans import source_snapshot
+    source = 'int value(void) {\n    /* ' + '源码\\"' * 180 + ' */\n    return 7;\n}\n'
+    for name in ("first", "second", "third"):
+        (workspace / "repo" / f"{name}.c").write_text(source)
+    hook = SourceContextEnricher(str(workspace), locale=locale)
+    path = workspace / "repo/first.c"
+    hook.covered[(str(path), *source_snapshot(path)[0])] = [(1, 3)]
+    data = await batch_event(workspace, [
+        {"path": f"repo/{name}.c", "start_line": 3, "line_count": 1} for name in ("first", "second", "third")
+    ], search=False)
+    result = windows(await hook.after_tool(data, "batch", {}))
+    assert len(result) == 2
+    assert result[0]["path"] == "repo/first.c" and result[0]["function"]["end_line"] == 4
+    assert all(window["function"]["range_complete"] for window in result)
+
+
+@pytest.mark.asyncio
+async def test_batch_read_never_enriches_logs_external_paths_or_oversize_functions(workspace, tmp_path):
+    source = "int value(void) {\n    return 7;\n}\n"
+    (workspace / "logs").mkdir()
+    (workspace / "logs/first.c").write_text(source)
+    outside = tmp_path.parent / (tmp_path.name + "-mcp-outside.c")
+    outside.write_text(source)
+    (workspace / "repo/link.c").symlink_to(outside)
+    (workspace / "repo/first.c").write_text('int value(void) {\n    /* ' + 'x' * 8200 + ' */\n    return 7;\n}\n')
+    data = await batch_event(workspace, [
+        {"path": "logs/first.c", "start_line": 2, "line_count": 1},
+        {"path": "repo/link.c", "start_line": 2, "line_count": 1},
+        {"path": "repo/first.c", "start_line": 3, "line_count": 1},
+    ], search=False)
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "read", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_batch_read_source_change_after_verification_keeps_original_only(workspace, monkeypatch):
+    import app.agents.evidence_context as module
+    path = workspace / "repo/first.c"
+    source = "int value(void) {\n    int n = 7;\n    return n;\n}\n"
+    path.write_text(source)
+    data = await batch_event(workspace, [{"path": "repo/first.c", "start_line": 2, "line_count": 1}], search=False)
+    original, calls = module.source_snapshot, 0
+
+    def changed(p):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            path.write_text(source.replace("return n", "return 0"))
+        return original(p)
+
+    monkeypatch.setattr(module, "source_snapshot", changed)
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "read", {}) == {}
 
 
 @pytest.mark.asyncio

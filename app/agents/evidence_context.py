@@ -1,4 +1,4 @@
-"""Attach bounded source context to verified searches and short shell reads.
+"""Attach bounded source context to verified searches and short source reads.
 
 The original tool output is never replaced. This collapses the mechanical
 search-location -> read-surrounding-source round trip without asking the model
@@ -29,27 +29,29 @@ MAX_CONTEXT_FILES = 8
 # Bound the entire UTF-8 payload, including JSON overhead, below that limit.
 MAX_CONTEXT_BYTES = 8_000
 MCP_SEARCH_TOOL = "mcp__evidence__search_evidence"
+MCP_READ_TOOL = "mcp__evidence__read_evidence"
 
 
-def _batch_search_records(response: object) -> list[tuple[str, int, str]]:
-    """Decode the pinned SDK's MCP content blocks without rewriting any result.
-
-    Only our complete, column-labelled match rows qualify. The original tool
-    still supplies every match, pagination flag and explicitly requested context.
-    Malformed/changed wire formats simply keep that original evidence path.
-    """
+def _batch_payload(response: object) -> dict:
+    """Decode only the pinned SDK's bounded single-text MCP representation."""
     if not isinstance(response, list) or len(response) != 1:
-        return []
+        return {}
     block = response[0]
     if not isinstance(block, dict) or block.get("type") != "text":
-        return []
+        return {}
     text = block.get("text")
     if not isinstance(text, str) or len(text) > 200_000:
-        return []
+        return {}
     try:
         payload = json.loads(text)
     except ValueError:
-        return []
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _batch_search_records(response: object) -> list[tuple[str, int, str]]:
+    """Keep original matches, errors and paging; enrich only complete rows."""
+    payload = _batch_payload(response)
     columns = ["path", "line", "column", "text", "line_excerpted"]
     if not isinstance(payload, dict) or payload.get("match_columns") != columns:
         return []
@@ -316,6 +318,56 @@ class SourceContextEnricher:
                 records.append(([path], number, _strip_line_ending(lines[number - 1]), snapshot[0]))
         return records
 
+    def _batch_range_records(self, data: dict) -> list[tuple[list[Path], int, str, tuple]]:
+        """Verify every row of a short MCP range before adding a whole function.
+
+        Requested coordinates and response indices must agree. Column/tail reads,
+        truncated or changed rows keep their original result without enrichment.
+        """
+        arguments = data.get("tool_input")
+        if not isinstance(arguments, dict):
+            return []
+        requests = arguments.get("requests")
+        payload = _batch_payload(data.get("tool_response"))
+        results = payload.get("results")
+        if (not isinstance(requests, list) or not 1 <= len(requests) <= MAX_BATCH
+                or payload.get("line_columns") != ["line", "column", "text"]
+                or not isinstance(results, list) or len(results) != len(requests)):
+            return []
+        if any(not isinstance(result, dict) or type(result.get("index")) is not int
+               or result["index"] != index for index, result in enumerate(results)):
+            return []
+        records = []
+        for request, result in zip(requests, results):
+            if (not isinstance(request, dict) or result.get("error")
+                    or not isinstance(request.get("path"), str) or "tail_lines" in request
+                    or type(request.get("column", 0)) is not int or request.get("column", 0) != 0):
+                continue
+            start, count = request.get("start_line", 1), request.get("line_count", 80)
+            if type(start) is not int or start < 1 or type(count) is not int or not 1 <= count < 80:
+                continue
+            paths = self._source(request["path"], [self.root])
+            if len(paths) != 1 or result.get("path") != paths[0].relative_to(self.root).as_posix():
+                continue
+            path = paths[0]
+            snapshot = source_snapshot(path)
+            lines = [_strip_line_ending(row) for row in io.StringIO(snapshot[1].decode("utf-8"), newline="\n")]
+            end = min(start + count - 1, len(lines))
+            expected = [[number, 0, lines[number - 1]] for number in range(start, end + 1)]
+            rows = result.get("lines")
+            if (not expected or not isinstance(rows, list) or rows != expected
+                    or any(not isinstance(row, list) or type(row[0]) is not int or type(row[1]) is not int
+                           for row in rows)):
+                continue
+            for span in self.function_spans.get(path, snapshot):
+                if (span.start_line > end or span.end_line < start
+                        or start <= span.start_line <= span.end_line <= end
+                        or span.end_line - span.start_line >= 160):
+                    continue
+                number = max(start, span.start_line)
+                records.append(([path], number, lines[number - 1], snapshot[0]))
+        return records
+
     def collect(self, data: dict) -> list[dict]:
         if data.get("tool_name") == MCP_SEARCH_TOOL:
             records = [(self._source(path, [self.root]), number, text)
@@ -326,6 +378,9 @@ class SourceContextEnricher:
         if data.get("tool_name") == "Bash":
             records.extend((paths, number, text, True, identity)
                            for paths, number, text, identity in self._native_range_records(data))
+        elif data.get("tool_name") == MCP_READ_TOOL:
+            records.extend((paths, number, text, True, identity)
+                           for paths, number, text, identity in self._batch_range_records(data))
         contents: dict[Path, list[str]] = {}
         identities = {}
         spans = {}
@@ -417,7 +472,7 @@ class SourceContextEnricher:
 
     async def after_tool(self, input_data, tool_use_id, context):
         if (not isinstance(input_data, dict) or input_data.get("hook_event_name") != "PostToolUse"
-                or input_data.get("tool_name") not in ("Bash", MCP_SEARCH_TOOL)):
+                or input_data.get("tool_name") not in ("Bash", MCP_SEARCH_TOOL, MCP_READ_TOOL)):
             return {}
         identifier = tool_use_id or input_data.get("tool_use_id")
         if identifier and identifier in self.seen_ids:

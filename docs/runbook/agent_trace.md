@@ -72,6 +72,15 @@ A previously added partial range must not suppress the function's missing branch
 Verify both the original read and the added function in the next SDK request;
 offline replay and wire delivery are separate from a measured speedup.
 
+The same hook also handles short `mcp__evidence__read_evidence` source ranges.
+Check request/result indices, canonical repository path and every numbered row;
+only complete, zero-column ranges below 80 requested lines qualify. Tail reads,
+changed/truncated rows and already complete functions add no context. Original
+results, per-request failures and continuations stay intact, and all requests
+share the existing budget and cross-tool coverage state. Verify the real SDK
+receives both the original result and the missing function branch; offline replay
+counts context opportunities, not saved requests or accepted analysis results.
+
 ## Relative-path failures across evidence stages
 
 For the optional staged experiment, distinguish retained SDK conversation history

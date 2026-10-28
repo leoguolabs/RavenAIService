@@ -30,6 +30,18 @@ Non-goals: production deployment, changing model to claim an optimization, reduc
 
 ## Risks / Trade-offs
 
+The next retained screen used MCP reads rather than Bash reads, so the short-shell
+mechanism never activated. Extend the same source-context hook to short MCP source
+ranges without changing the tool result or arguments. Bind each response to its
+request index and canonical repository path; verify every native line and character
+against a stable source snapshot before appending only a complete C/H function.
+Skip column/tail reads, malformed or truncated rows, changed source, already complete
+functions and over-budget functions. Share the existing two-window/8000-byte budget,
+per-run coverage and `source_read_line` metadata across all tools. Keep the gate
+default off; pinned SDK delivery and retained replay establish mechanism coverage,
+not a latency or semantic-quality pass. Prompt guidance describes this same retrieval
+capability without adding another review or reducing evidence requirements.
+
 The staged API pilot used many batch searches, but automatic source enrichment
 was attached only to native Bash searches. Extend the same default-off hook to
 the pinned SDK's MCP search content blocks. Decode only the existing labelled,
