@@ -352,6 +352,62 @@ def _patch_skills():
 
 # ─────────────────────── Tests ─────────────────────────────────────
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled,snapshot_available,extended,review", [
+    (True, True, True, False), (False, True, True, False),
+    (True, False, True, False), (True, True, False, False), (True, True, True, True),
+])
+async def test_staged_effort_gate_and_collection_never_becomes_final_answer(
+    workspace_ctx, enabled, snapshot_available, extended, review,
+):
+    from types import SimpleNamespace
+    from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, AssistantMessage, TextBlock
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+
+    active = enabled and snapshot_available and extended and not review
+    calls = []
+    payload = {"status": "ok", "answer": "Final supported answer", "summary": "Final summary", "severity": "info"}
+    final = json.dumps(payload)
+
+    async def sdk(**kwargs):
+        calls.append(kwargs)
+        draft = active and len(calls) == 1
+        text = "Collection prose" if draft else final
+        yield SimpleNamespace(event={"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}})
+        yield AssistantMessage(content=[TextBlock(text)], model="deepseek-flash")
+        yield ResultMessage(subtype="success", is_error=False, num_turns=1, session_id="s",
+                            duration_ms=1, duration_api_ms=len(calls), result=text,
+                            usage={"input_tokens": 4, "output_tokens": 3})
+
+    opts = ClaudeAgentOptions(model="deepseek-flash[1m]", system_prompt="original", max_turns=150,
+                             env={"ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic"})
+    snapshot = {"task": {}, "project_catalog": {"projects": [], "count": 0, "truncated": False}}
+    with patch("claude_agent_sdk.query", sdk), \
+         patch("app.agents.anthropic_client.build_options", return_value=opts), \
+         _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch("app.agents.staged_evidence.version", return_value="0.2.165"), \
+         patch("app.config.settings", MagicMock(
+             anthropic_provider="deepseek", anthropic_model="deepseek-flash", anthropic_max_turns=150,
+             anthropic_request_timeout_seconds=60, agent_evidence_efficiency_enabled=True,
+             agent_evidence_staged_effort_enabled=enabled, agent_evidence_extended_context_enabled=extended,
+             agent_evidence_final_review_enabled=review,
+         )), \
+         patch("app.agents.evidence_policy.prepare_snapshot", AsyncMock(return_value=snapshot if snapshot_available else None)), \
+         patch("app.agents.evidence_tools.get_evidence_mcp_server", return_value={}):
+        value = await LogAnalysisAgent().run(workspace_ctx)
+    assert len(calls) == (2 if active else 1)
+    assert value["answer"] == payload["answer"] and value["raw"] == final
+    events = value["trace_events"]
+    deltas = "".join(e.get("text_chunk", "") for e in events if e["type"] == "answer_delta")
+    assert deltas == final
+    assert sum(e["type"] == "run_complete" for e in events) == 1
+    assert value["token_usage"]["output_tokens"] == (6 if active else 3)
+    if active:
+        assert any(e["type"] == "thinking_delta" and "Collection prose" in e.get("text_chunk", "") for e in events)
+        assert [e["phase"] for e in events if e.get("kind") == "evidence_stage"] == ["collection", "finalization"]
+    else:
+        assert not any(e.get("kind") == "evidence_stage" for e in events)
+
 def test_render_user_prompt_includes_workspace_dir():
     from app.agents.log_analysis.prompts import render_user_prompt
 

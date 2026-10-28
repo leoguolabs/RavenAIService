@@ -48,6 +48,15 @@ remain unchanged. SDK messages still reach routing and cancellation checks;
 idle transports retain their regular heartbeats. Sequence numbers count emitted
 events, so new traces can be smaller without requiring a schema change.
 
+The default-off staged-evidence experiment emits `system_notice` with
+`kind: "evidence_stage"` and `phase: "collection" | "finalization"`.
+Collection assistant content remains in the ordinary thinking/tool trace, but
+its partial text does not enter `answer_delta`. The router and cancellation
+checks still see every SDK frame. Only the final stage's terminal result is
+parsed/persisted; a first-stage SDK or structured analysis error terminates
+normally through the existing error handling. There is one run lifecycle and
+one total timeout/turn budget, not a fresh run for each stage.
+
 ### Skill availability and actual use
 
 `available_skills` contains the complete enabled Skill catalog for the selected

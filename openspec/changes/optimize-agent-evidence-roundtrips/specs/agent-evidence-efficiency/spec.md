@@ -1,5 +1,25 @@
 ## ADDED Requirements
 
+### Requirement: Optional same-session staged evidence effort
+Log Analysis MAY use a separate default-off experiment to collect evidence at low effort and finalize at high effort in the same SDK session. It SHALL require a complete efficiency snapshot, verified extended-context options and no final-review Stop hook. The experiment SHALL be limited to the verified SDK version and official model/endpoint combination; unsupported combinations, prior-session options and dollar-budget options SHALL retain the original query.
+
+#### Scenario: Collection succeeds without a machine-readable stage marker
+- **WHEN** the SDK completes collection successfully with a resumable session
+- **THEN** SDK completion, not model-authored prose, controls the transition; finalization resumes the same session with original evidence/tools, static phase instructions and the original JSON contract
+
+#### Scenario: Shared limits and endpoint commitment
+- **WHEN** either stage is running or the transition is cancelled
+- **THEN** both stages remain in one routed attempt and outer timeout, finalization receives only remaining turns from the unchanged total cap, cancellation closes the active iterator and no committed attempt is replayed
+
+#### Scenario: Draft or failure before finalization
+- **WHEN** collection emits a draft, SDK rejection or structured analysis error
+- **THEN** draft text remains process trace rather than final-answer deltas, SDK rejection fields remain available to the router, and errors do not start another stage or promote a draft to a successful answer
+
+#### Scenario: Finalization completes or fails
+- **WHEN** the resumed stage produces its terminal result
+- **THEN** only that result supplies the final answer/error, invocation token counters/turns/duration are combined, and session-cumulative API duration and cost are not added twice
+- **AND** implementation checks do not establish semantic equivalence or performance acceptance
+
 ### Requirement: Avoid empty token-progress trace amplification
 The shared SDK trace translator SHALL omit `thinking_tokens` system notices with empty translated detail while preserving actual thinking and answer text, tool evidence, descriptive notices, other system subtypes and terminal parsing. It SHALL NOT filter SDK messages before routing or cancellation checks, change model inputs, or remove idle transport heartbeats.
 

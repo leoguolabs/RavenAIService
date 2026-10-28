@@ -1344,6 +1344,47 @@ class LogAnalysisAgent:
             served["model"] = endpoint.model
             served["provider"] = endpoint.provider
 
+        collecting_stage = False
+
+        def _check_cancel() -> None:
+            if cancel_event is not None and cancel_event.is_set():
+                _log_workflow(ctx.task_id, "cancelled", reason="cancel_event_set")
+                _emit_cancel_requested(state)
+                raise AgentCancelled()
+
+        def _on_stage(phase: str) -> None:
+            nonlocal collecting_stage
+            collecting_stage = phase == "collection"
+            if phase == "original":
+                return
+            detail = (
+                ("Collecting evidence" if collecting_stage else "Preparing the answer")
+                if ctx.locale == "en" else
+                ("正在调查证据" if collecting_stage else "正在整理结论")
+            )
+            state.emit(build_event(
+                SYSTEM_NOTICE, task_id=ctx.task_id, seq_counter=state.seq_counter,
+                kind="evidence_stage", detail=detail, phase=phase,
+            ))
+
+        def _analysis_error(text: str) -> bool:
+            parsed = _extract_fenced_json(text)
+            return isinstance(parsed, dict) and parsed.get("status") == "error"
+
+        query_overrides: Dict[str, Any] = {}
+        if (
+            settings.agent_evidence_staged_effort_enabled is True
+            and evidence_snapshot is not None
+            and settings.agent_evidence_extended_context_enabled is True
+            and settings.agent_evidence_final_review_enabled is not True
+        ):
+            from app.agents.staged_evidence import make_staged_query
+
+            query_overrides["sdk_query"] = make_staged_query(
+                query, locale=ctx.locale, check_cancel=_check_cancel,
+                on_phase=_on_stage, is_analysis_error=_analysis_error,
+            )
+
         start = time.monotonic()
 
         # run_start lifecycle event (and legacy log line).
@@ -1391,13 +1432,15 @@ class LogAnalysisAgent:
                 agent_kind=AGENT_KEY,
                 candidates=endpoints,
                 on_endpoint=_on_endpoint,
+                **query_overrides,
             ):
-                if cancel_event is not None and cancel_event.is_set():
-                    _log_workflow(ctx.task_id, "cancelled", reason="cancel_event_set")
-                    _emit_cancel_requested(state)
-                    raise AgentCancelled()
+                _check_cancel()
                 if evidence_review is not None:
                     evidence_review.observe(message)
+                # Collection prose stays in the full assistant trace, never in
+                # the final-answer delta channel. Routing sees every SDK frame.
+                if collecting_stage and isinstance(getattr(message, "event", None), dict):
+                    continue
                 _emit_for_message(message, state=state)
 
         except AgentCancelled:

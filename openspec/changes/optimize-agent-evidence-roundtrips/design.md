@@ -28,6 +28,25 @@ Non-goals: production deployment, changing model to claim an optimization, reduc
 
 ## Risks / Trade-offs
 
+The private low-collection/high-finalization probes retained original tool history
+in one resumed SDK session and reduced exploratory output on two calibration
+cases, but still produced unsupported exclusions and whole-window claims. They
+exclude HTTP/cold-clone overhead and are not timing or quality acceptance. Add a
+default-off integration so the actual API can be evaluated: one router attempt,
+unchanged outer timeout, total turns shared across phases, and original tools,
+Skills and output contract. Use a static bilingual phase protocol plus the latest
+server task prefix because the pinned SDK ignores replacement system prompts on
+resume. SDK success, not a fragile model-authored marker, controls the transition.
+Only the final result is parsed; first-stage SDK/analysis errors remain terminal.
+Keep collection prose in trace rather than answer deltas, and check cancellation
+at hidden result/cleanup boundaries. For the verified SDK, combine per-invocation
+usage/turns/duration but retain final cumulative API duration/cost. Gate on SDK
+0.2.165, verified official Flash extended-context options, a complete snapshot
+and no Stop review; unsupported or pre-resumed/dollar-budget options pass through.
+Final-stage prompts preserve uncertainty and independent defects but self-checks
+are not independent quality validation. No feature is enabled by default based on
+these feasibility results.
+
 The staged-effort feasibility screen missed a rare critical antenna-offline event
 that its paired baseline found. The original deterministic overview also omitted
 it because it ranked groups by frequency and selected only twelve. Under the

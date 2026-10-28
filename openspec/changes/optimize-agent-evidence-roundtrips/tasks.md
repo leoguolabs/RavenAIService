@@ -21,6 +21,7 @@
 - [x] 2.13 Omit empty SDK token-progress trace notices; verify unchanged answer, usage, evidence, descriptive notices, routing commitment and cancellation under a progress flood, then replay retained traces without altering originals.
 - [x] 2.14 Prefer bounded complete C function ranges for existing optional native context/read hooks; verify exact branches, definition priority, parser/source-change fallback and actual SDK delivery before new paired evaluation.
 - [x] 2.15 Compact the optional structural log overview without a frequency top-twelve cutoff; preserve exact samples, native file references and explicit limits, and verify rare severe-event coverage before another quality screen.
+- [x] 2.16 Integrate a separately gated same-session staged-effort experiment; verify routing commitment, shared limits, cancellation, final-only answers and usage before an actual API pilot. Private probes are not acceptance evidence.
 
 ## 3. Performance and quality acceptance
 

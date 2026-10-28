@@ -171,6 +171,8 @@ class Settings(BaseSettings):
     agent_evidence_read_window_enabled: bool = False
     # Independent SDK capacity experiment; does not require an evidence snapshot.
     agent_evidence_extended_context_enabled: bool = False
+    # Local experiment: same-session collection/finalization, verified SDK only.
+    agent_evidence_staged_effort_enabled: bool = False
 
     # 上下文压缩/记忆配置
     agent_compression_strategy: str = (
