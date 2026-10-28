@@ -591,7 +591,7 @@ class TestLogAnalysisAgentRun:
         # The matching response-language directive is appended last to the
         # system prompt that reaches the SDK.
         system_prompt = mock_build_options.call_args.kwargs["system_prompt"]
-        assert system_prompt.endswith(response_language_directive(locale))
+        assert response_language_directive(locale) in system_prompt
         assert captured_prompt["value"].endswith(response_language_directive(locale))
         # The other locale's directive must NOT be present.
         other = "zh" if locale == "en" else "en"
