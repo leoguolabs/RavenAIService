@@ -41,6 +41,138 @@ async def batch_event(workspace, requests):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("command", [
+    "sed -n '3,5p' repo/first.c",
+    "cd repo && sed -n 3,5p first.c",
+    "cd repo; sed -n '3,5p' first.c; echo ====; sed -n 3,4p second.c",
+])
+async def test_literal_shell_read_adds_missing_function_branch_without_rewriting(workspace, command):
+    source = "int identify(int fd) {\n    int id = 7;\n    if (fd < 0) {\n        id = 0;\n        return id;\n    }\n    return id + 1;\n}\n"
+    (workspace / "repo/first.c").write_text(source)
+    stdout = "".join(source.splitlines(keepends=True)[2:5])
+    if "second.c" in command:
+        stdout += "====\nline 3 second.c\nline 4 second.c\n"
+    data = event(stdout, command)
+    before = copy.deepcopy(data)
+    hook = SourceContextEnricher(str(workspace))
+    result = windows(await hook.after_tool(data, "read-1", {}))
+    assert data == before
+    assert len(result) == 1 and result[0]["source_read_line"] == 3
+    assert result[0]["function"] == {"name": "identify", "start_line": 1, "end_line": 8, "range_complete": True}
+    assert [row["text"] for row in result[0]["lines"]] == source.splitlines()
+    assert await hook.after_tool(data, "read-2", {}) == {}
+    assert await hook.after_tool(event("repo/first.c:1:int identify(int fd) {"), "search-3", {}) == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mutation", ["changed_text", "truncated", "duplicate", "prefix", "pipeline",
+                                        "substitution", "redirect", "failed", "interrupted", "complete", "log", "alias"])
+async def test_shell_read_falls_back_without_verified_unambiguous_literal_output(workspace, mutation):
+    source = "int value(void) {\n    int n = 7;\n    return n;\n}\n"
+    (workspace / "repo/first.c").write_text(source)
+    data = event("    int n = 7;\n    return n;\n", "sed -n '2,3p' repo/first.c")
+    if mutation == "changed_text":
+        data["tool_response"]["stdout"] = data["tool_response"]["stdout"].replace("7", "8")
+    elif mutation == "truncated":
+        data["tool_response"]["stdout"] = "    int n = 7;\n"
+    elif mutation == "duplicate":
+        data["tool_response"]["stdout"] *= 2
+    elif mutation == "prefix":
+        data["tool_response"]["stdout"] = "prefix" + data["tool_response"]["stdout"]
+    elif mutation == "pipeline":
+        data["tool_input"]["command"] += " | head"
+    elif mutation == "substitution":
+        data["tool_input"]["command"] = "sed -n '2,3p' $(echo repo/first.c)"
+    elif mutation == "redirect":
+        data["tool_input"]["command"] += " 2>/dev/null"
+    elif mutation in ("failed", "interrupted"):
+        data["tool_response"]["exit_code" if mutation == "failed" else "interrupted"] = 1
+    elif mutation == "complete":
+        data["tool_input"]["command"] = "sed -n '1,4p' repo/first.c"
+        data["tool_response"]["stdout"] = source
+    elif mutation == "log":
+        (workspace / "logs").mkdir()
+        (workspace / "logs/first.c").write_text(source)
+        data["tool_input"]["command"] = "sed -n '2,3p' logs/first.c"
+    elif mutation == "alias":
+        data["tool_input"]["command"] = "echo sed -n '2,3p' repo/first.c"
+    before = copy.deepcopy(data)
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "read", {}) == {}
+    assert data == before
+
+
+@pytest.mark.asyncio
+async def test_shell_read_partial_prior_context_does_not_hide_missing_function_branch(workspace):
+    source = "int value(void) {\n    int n = 7;\n    return n;\n}\n"
+    path = workspace / "repo/first.c"
+    path.write_text(source)
+    from app.agents.source_function_spans import source_snapshot
+    hook = SourceContextEnricher(str(workspace))
+    hook.covered[(str(path), *source_snapshot(path)[0])] = [(1, 2)]
+    data = event("    int n = 7;\n", "sed -n 2,2p repo/first.c")
+    assert windows(await hook.after_tool(data, "read", {}))[0]["function"]["end_line"] == 4
+
+
+@pytest.mark.asyncio
+async def test_shell_read_accepts_sdk_final_lf_removal_but_not_missing_source_characters(workspace):
+    source = "int value(void) {\n    int n = 7;\n    return n;\n}\n"
+    (workspace / "repo/first.c").write_text(source)
+    data = event("    int n = 7;\n    return n;", "sed -n 2,3p repo/first.c")
+    original = copy.deepcopy(data)
+    assert windows(await SourceContextEnricher(str(workspace)).after_tool(data, "trimmed-lf", {}))
+    assert data == original
+    data["tool_response"]["stdout"] = "    int n = 7;\n    return n"
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "missing-semicolon", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_shell_read_keeps_whole_function_budget_and_no_partial_fallback(workspace):
+    source = 'int value(void) {\n    /* ' + 'x' * 8200 + ' */\n    return 7;\n}\n'
+    (workspace / "repo/first.c").write_text(source)
+    data = event("    return 7;", "sed -n 3,3p repo/first.c")
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "oversized", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_shell_read_ambiguous_base_paths_and_external_cd_keep_original_only(workspace, tmp_path):
+    source = "int value(void) {\n    return 7;\n}\n"
+    (workspace / "repo/first.c").write_text(source)
+    (workspace / "repo/sub").mkdir()
+    (workspace / "repo/sub/first.c").write_text(source)
+    data = event("    return 7;", "sed -n 2,2p first.c", cwd=str(workspace / "repo/sub"))
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "ambiguous", {}) == {}
+    data["tool_input"]["command"] = f"cd {tmp_path.parent}; sed -n 2,2p repo/first.c"
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "external-cd", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_shell_read_changed_source_and_external_symlink_are_not_added(workspace, tmp_path, monkeypatch):
+    import app.agents.evidence_context as module
+    source = "int value(void) {\n    int n = 7;\n    return n;\n}\n"
+    outside = tmp_path.parent / (tmp_path.name + "-outside-read.c")
+    outside.write_text(source)
+    path = workspace / "repo/first.c"
+    path.unlink()
+    path.symlink_to(outside)
+    data = event("    int n = 7;\n", "sed -n 2,2p repo/first.c")
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "outside", {}) == {}
+    path.unlink()
+    path.write_text(source)
+    original = module.source_snapshot
+    calls = 0
+
+    def changed(p):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            path.write_text(source.replace("return n", "return 0"))
+        return original(p)
+
+    monkeypatch.setattr(module, "source_snapshot", changed)
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "changed", {}) == {}
+
+
+@pytest.mark.asyncio
 async def test_batch_search_adds_complete_function_without_changing_requested_evidence(workspace):
     source = "void before(void) {\n    target();\n}\n\nint target(void) {\n    int value = 7;\n    return value;\n}\n\nint after(void) { return 9; }\n"
     (workspace / "repo/first.c").write_text(source)

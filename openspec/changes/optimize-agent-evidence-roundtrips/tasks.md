@@ -24,6 +24,7 @@
 - [x] 2.16 Integrate a separately gated same-session staged-effort experiment; verify routing commitment, shared limits, cancellation, final-only answers and usage before an actual API pilot. Private probes are not acceptance evidence.
 - [x] 2.17 Apply the existing optional source enrichment to batch search results with one shared budget and cross-tool deduplication; verify unchanged search evidence, source boundaries and actual SDK context delivery before fresh timing trials.
 - [x] 2.18 Clarify Bash absolute paths across staged resume after reproducing persistent in-stage cwd and reset-on-resume with the actual pinned SDK; preserve commands/tools and keep real-model quality acceptance separate.
+- [x] 2.19 Extend the existing optional source-context hook to verified short literal Bash reads, preserving commands/results and whole-function bounds; verify real SDK delivery and retained-command replay before new real-model evaluation.
 
 ## 3. Performance and quality acceptance
 

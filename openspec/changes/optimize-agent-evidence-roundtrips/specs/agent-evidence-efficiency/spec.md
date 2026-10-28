@@ -183,6 +183,15 @@ When efficiency and the separate source-context switch are enabled, successful n
 - **WHEN** a native line-number search returns a verified repository source reference
 - **THEN** the SDK can add a bounded surrounding excerpt with exact lines and continuation while retaining the original search result
 
+#### Scenario: A literal short shell read ends inside a source function
+- **WHEN** a successful Bash literal `sed -n` range shorter than 80 lines matches a unique workspace source file and the full returned text, allowing only the SDK's removed final LF
+- **THEN** the same default-off hook may append complete parsed C/H functions within the existing two-window/8000-byte budget, marked with `source_read_line`, without rewriting or rerunning the command or replacing stdout
+- **AND** full-function deduplication preserves previously unseen branches; syntax, path, content or size uncertainty retains the original workflow without a partial added window
+
+#### Scenario: Short shell read context reaches the real SDK
+- **WHEN** the pinned SDK executes a supported literal source read
+- **THEN** an offline SDK exchange verifies that the original result and the exact added function reach the next request, while retained-command replay and this exchange remain separate from real-model latency and quality acceptance
+
 #### Scenario: A complete function fits the remaining context budget
 - **WHEN** verified C/H hits include an error-free function definition or a location inside that function
 - **THEN** definition hits are preferred for added context and a complete function may use the remaining total payload budget within the unchanged line bound

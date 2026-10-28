@@ -62,6 +62,16 @@ SDK request contains the added context before attributing a missing read to it.
 Count actual requests and audit final answers in a fresh cohort; added context
 alone proves neither saved calls nor equivalent conclusions.
 
+For short literal Bash `sed -n 'start,endp' source` reads, check the same hook for
+`source_read_line` and a complete-function range. Every requested source character
+must match stdout; only the SDK's removed terminal LF is normalized. Supported
+literal `cd` and separator commands do not change the original command or output.
+Pipelines, substitutions, redirections, ambiguous paths, changed source and
+over-budget functions retain native behavior without an extra partial excerpt.
+A previously added partial range must not suppress the function's missing branch.
+Verify both the original read and the added function in the next SDK request;
+offline replay and wire delivery are separate from a measured speedup.
+
 ## Relative-path failures across evidence stages
 
 For the optional staged experiment, distinguish retained SDK conversation history
