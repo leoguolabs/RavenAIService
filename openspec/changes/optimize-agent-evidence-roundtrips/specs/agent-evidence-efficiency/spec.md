@@ -112,11 +112,15 @@ Log Analysis MAY append a bounded structural log overview only when its separate
 #### Scenario: A rare severe event follows frequent warning groups
 - **WHEN** more than twelve indexed warning groups include a low-frequency severe event
 - **THEN** compact column-labelled group rows retain every indexed group that fits the unchanged encoded preview budget, without a frequency-based top-twelve cutoff
-- **AND** any necessary preview omission uses severity, file and native-line priority, retains exact sample prefixes/counts/locations for shown groups and reports omitted groups without implying causal relevance
+- **AND** the previous preview's visible groups and file inventory are preserved before additions use severity, file and native-line priority, with exact sample prefixes/counts/locations and explicit omissions without implying causal relevance
 
 #### Scenario: Compact inventory exceeds the preview budget
 - **WHEN** file rows or group samples cannot fit the complete UTF-8 JSON budget including legends and omission metadata
 - **THEN** omitted file rows have no surviving group references, omissions remain explicit, and an impossible metadata budget falls back to native investigation rather than returning oversized or misleading coverage
+
+#### Scenario: Compact column overhead would remove previously visible evidence
+- **WHEN** the v2 preview cannot retain all groups and file inventory already shown by the prior bounded preview
+- **THEN** the complete prior v1 preview is returned within the same byte limit instead of replacing old evidence with different samples
 
 ### Requirement: Optional coalescing of short native source reads
 Log Analysis MAY expand a short native source Read when a separate default-off switch, the efficiency gate and a complete startup snapshot are present. The actual range SHALL contain every originally requested line and retain native output semantics, all tools and the turn cap. Added context SHALL be bounded and identified to the model, without claiming whole-file coverage or adding a model continuation.

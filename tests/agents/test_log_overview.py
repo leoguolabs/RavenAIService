@@ -23,6 +23,8 @@ def inspect(root):
 
 
 def decoded_groups(value):
+    if value["format"] == "raven-log-overview-v1":
+        return value["warning_groups"]
     groups = []
     for row in value["warning_groups"]:
         group = dict(zip(value["warning_group_columns"], row, strict=True))
@@ -165,14 +167,14 @@ def test_rare_critical_group_survives_more_than_twelve_frequent_groups(logs):
     assert len(overview._encode(value).encode()) <= overview.MAX_PROMPT_BYTES
 
 
-def test_preview_budget_prioritizes_severity_and_counts_omitted_groups(logs, monkeypatch):
+def test_preview_additions_prioritize_severity_and_count_omitted_groups(logs, monkeypatch):
     lines = [record(1, '频繁 "警告"' * 25, "WARNING", i) for i in range(20) for _ in range(5)]
     lines += [record(2, "rare critical event", "CRIT", 99)]
     (logs / "logs/a.log").write_text("\n".join(lines))
-    monkeypatch.setattr(overview, "MAX_PROMPT_BYTES", 1800)
+    monkeypatch.setattr(overview, "MAX_PROMPT_BYTES", 2400)
     value = inspect(logs)
     groups = decoded_groups(value)
-    assert len(overview._encode(value).encode()) <= 1800
+    assert len(overview._encode(value).encode()) <= 2400
     assert groups[0]["level"] == "CRIT" and groups[0]["first"][0] == 101
     assert value["omitted_group_rows"] == 21 - len(groups) > 0
     assert value["files"][0]["levels"] == {"WARNING": 100, "CRIT": 1}
@@ -207,3 +209,28 @@ def test_utf8_preview_budget_covers_escaping_and_omission_digit_changes(logs, mo
     encoded = overview._encode(value).encode("utf-8")
     assert len(encoded) <= budget and json.loads(encoded) == value
     assert len(decoded_groups(value)) + value["omitted_group_rows"] == 31
+
+
+def test_extra_severe_groups_do_not_evict_previously_visible_frequent_warning(logs, monkeypatch):
+    lines = [record(1, "frequent warning", "WARNING", 99) for _ in range(30)]
+    lines += [record(2, "error context " * 15, "ERROR", i) for i in range(25)]
+    (logs / "logs/a.log").write_text("\n".join(lines))
+    monkeypatch.setattr(overview, "MAX_PROMPT_BYTES", 2400)
+    value = inspect(logs)
+    groups = decoded_groups(value)
+    assert any(g["level"] == "WARNING" and g["count"] == 30 for g in groups)
+    assert any(g["level"] == "ERROR" for g in groups)
+    assert value["omitted_group_rows"] > 0
+    assert len(overview._encode(value).encode()) <= 2400
+
+
+def test_legacy_format_is_retained_when_column_legends_would_evict_evidence(monkeypatch):
+    files = [{"path": "logs/a.log", "bytes": 20, "complete": True}]
+    sample = [1, "time", "event"]
+    group = {"path": "logs/a.log", "level": "ERROR", "source": "a.c:1", "function": "f",
+             "count": 1, "first": sample, "last": sample, "samples_excerpted": False}
+    expected = {"format": "raven-log-overview-v1", "scan_complete": True, "files": files,
+                "warning_groups": [group], "omitted_file_rows": 0, "omitted_group_rows": 0}
+    monkeypatch.setattr(overview, "MAX_PROMPT_BYTES", len(overview._encode(expected).encode()))
+    assert overview._bounded_preview(files, [group], scan_complete=True) == expected
+    assert files == [{"path": "logs/a.log", "bytes": 20, "complete": True}]

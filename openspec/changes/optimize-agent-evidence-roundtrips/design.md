@@ -34,8 +34,12 @@ it because it ranked groups by frequency and selected only twelve. Under the
 existing default-off overview switch, encode groups as column-labelled rows with
 file indices and reuse identical first/last samples. Preserve original message
 prefixes, timestamps, LF references and counts; allow every indexed group that
-fits the unchanged 12,000-byte encoded budget. When output must be omitted, use
-severity, file and native-line order rather than frequency. Severity only orders
+fits the unchanged 12,000-byte encoded budget. A thirty-case mechanical audit
+found that severity-only selection evicted some formerly shown groups in nine
+cases. Reserve the previous preview's visible groups and file inventory first,
+then add other groups in severity, file and native-line order rather than frequency.
+If compact column overhead would evict old evidence or inventory, return the
+original bounded v1 representation. Severity only orders
 the preview and does not establish relevance or causation. Preserve all scan
 limits, per-file unindexed-record counts and explicit output omissions. References
 to omitted inventory rows must never survive. Verify Unicode/escaping accounting,
