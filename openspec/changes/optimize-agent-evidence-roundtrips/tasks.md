@@ -19,6 +19,7 @@
 - [x] 2.11 Finish saved-answer subscriptions before optional title work in the same background job; verify durable answers, delayed/cancelled titles and unchanged concurrent-edit guards for both chat services.
 - [x] 2.12 Keep historical answer/trace payloads out of sidebar status polling; verify unchanged latest-run selection, ownership and active-run overlays with real SQLite.
 - [x] 2.13 Omit empty SDK token-progress trace notices; verify unchanged answer, usage, evidence, descriptive notices, routing commitment and cancellation under a progress flood, then replay retained traces without altering originals.
+- [x] 2.14 Prefer bounded complete C function ranges for existing optional native context/read hooks; verify exact branches, definition priority, parser/source-change fallback and actual SDK delivery before new paired evaluation.
 
 ## 3. Performance and quality acceptance
 

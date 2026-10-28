@@ -120,8 +120,13 @@ Log Analysis MAY expand a short native source Read when a separate default-off s
 - **WHEN** the input is a log, Skill, external path, oversized or unsupported file, invalid range, or the original range itself exceeds the expansion budget
 - **THEN** the hook returns no modification and native Read handles the original request
 
+#### Scenario: Short read is contained in a complete C function
+- **WHEN** an error-free parsed C/H function contains every requested line and fits the same 160-line and byte bounds
+- **THEN** the hook may return that complete function, including more than 32 preceding lines, without unrelated trailing functions or loss of requested evidence
+- **AND** an already complete function read does not expand merely to fill the budget
+
 #### Scenario: Byte-count cache sees a different file identity
-- **WHEN** the device, inode, size, modification time or change time differs
+- **WHEN** the device, inode, size, modification time, change time or bounded content digest differs
 - **THEN** cached line byte counts are replaced before expansion; cache state remains bounded and isolated per run
 
 ### Requirement: Automatic source context for native searches
@@ -134,6 +139,15 @@ When efficiency and the separate source-context switch are enabled, successful l
 #### Scenario: Native search locates a source definition
 - **WHEN** a native line-number search returns a verified repository source reference
 - **THEN** the SDK can add a bounded surrounding excerpt with exact lines and continuation while retaining the original search result
+
+#### Scenario: A complete function fits the remaining context budget
+- **WHEN** verified C/H hits include an error-free function definition or a location inside that function
+- **THEN** definition hits are preferred for added context and a complete function may use the remaining total payload budget within the unchanged line bound
+- **AND** completeness is labeled only for that syntax range and does not establish compiled branches, deployed revision, runtime behavior or whole-file coverage
+
+#### Scenario: Function parsing is unavailable or incomplete
+- **WHEN** the parser is missing, syntax or encoding is unsupported, the source changes, or the complete function exceeds the context budget
+- **THEN** the existing exact window and continuation behavior remains available without a false function-completeness claim
 
 #### Scenario: Ambiguous or unsupported search output
 - **WHEN** a path escapes the repository, a line does not match, or output cannot be resolved unambiguously

@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from app.agents.evidence_context import MAX_SOURCE_BYTES, _SOURCE_SUFFIXES
+from app.agents.source_function_spans import CFunctionSpans, source_snapshot
 
 logger = logging.getLogger(__name__)
 MAX_WINDOW_LINES = 160
@@ -23,11 +24,7 @@ class SourceReadWindow:
         self.lock = asyncio.Lock()
         # Cache only byte-count prefixes, never source text. Each run owns it.
         self.cache: OrderedDict[Path, tuple[tuple, list[int]]] = OrderedDict()
-
-    @staticmethod
-    def _identity(path: Path) -> tuple:
-        stat = path.stat()
-        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+        self.function_spans = CFunctionSpans()
 
     def expand(self, arguments: dict) -> dict | None:
         value, start, count = arguments.get("file_path"), arguments.get("offset"), arguments.get("limit")
@@ -39,17 +36,19 @@ class SourceReadWindow:
         if (not relative.parts or relative.parts[0] not in ("repo", "related_repos") or ".git" in relative.parts
                 or path.suffix.lower() not in _SOURCE_SUFFIXES or not path.is_file()):
             return None
-        identity = self._identity(path)
-        if identity[2] > MAX_SOURCE_BYTES:
+        if path.stat().st_size > MAX_SOURCE_BYTES:
             return None
+        try:
+            snapshot = source_snapshot(path)
+        except ValueError:
+            return None
+        identity, raw = snapshot
         cached = self.cache.get(path)
         if cached is not None and cached[0] == identity:
             costs = cached[1]
             self.cache.move_to_end(path)
         else:
-            with path.open("rb") as stream:
-                raw = stream.read(MAX_SOURCE_BYTES + 1)
-            if len(raw) > MAX_SOURCE_BYTES or b"\0" in raw or self._identity(path) != identity:
+            if b"\0" in raw:
                 return None
             # An encoding we cannot measure reliably keeps the native request.
             raw.decode("utf-8")
@@ -70,6 +69,14 @@ class SourceReadWindow:
         total_lines = len(costs) - 1
         if requested_end > total_lines or costs[requested_end] - costs[start - 1] >= MAX_WINDOW_BYTES:
             return None
+        span = self.function_spans.containing(path, start, requested_end, snapshot)
+        if source_snapshot(path)[0] != identity:
+            return None
+        if (span and span.end_line - span.start_line < MAX_WINDOW_LINES
+                and costs[span.end_line] - costs[span.start_line - 1] <= MAX_WINDOW_BYTES):
+            if span.start_line == start and span.end_line == requested_end:
+                return None
+            return {**arguments, "offset": span.start_line, "limit": span.end_line - span.start_line + 1}
         first = max(1, start - 32)
         last = min(total_lines, first + MAX_WINDOW_LINES - 1)
         while costs[last] - costs[first - 1] > MAX_WINDOW_BYTES:
