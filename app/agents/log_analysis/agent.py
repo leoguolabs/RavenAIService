@@ -52,6 +52,11 @@ from app.agents.log_analysis.trace import (
 )
 from app.agents.usage import accumulate_usage, new_token_usage
 from app.agents.log_analysis.workspace import WorkspaceContext
+from app.agents.log_analysis.result_normalization import (
+    DuplicateResultField as _DuplicateResultField,
+    parse_complete_analysis_result,
+    unique_json_object as _unique_json_object,
+)
 from app.agents.log_analysis.mcp_tools import (
     PROJECT_DISCOVERY_MCP_TOOL,
     PROJECT_REPO_CLONE_MCP_TOOL,
@@ -84,19 +89,6 @@ AGENT_KEY = "log_analysis"
 
 
 TraceEmitter = Callable[[AgentTraceEvent], None]
-
-
-class _DuplicateResultField(ValueError):
-    """An ambiguous object cannot be repaired by selecting one of its values."""
-
-
-def _unique_json_object(pairs: List[tuple[str, Any]]) -> Dict[str, Any]:
-    result: Dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise _DuplicateResultField(key)
-        result[key] = value
-    return result
 
 
 def _parse_partial_array(text: str, start: int, decoder: json.JSONDecoder) -> tuple[List[Any], int]:
@@ -332,19 +324,7 @@ def _extract_fenced_json(text: str) -> Optional[Dict[str, Any]]:
     """
     stripped = (text or "").strip()
     if stripped.startswith("{"):
-        try:
-            bare = json.loads(stripped, object_pairs_hook=_unique_json_object)
-        except _DuplicateResultField:
-            return None
-        except json.JSONDecodeError:
-            pass
-        else:
-            if (
-                isinstance(bare, dict)
-                and isinstance(bare.get("status"), str)
-                and any(isinstance(bare.get(key), str) and bare[key].strip() for key in ("answer", "summary"))
-            ):
-                return bare
+        return parse_complete_analysis_result(stripped)
     m = re.search(r"```json\s*", text or "")
     if not m:
         return None

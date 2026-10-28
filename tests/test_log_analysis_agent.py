@@ -67,12 +67,15 @@ async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, e
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fenced", [False, True])
-async def test_complete_result_keeps_structured_evidence_and_uncertainty(workspace_ctx, fenced):
+@pytest.mark.parametrize("skills", [[], ["optional-skill"]])
+async def test_complete_result_keeps_structured_evidence_and_uncertainty(workspace_ctx, fenced, skills):
     from app.agents.log_analysis.agent import LogAnalysisAgent
 
     expected = {
         "status": "ok", "question_type": "root_cause", "severity": "warn",
-        "answer": "Progress was observed; completion is unknown. Example: ```json {} ```",
+        "answer": "Progress was observed; completion is unknown. Example: ```json {} ```\n\n"
+                  "| Board | Time source |\n|---|---|\n| A | TOD |\n\n"
+                  "```mermaid\nflowchart LR\n A[Source] --> B[Board]\n```",
         "summary": "Completion is unknown.",
         "root_cause_hypotheses": [{"hypothesis": "Driver failure", "evidence": ["log:test.log:17"]}],
         "recommended_actions": ["Collect the missing terminal record"],
@@ -86,6 +89,7 @@ async def test_complete_result_keeps_structured_evidence_and_uncertainty(workspa
     sdk = MagicMock()
     sdk.query = query
     with _patch_build_options(), _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch("app.services.skills_service.materialize_relevant_enabled_skills", return_value=skills), \
          patch.dict("sys.modules", {"claude_agent_sdk": sdk}), \
          patch("app.config.settings", MagicMock(anthropic_provider="yinhe", anthropic_model="test", anthropic_request_timeout_seconds=60, agent_evidence_efficiency_enabled=False)):
         result = await LogAnalysisAgent().run(workspace_ctx)
