@@ -19,6 +19,7 @@ from sqlalchemy import select, or_, case, func
 from sqlalchemy.orm import load_only
 
 from app.config import settings
+from app.agents.log_analysis.result_normalization import normalize_saved_analysis_result
 from app.models.log import (
     LogRecord, LogFileInfo, LogUploadRequest, LogListRequest, BatchDeleteRequest,
     BatchDownloadRequest, LogStatus, LogLevel, LogMetadata,
@@ -1628,6 +1629,8 @@ class LogService(BaseCRUDService[LogRecord]):
             )
             if metadata and metadata.extra_fields:
                 ai_analysis_result = metadata.extra_fields.get("ai_analysis_result")
+                if isinstance(ai_analysis_result, dict):
+                    ai_analysis_result = normalize_saved_analysis_result(ai_analysis_result)
                 if ai_analysis_result is not None:
                     logger.debug(
                         "_db_to_pydantic: record_id=%s ai_analysis_result found status=%s model=%s",
@@ -1644,7 +1647,8 @@ class LogService(BaseCRUDService[LogRecord]):
                 raw_conversation = metadata.extra_fields.get("ai_analysis_conversation")
                 if isinstance(raw_conversation, list) and raw_conversation:
                     ai_analysis_conversation = [
-                        turn for turn in raw_conversation if isinstance(turn, dict)
+                        normalize_saved_analysis_result(turn)
+                        for turn in raw_conversation if isinstance(turn, dict)
                     ]
                 raw_task = metadata.extra_fields.get("ai_analysis_task")
                 if isinstance(raw_task, dict):

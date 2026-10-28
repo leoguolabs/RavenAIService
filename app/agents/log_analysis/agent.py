@@ -52,6 +52,11 @@ from app.agents.log_analysis.trace import (
 )
 from app.agents.usage import accumulate_usage, new_token_usage
 from app.agents.log_analysis.workspace import WorkspaceContext
+from app.agents.log_analysis.result_normalization import (
+    DuplicateResultField as _DuplicateResultField,
+    parse_complete_analysis_result,
+    unique_json_object as _unique_json_object,
+)
 from app.agents.log_analysis.mcp_tools import (
     PROJECT_DISCOVERY_MCP_TOOL,
     PROJECT_REPO_CLONE_MCP_TOOL,
@@ -217,6 +222,15 @@ def _parse_string_value_prefix(
 
 
 def _parse_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
+    try:
+        return _parse_unique_json_object_prefix(text)
+    except _DuplicateResultField:
+        # Retain the raw terminal response for diagnosis, but never pick an
+        # earlier/later answer from a corrupt response and report success.
+        return None
+
+
+def _parse_unique_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
     """Parse a JSON object, keeping complete top-level members if truncated.
 
     Claude-compatible providers occasionally stop after emitting a large JSON
@@ -229,12 +243,12 @@ def _parse_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
     if not body:
         return None
     try:
-        parsed = json.loads(body)
+        parsed = json.loads(body, object_pairs_hook=_unique_json_object)
         return parsed if isinstance(parsed, dict) else None
     except json.JSONDecodeError:
         pass
 
-    decoder = json.JSONDecoder()
+    decoder = json.JSONDecoder(object_pairs_hook=_unique_json_object)
     i = 0
     length = len(body)
     while i < length and body[i].isspace():
@@ -257,6 +271,8 @@ def _parse_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
             break
         if not isinstance(key, str):
             break
+        if key in result:
+            raise _DuplicateResultField(key)
         i = end
         while i < length and body[i].isspace():
             i += 1
@@ -298,11 +314,17 @@ def _parse_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
 
 
 def _extract_fenced_json(text: str) -> Optional[Dict[str, Any]]:
-    """Extract and parse the first ```json ... ``` block from text.
+    """Extract a fenced result or a complete, bare analysis JSON object.
 
     If the model emitted an opening fence but was truncated before the closing
-    fence, parse the completed JSON prefix as a best-effort recovery.
+    fence, parse the completed JSON prefix as a best-effort recovery. A provider
+    can omit the fence without changing the JSON payload; do not let the plain
+    Skill-answer fallback wrap that payload and discard its structured fields.
+    Bare objects must be complete and recognizable as an analysis result.
     """
+    stripped = (text or "").strip()
+    if stripped.startswith("{"):
+        return parse_complete_analysis_result(stripped)
     m = re.search(r"```json\s*", text or "")
     if not m:
         return None
