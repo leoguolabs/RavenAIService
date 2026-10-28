@@ -11,6 +11,11 @@ Log Analysis MAY use a separate default-off experiment to collect evidence at lo
 - **WHEN** either stage is running or the transition is cancelled
 - **THEN** both stages remain in one routed attempt and outer timeout, finalization receives only remaining turns from the unchanged total cap, cancellation closes the active iterator and no committed attempt is replayed
 
+#### Scenario: Shell cwd differs from retained conversation history
+- **WHEN** native Bash changes directory within collection and the SDK resumes finalization
+- **THEN** the static bilingual protocol directs Bash reads/searches to absolute workspace paths and Git to `git -C`, without rewriting commands, resetting shell state or treating a relative-path error as evidence of absence
+- **AND** actual SDK validation distinguishes preserved tool history from the resumed shell's original workspace; this mechanism proof is not performance acceptance
+
 #### Scenario: Draft or failure before finalization
 - **WHEN** collection emits a draft, SDK rejection or structured analysis error
 - **THEN** draft text remains process trace rather than final-answer deltas, SDK rejection fields remain available to the router, and errors do not start another stage or promote a draft to a successful answer

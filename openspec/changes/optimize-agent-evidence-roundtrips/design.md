@@ -58,6 +58,16 @@ Final-stage prompts preserve uncertainty and independent defects but self-checks
 are not independent quality validation. No feature is enabled by default based on
 these feasibility results.
 
+A later real-model screen exposed repeated relative-path recovery when Bash
+inherited a prior `cd` or resumed at the original workspace. A deterministic
+offline exchange with SDK 0.2.165 reproduces both behaviors and verifies that an
+absolute workspace path reads the unchanged evidence across resume. Add bilingual
+path guidance to the existing static stage protocol: use absolute workspace
+paths for Bash reads/searches and `git -C` for Git. Preserve commands, tools,
+history and limits; do not silently reset cwd or infer file absence from a failed
+relative lookup. This narrow prompt correction does not adopt the unsuccessful
+private no-thinking/answer-format trials or establish a performance gain.
+
 The staged-effort feasibility screen missed a rare critical antenna-offline event
 that its paired baseline found. The original deterministic overview also omitted
 it because it ranked groups by frequency and selected only twelve. Under the

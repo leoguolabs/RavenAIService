@@ -62,6 +62,18 @@ SDK request contains the added context before attributing a missing read to it.
 Count actual requests and audit final answers in a fresh cohort; added context
 alone proves neither saved calls nor equivalent conclusions.
 
+## Relative-path failures across evidence stages
+
+For the optional staged experiment, distinguish retained SDK conversation history
+from shell state. An offline SDK 0.2.165 probe confirms that Bash calls within a
+stage retain `cd`, while the resumed stage starts at the original workspace.
+Check the preceding Bash command and stage notice before interpreting a missing
+relative path. The phase protocol directs Bash reads/searches to workspace-based
+absolute paths and Git operations to `git -C`; it does not rewrite commands or
+remove tools. Count failed path lookups and corrective requests separately.
+The offline reproduction establishes the mechanism, not a measured model speedup
+or answer-equivalence result.
+
 ## Upload rejected before the SSE stream starts
 
 For `/ai-chat/log-analysis/stream`, `/project-expert/stream` and
