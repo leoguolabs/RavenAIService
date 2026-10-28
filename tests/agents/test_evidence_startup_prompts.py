@@ -37,3 +37,28 @@ def test_builtin_snapshot_templates_preserve_investigation_and_question(agent, l
 def test_custom_template_text_and_fallback_are_unchanged():
     system, user = "Custom task requirements: keep all attachments.", "Question: {question}"
     assert use_snapshot_in_templates(system, user) == (system, user)
+
+
+@pytest.mark.parametrize("startup, fallback, replacement", [
+    (
+        "读取当前工作目录的 task.json。",
+        '需要读任务时使用 Read({"file_path":"task.json"})。',
+        "仅在缺少所需字段时读取 `task.json`",
+    ),
+    (
+        "Read task.json in the current workspace.",
+        'When the task file is needed, use Read({"file_path":"task.json"}).',
+        "read `task.json` only for missing required fields",
+    ),
+])
+def test_compact_workflow_reuses_snapshot_and_keeps_task_fallback(startup, fallback, replacement):
+    system = f"{fallback}\n{startup}\nVerify all attachments and repo_info; keep the output schema."
+    resolved, user = use_snapshot_in_templates(system, "Question: {question}")
+    assert startup not in resolved
+    assert replacement in resolved
+    assert fallback in resolved
+    assert resolved.endswith("Verify all attachments and repo_info; keep the output schema.")
+    # A user may quote the same instruction as data; interpolation still comes
+    # after policy resolution and must not rewrite their question.
+    rendered = render_user_prompt(user, task_id="test", workspace_dir="/workspace", question=startup, hints="")
+    assert startup in rendered
