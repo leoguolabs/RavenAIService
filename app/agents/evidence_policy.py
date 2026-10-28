@@ -53,14 +53,14 @@ def use_snapshot_in_templates(system_prompt: str, user_template: str) -> tuple[s
 
 def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, source_context: bool = False, read_window: bool = False, final_review=None) -> dict:
     from claude_agent_sdk import HookMatcher
-    from app.agents.evidence_context import SourceContextEnricher
+    from app.agents.evidence_context import MCP_SEARCH_TOOL, SourceContextEnricher
 
     if not workspace:
         return {}
     hooks = {}
     if source_context:
         enricher = SourceContextEnricher(workspace, task_id, locale)
-        hooks["PostToolUse"] = [HookMatcher(matcher="Bash", hooks=[enricher.after_tool])]
+        hooks["PostToolUse"] = [HookMatcher(matcher=f"Bash|{MCP_SEARCH_TOOL}", hooks=[enricher.after_tool])]
     if read_window:
         from app.agents.evidence_read_window import SourceReadWindow
 
@@ -124,7 +124,7 @@ def snapshot_prompt(snapshot: dict, locale: str) -> str:
             "in the same search with context_lines (for example 8-20); read only missing decisive ranges afterward. "
             "Use tail_lines for endings, without start_line/column/line_count. Inspect results before choosing dependent "
             "requests; do not add speculative unrelated searches just to fill a batch.\n"
-            "Native source searches can already include verified surrounding source excerpts. Use these as read evidence; "
+            "Source searches can already include verified surrounding source excerpts. Use these as read evidence; "
             "do not issue a separate read of the same range unless decisive context is still missing.\n"
             "Results are paged excerpts. Follow next_request or native tools for decisive context; a partial page cannot "
             "prove absence, exact counts or whole-file coverage. Avoid repeating an unchanged query/page. "
@@ -152,7 +152,7 @@ def snapshot_prompt(snapshot: dict, locale: str) -> str:
             "（例如 8–20）一起取周边上下文，随后只续读缺少的关键范围。末尾读取使用 tail_lines，"
             "不要同时传 start_line/column/line_count。依赖前一步结果的请求须先看结果再决定，"
             "不要为了凑批量而加入无关的猜测性检索。\n"
-            "原生源码检索可能已附带经过核验的周边源码片段，可直接作为读取证据使用；只有仍缺关键上下文时才另行读取，避免重复同一行范围。\n"
+            "源码检索可能已附带经过核验的周边源码片段，可直接作为读取证据使用；只有仍缺关键上下文时才另行读取，避免重复同一行范围。\n"
             "工具返回的是分页片段：关键上下文通过 next_request 或原生工具继续读取，"
             "不能用未读完的页面断言没有命中、给出精确总数或声称覆盖全文。避免重复执行未变化的查询与页码。"
             "扩展调查前明确剩余证据缺口；问题和反证均得到解释后及时按要求回答，证据不足时保留不确定性。"

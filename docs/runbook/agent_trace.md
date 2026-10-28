@@ -48,6 +48,20 @@ Verify generation parameters and endpoint isolation with the actual SDK, retain
 all prior results, and freeze a new benchmark cohort before enabling it. Record
 compaction time separately; longer context alone does not establish a speedup.
 
+## Repeated reads after a batch source search
+
+With both evidence efficiency and source-context experiments enabled, the same
+PostToolUse hook handles Bash line-number searches and `mcp__evidence__search_evidence`.
+Check whether the returned matches are complete rows in the supported column
+format and match local repository source. Unsupported shapes, excerpted lines,
+external paths and already covered ranges retain the ordinary tool result without
+extra context. The entire batch shares two windows and an 8000-byte hook budget;
+it does not get that budget for each request. Original matches, per-request errors,
+pagination and explicitly requested context are preserved. Verify the subsequent
+SDK request contains the added context before attributing a missing read to it.
+Count actual requests and audit final answers in a fresh cohort; added context
+alone proves neither saved calls nor equivalent conclusions.
+
 ## Upload rejected before the SSE stream starts
 
 For `/ai-chat/log-analysis/stream`, `/project-expert/stream` and

@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from app.agents.evidence_context import MAX_CONTEXT_BYTES, MAX_SOURCE_BYTES, SourceContextEnricher
+from app.agents.evidence_context import MAX_CONTEXT_BYTES, MAX_SOURCE_BYTES, MCP_SEARCH_TOOL, SourceContextEnricher
 from app.agents.evidence_policy import execution_hooks
-from app.agents.evidence_tools import MAX_READ_CHARS, read_page
+from app.agents.evidence_tools import MAX_READ_CHARS, encode_evidence, read_page, run_batch
 
 
 @pytest.fixture
@@ -31,6 +31,88 @@ def windows(result):
         assert all(isinstance(line, list) and len(line) == 3 for line in window["lines"])
         window["lines"] = [{"line": n, "column": c, "text": t} for n, c, t in window["lines"]]
     return result
+
+
+async def batch_event(workspace, requests):
+    payload = await run_batch(str(workspace), requests, search=True)
+    return {"hook_event_name": "PostToolUse", "tool_name": MCP_SEARCH_TOOL,
+            "tool_input": {"requests": requests},
+            "tool_response": [{"type": "text", "text": encode_evidence(payload)}]}
+
+
+@pytest.mark.asyncio
+async def test_batch_search_adds_complete_function_without_changing_requested_evidence(workspace):
+    source = "void before(void) {\n    target();\n}\n\nint target(void) {\n    int value = 7;\n    return value;\n}\n\nint after(void) { return 9; }\n"
+    (workspace / "repo/first.c").write_text(source)
+    data = await batch_event(workspace, [
+        {"path": "repo/first.c", "pattern": "target", "context_lines": 1},
+        {"path": "missing", "pattern": "target"},
+    ])
+    before = copy.deepcopy(data)
+    hook = SourceContextEnricher(str(workspace))
+    result = windows(await hook.after_tool(data, "batch-1", {}))
+    assert data == before  # Search matches, requested context, error and paging stay intact.
+    assert result[0]["function"] == {"name": "target", "start_line": 5, "end_line": 8, "range_complete": True}
+    lines = source.splitlines()
+    assert all(row["text"] == lines[row["line"] - 1] for w in result for row in w["lines"])
+    # The same hook instance deduplicates added context across native and MCP tools.
+    assert await hook.after_tool(event("repo/first.c:5:int target(void) {"), "native-2", {}) == {}
+    (workspace / "repo/first.c").write_text(source + "// changed\n")
+    assert await hook.after_tool(data, "batch-3", {})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("locale", ["zh", "en"])
+async def test_batch_search_uses_one_context_budget_across_requests(workspace, locale):
+    for name in ("first", "second", "third"):
+        (workspace / "repo" / f"{name}.c").write_text("match\n" + '源代码\\"\t' * 2500)
+    data = await batch_event(workspace, [
+        {"path": f"repo/{name}.c", "pattern": "match"} for name in ("first", "second", "third")
+    ])
+    original = copy.deepcopy(data)
+    result = windows(await SourceContextEnricher(str(workspace), locale=locale).after_tool(data, "batch", {}))
+    assert len(result) == 2  # Limit applies to the entire batch, not separately to every request.
+    assert data == original
+    assert all(window["next_request"] for window in result)
+    for window in result:
+        assert window["lines"][0]["text"] == "match"
+
+
+@pytest.mark.asyncio
+async def test_batch_search_never_enriches_logs_or_external_symlink(workspace, tmp_path):
+    (workspace / "logs").mkdir()
+    (workspace / "logs/file.c").write_text("match\nlog evidence\n")
+    external = tmp_path.parent / (tmp_path.name + "-outside.c")
+    external.write_text("match\nsecret source\n")
+    (workspace / "repo/link.c").symlink_to(external)
+    data = await batch_event(workspace, [{"path": "logs/file.c", "pattern": "match"}])
+    payload = json.loads(data["tool_response"][0]["text"])
+    payload["results"][0]["matches"].append(["repo/link.c", 1, 0, "match", False])
+    data["tool_response"][0]["text"] = json.dumps(payload)
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "batch", {}) == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mutation", ["columns", "excerpted", "wrong_text", "invalid_line", "object_row", "json", "read_tool"])
+async def test_unsupported_or_unverified_batch_output_retains_original_only(workspace, mutation):
+    data = await batch_event(workspace, [{"path": "repo/first.c", "pattern": "line 20 "}])
+    payload = json.loads(data["tool_response"][0]["text"])
+    if mutation == "columns":
+        payload["match_columns"] = list(reversed(payload["match_columns"]))
+    elif mutation == "excerpted":
+        payload["results"][0]["matches"][0][4] = True
+    elif mutation == "wrong_text":
+        payload["results"][0]["matches"][0][3] = "not the original source line"
+    elif mutation == "invalid_line":
+        payload["results"][0]["matches"][0][1] = True
+    elif mutation == "object_row":
+        payload["results"][0]["matches"][0] = {"path": "repo/first.c"}
+    elif mutation == "read_tool":
+        data["tool_name"] = "mcp__evidence__read_evidence"
+    data["tool_response"][0]["text"] = "invalid json" if mutation == "json" else json.dumps(payload)
+    before = copy.deepcopy(data)
+    assert await SourceContextEnricher(str(workspace)).after_tool(data, "batch", {}) == {}
+    assert data == before
 
 
 @pytest.mark.asyncio

@@ -28,6 +28,17 @@ Non-goals: production deployment, changing model to claim an optimization, reduc
 
 ## Risks / Trade-offs
 
+The staged API pilot used many batch searches, but automatic source enrichment
+was attached only to native Bash searches. Extend the same default-off hook to
+the pinned SDK's MCP search content blocks. Decode only the existing labelled,
+complete match rows, verify them against workspace source and reuse the same
+function selection, whole-hook byte budget, continuation and cross-tool
+deduplication. The entire batch shares two windows/8000 bytes; original search
+matches, errors, paging and requested context stay unchanged. Unknown wire shapes
+fall back without enrichment. A real offline SDK exchange must demonstrate that
+MCP PostToolUse context reaches the next model request; offline overlap counts
+alone do not establish fewer requests or an end-to-end improvement.
+
 The private low-collection/high-finalization probes retained original tool history
 in one resumed SDK session and reduced exploratory output on two calibration
 cases, but still produced unsupported exclusions and whole-window claims. They

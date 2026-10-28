@@ -1,4 +1,4 @@
-"""Attach bounded source context to successful native line-number searches.
+"""Attach bounded source context to verified native and batch search results.
 
 The original tool output is never replaced. This collapses the mechanical
 search-location -> read-surrounding-source round trip without asking the model
@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 import shlex
 
-from app.agents.evidence_tools import _strip_line_ending, read_page
+from app.agents.evidence_tools import MAX_BATCH, MAX_SEARCH_MATCHES, _strip_line_ending, read_page
 from app.agents.source_function_spans import CFunctionSpans, source_snapshot
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,52 @@ MAX_CONTEXT_FILES = 8
 # The SDK persists oversized hook outputs and sends the model only a preview.
 # Bound the entire UTF-8 payload, including JSON overhead, below that limit.
 MAX_CONTEXT_BYTES = 8_000
+MCP_SEARCH_TOOL = "mcp__evidence__search_evidence"
+
+
+def _batch_search_records(response: object) -> list[tuple[str, int, str]]:
+    """Decode the pinned SDK's MCP content blocks without rewriting any result.
+
+    Only our complete, column-labelled match rows qualify. The original tool
+    still supplies every match, pagination flag and explicitly requested context.
+    Malformed/changed wire formats simply keep that original evidence path.
+    """
+    if not isinstance(response, list) or len(response) != 1:
+        return []
+    block = response[0]
+    if not isinstance(block, dict) or block.get("type") != "text":
+        return []
+    text = block.get("text")
+    if not isinstance(text, str) or len(text) > 200_000:
+        return []
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return []
+    columns = ["path", "line", "column", "text", "line_excerpted"]
+    if not isinstance(payload, dict) or payload.get("match_columns") != columns:
+        return []
+    results = payload.get("results")
+    if not isinstance(results, list) or len(results) > MAX_BATCH:
+        return []
+    records = []
+    for result in results:
+        if not isinstance(result, dict) or result.get("error"):
+            continue
+        matches = result.get("matches")
+        if not isinstance(matches, list) or len(matches) > MAX_SEARCH_MATCHES:
+            continue
+        for row in matches:
+            if (not isinstance(row, list) or len(row) != len(columns)
+                    or not isinstance(row[0], str) or not row[0]
+                    or type(row[1]) is not int or row[1] < 1
+                    or type(row[2]) is not int or row[2] < 0
+                    or not isinstance(row[3], str) or row[4] is not False):
+                continue
+            records.append((row[0], row[1], row[3]))
+            if len(records) == 300:
+                return records
+    return records
 
 
 def _wire_window(window: dict) -> dict:
@@ -120,7 +166,7 @@ class SourceContextEnricher:
                 continue
         return sorted(found)
 
-    def collect(self, data: dict) -> list[dict]:
+    def _native_records(self, data: dict) -> list[tuple[list[Path], int, str]]:
         arguments = data.get("tool_input") or {}
         response = data.get("tool_response") or {}
         if not isinstance(arguments, dict) or not isinstance(response, dict):
@@ -157,10 +203,7 @@ class SourceContextEnricher:
         explicit = set()
         for token in tokens[:128]:
             explicit.update(self._source(token, bases))
-        contents: dict[Path, list[str]] = {}
-        identities = {}
-        spans = {}
-        hits = []
+        records = []
         for raw in stdout[:200_000].split("\n")[:300]:
             line = _ANSI.sub("", raw)
             match = _NAMED.match(line)
@@ -173,6 +216,20 @@ class SourceContextEnricher:
                     continue
                 candidates = sorted(explicit)
                 number, text = int(match[1]), match[2]
+            records.append((candidates, number, text))
+        return records
+
+    def collect(self, data: dict) -> list[dict]:
+        if data.get("tool_name") == MCP_SEARCH_TOOL:
+            records = [(self._source(path, [self.root]), number, text)
+                       for path, number, text in _batch_search_records(data.get("tool_response"))]
+        else:
+            records = self._native_records(data)
+        contents: dict[Path, list[str]] = {}
+        identities = {}
+        spans = {}
+        hits = []
+        for candidates, number, text in records:
             verified = []
             # Never turn an unexamined ambiguous candidate into a unique hit.
             if len(contents) + sum(path not in contents for path in candidates) > MAX_CONTEXT_FILES:
@@ -249,7 +306,7 @@ class SourceContextEnricher:
 
     async def after_tool(self, input_data, tool_use_id, context):
         if (not isinstance(input_data, dict) or input_data.get("hook_event_name") != "PostToolUse"
-                or input_data.get("tool_name") != "Bash"):
+                or input_data.get("tool_name") not in ("Bash", MCP_SEARCH_TOOL)):
             return {}
         identifier = tool_use_id or input_data.get("tool_use_id")
         if identifier and identifier in self.seen_ids:

@@ -163,7 +163,12 @@ Log Analysis MAY expand a short native source Read when a separate default-off s
 - **THEN** cached line byte counts are replaced before expansion; cache state remains bounded and isolated per run
 
 ### Requirement: Automatic source context for native searches
-When efficiency and the separate source-context switch are enabled, successful line-number source searches MAY receive bounded additional source excerpts without an extra model request. The source-context switch SHALL default off. The server SHALL verify that each source path is inside a workspace repository and that its referenced line matches the search output. Original tool outputs, tool access, total turn budget, necessary retries and evidence requirements SHALL remain unchanged. Added-context state SHALL be isolated per run.
+When efficiency and the separate source-context switch are enabled, successful native or batch line-number source searches MAY receive bounded additional source excerpts without an extra model request. The source-context switch SHALL default off. The server SHALL verify that each source path is inside a workspace repository and that its referenced line matches the search output. Original tool outputs, tool access, total turn budget, necessary retries and evidence requirements SHALL remain unchanged. Added-context state SHALL be isolated per run.
+
+#### Scenario: Batch search uses the shared source-context path
+- **WHEN** the pinned SDK returns complete, column-labelled matches from the evidence search tool
+- **THEN** all requests share the same two-window and 8000-byte context budget and native/batch added-context deduplication
+- **AND** original matches, per-request errors, pagination and requested context remain unchanged; unsupported or excerpted match rows receive no automatic enrichment
 
 #### Scenario: Batch tools enabled without automatic context
 - **WHEN** efficiency is enabled but the source-context switch is off

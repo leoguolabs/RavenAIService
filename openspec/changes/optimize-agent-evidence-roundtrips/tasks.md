@@ -22,6 +22,7 @@
 - [x] 2.14 Prefer bounded complete C function ranges for existing optional native context/read hooks; verify exact branches, definition priority, parser/source-change fallback and actual SDK delivery before new paired evaluation.
 - [x] 2.15 Compact the optional structural log overview without a frequency top-twelve cutoff; preserve exact samples, native file references and explicit limits, and verify rare severe-event coverage before another quality screen.
 - [x] 2.16 Integrate a separately gated same-session staged-effort experiment; verify routing commitment, shared limits, cancellation, final-only answers and usage before an actual API pilot. Private probes are not acceptance evidence.
+- [x] 2.17 Apply the existing optional source enrichment to batch search results with one shared budget and cross-tool deduplication; verify unchanged search evidence, source boundaries and actual SDK context delivery before fresh timing trials.
 
 ## 3. Performance and quality acceptance
 
