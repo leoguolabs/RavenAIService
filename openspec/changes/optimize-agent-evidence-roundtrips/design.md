@@ -28,6 +28,20 @@ Non-goals: production deployment, changing model to claim an optimization, reduc
 
 ## Risks / Trade-offs
 
+The staged-effort feasibility screen missed a rare critical antenna-offline event
+that its paired baseline found. The original deterministic overview also omitted
+it because it ranked groups by frequency and selected only twelve. Under the
+existing default-off overview switch, encode groups as column-labelled rows with
+file indices and reuse identical first/last samples. Preserve original message
+prefixes, timestamps, LF references and counts; allow every indexed group that
+fits the unchanged 12,000-byte encoded budget. When output must be omitted, use
+severity, file and native-line order rather than frequency. Severity only orders
+the preview and does not establish relevance or causation. Preserve all scan
+limits, per-file unindexed-record counts and explicit output omissions. References
+to omitted inventory rows must never survive. Verify Unicode/escaping accounting,
+rare-event coverage and exact original samples before another quality screen;
+coverage of one event is not semantic-equivalence or speed acceptance.
+
 Retained local traces contain tens of thousands of `thinking_tokens` notices
 with no translated detail, answer text or token counter. The shared translator
 already excludes these from workflow logs but still buffers and forwards them.
