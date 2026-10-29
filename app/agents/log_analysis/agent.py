@@ -1132,8 +1132,24 @@ class LogAnalysisAgent:
 
             evidence_snapshot = await prepare_snapshot(task_data)
             if evidence_snapshot is not None:
-                mcp_servers["evidence"] = get_evidence_mcp_server(ctx.temp_dir)
+                statistics = settings.agent_evidence_statistics_enabled is True
+                mcp_servers["evidence"] = get_evidence_mcp_server(ctx.temp_dir, statistics=statistics)
                 allowed_tools.extend(TOOL_NAMES)
+                if statistics:
+                    from app.agents.evidence_statistics import TOOL_NAME
+
+                    allowed_tools.append(TOOL_NAME)
+                    system_prompt += (
+                        "\nFull-file evidence statistics are available through mcp__evidence__summarize_evidence. "
+                        "Batch independent counts, literal field values and numeric ranges instead of repeated sample reads. "
+                        "Before making an all/always/never/range claim, verify the relevant complete scan and its extrema "
+                        "or keep the claim explicitly limited to observed samples. Regex coverage is not incident coverage; "
+                        "preserve original tools and uncertainty.\n" if ctx.locale == "en" else
+                        "\n可用 mcp__evidence__summarize_evidence 批量统计全文匹配次数、字段取值和数值范围，"
+                        "将互不依赖的统计合并，避免反复抽样读取。声称全程、始终、从未或数值范围前，"
+                        "先核对相关完整扫描及极值；未完成核验时将结论限定为已观察到的样本。"
+                        "正则覆盖不等于事件覆盖，原有工具和不确定性要求均保留。\n"
+                    )
                 from app.agents.evidence_policy import use_snapshot_in_templates
 
                 system_prompt, user_prompt_template = use_snapshot_in_templates(system_prompt, user_prompt_template)

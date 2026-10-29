@@ -32,6 +32,21 @@ Non-goals: production deployment, changing model to claim an optimization, reduc
 
 ## Risks / Trade-offs
 
+The isolated context-capacity screen removed two compactions but its final answer
+still claimed a whole-track numeric range contradicted by unsampled original
+records. The existing overview contains warning groups and first/last prefixes;
+it is not a field-range index. Add a separate default-off Log Analysis statistics
+tool under the efficiency/snapshot gate, preserving all original tools. Batch
+1-8 explicit per-file Python regex queries for counts, literal captured values or
+exact decimal/hex extrema with original LF references and sample coordinates.
+Retain explicit byte, line, encoding, time, mutation and distribution limits;
+partial scans cannot establish absence. Bound workers and isolate regex execution
+in cancellable subprocesses so pathological patterns cannot hold the Agent loop.
+The tool performs no cross-file event deduplication or semantic inference, adds
+no model request, and does not preload case-specific review findings. Verify
+original-log extrema and actual SDK delivery before a new paired model screen;
+mechanism checks are not timing or quality acceptance.
+
 The next retained screen used MCP reads rather than Bash reads, so the short-shell
 mechanism never activated. Extend the same source-context hook to short MCP source
 ranges without changing the tool result or arguments. Bind each response to its

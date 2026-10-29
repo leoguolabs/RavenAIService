@@ -26,6 +26,7 @@
 - [x] 2.18 Clarify Bash absolute paths across staged resume after reproducing persistent in-stage cwd and reset-on-resume with the actual pinned SDK; preserve commands/tools and keep real-model quality acceptance separate.
 - [x] 2.19 Extend the existing optional source-context hook to verified short literal Bash reads, preserving commands/results and whole-function bounds; verify real SDK delivery and retained-command replay before new real-model evaluation.
 - [x] 2.20 Cover short MCP source ranges with the existing context hook, verifying complete request/result correspondence and shared budgets; test actual SDK delivery and retained-trace coverage without claiming latency or quality acceptance.
+- [x] 2.21 Add separately gated full-file statistics with exact extrema, explicit incomplete coverage and cancellable regex workers; verify original-log values and actual SDK delivery before new real-model screening.
 
 ## 3. Performance and quality acceptance
 

@@ -298,7 +298,7 @@ def encode_evidence(payload: dict) -> str:
     return json.dumps(encoded, ensure_ascii=False, separators=(",", ":"))
 
 
-def get_evidence_mcp_server(workspace: str):
+def get_evidence_mcp_server(workspace: str, *, statistics: bool = False):
     from claude_agent_sdk import create_sdk_mcp_server, tool
 
     def schema(properties: dict, required: list[str]) -> dict:
@@ -342,4 +342,25 @@ def get_evidence_mcp_server(workspace: str):
     async def read(args):
         return await invoke(args, False)
 
-    return create_sdk_mcp_server(name="evidence", version="1.2.0", tools=[search, read])
+    tools = [search, read]
+    if statistics:
+        from app.agents.evidence_statistics import run_statistics_batch
+
+        @tool("summarize_evidence",
+              "Batch 1-8 independent full-file regex statistics. Each request names one UTF-8 file. "
+              "Use count for occurrence/line counts, numeric for exact finite minimum/maximum, or values for "
+              "a bounded literal value distribution. numeric/values require a Python regex named (?P<value>...) "
+              "capture. Returns source LF line references, first/last samples and numeric extrema in one call. "
+              "Check complete and coverage limits: a partial scan/distribution cannot prove absence or a global range. "
+              "Counts are physical matches per file; overlapping attachments are not distinct events. "
+              "A regex matches only its specified field/format, not every possible incident. "
+              "Use original tools for unsupported statistics or decisive omitted evidence.",
+              schema({"path": {"type": "string"}, "pattern": {"type": "string", "maxLength": 1000},
+                      "mode": {"type": "string", "enum": ["count", "numeric", "values"]},
+                      "ignore_case": {"type": "boolean"}}, ["path", "pattern"]))
+        async def summarize(args):
+            payload = await run_statistics_batch(workspace, args.get("requests"))
+            return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}]}
+
+        tools.append(summarize)
+    return create_sdk_mcp_server(name="evidence", version="1.3.0" if statistics else "1.2.0", tools=tools)

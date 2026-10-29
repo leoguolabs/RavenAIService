@@ -1,5 +1,28 @@
 ## ADDED Requirements
 
+### Requirement: Optional batched full-file statistics
+Log Analysis MAY expose a separately gated, default-off statistics tool when the efficiency snapshot is available. It SHALL retain original tools and accept bounded independent regex queries against individual contained regular files. Counts SHALL distinguish occurrences from matching native LF lines; numeric extrema SHALL preserve exact finite values and original references, without float rounding, event deduplication or diagnosis.
+
+#### Scenario: An interior sample contradicts the first and last samples
+- **WHEN** a complete numeric scan finds an extremum away from the file boundaries
+- **THEN** the tool returns that exact captured value and native location together with scan identity and coverage, without an additional model-mediated read
+
+#### Scenario: Scan or distribution is incomplete
+- **WHEN** byte, time, line, encoding, capture, file-change or distribution limits prevent complete processing
+- **THEN** completeness fields and omissions remain explicit, no partial result claims global absence/range, and original tools remain available
+
+#### Scenario: Regex is pathological or the Agent is cancelled
+- **WHEN** a worker exceeds its timeout or its request is cancelled
+- **THEN** its subprocess is terminated and reaped, independent batch requests retain their own results, and the Agent does not retry a committed model attempt
+
+#### Scenario: Statistics are disabled or prerequisites are unavailable
+- **WHEN** the separate flag is off, the efficiency snapshot is missing or the provider lacks MCP support
+- **THEN** the existing tool set and prompt behavior remain unchanged
+
+#### Scenario: Pinned SDK invokes the new tool
+- **WHEN** an isolated SDK fixture requests a numeric scan
+- **THEN** its next request receives the correct extrema, source references and completeness fields; this delivery test and retained-log replay do not establish latency or final-answer quality
+
 ### Requirement: Optional same-session staged evidence effort
 Log Analysis MAY use a separate default-off experiment to collect evidence at low effort and finalize at high effort in the same SDK session. It SHALL require a complete efficiency snapshot, verified extended-context options and no final-review Stop hook. The experiment SHALL be limited to the verified SDK version and official model/endpoint combination; unsupported combinations, prior-session options and dollar-budget options SHALL retain the original query.
 

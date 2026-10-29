@@ -226,6 +226,49 @@ def test_extended_context_is_independent_of_evidence_snapshot(workspace_ctx, ena
         assert build.call_args.kwargs["use_extended_context"] is enabled
 
 
+@pytest.mark.parametrize("efficiency, enabled, snapshot_available", [
+    (True, True, True), (True, False, True), (True, True, False), (False, True, True),
+])
+@pytest.mark.parametrize("locale", ["zh", "en"])
+def test_statistics_tool_and_guidance_require_all_gates(
+    workspace_ctx, efficiency, enabled, snapshot_available, locale,
+):
+    from contextlib import ExitStack
+    from unittest.mock import AsyncMock
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+    from app.agents.evidence_statistics import TOOL_NAME
+
+    workspace_ctx.locale = locale
+
+    async def fake_query(*args, **kwargs):
+        yield FakeResultMessage(result=_make_good_result_json())
+
+    with ExitStack() as stack:
+        patches = _patch_environment()
+        build = stack.enter_context(patches[0])
+        for patcher in patches[1:]:
+            stack.enter_context(patcher)
+        settings = stack.enter_context(_patch_settings())
+        settings.agent_evidence_efficiency_enabled = efficiency
+        settings.agent_evidence_statistics_enabled = enabled
+        snapshot = {"task": {}, "project_catalog": {"count": 0, "projects": [], "truncated": False}}
+        stack.enter_context(patch("app.agents.evidence_policy.prepare_snapshot", AsyncMock(
+            return_value=snapshot if snapshot_available else None,
+        )))
+        server = stack.enter_context(patch("app.agents.evidence_tools.get_evidence_mcp_server"))
+        stack.enter_context(patch.dict("sys.modules", {"claude_agent_sdk": MagicMock(query=fake_query)}))
+        result = asyncio.run(LogAnalysisAgent().run(workspace_ctx))
+        assert result["status"] == "ok"
+        options = build.call_args.kwargs
+        active = efficiency and enabled and snapshot_available
+        assert (TOOL_NAME in options["allowed_tools"]) is active
+        assert (TOOL_NAME in options["system_prompt"]) is active
+        if efficiency and snapshot_available:
+            assert server.call_args.kwargs["statistics"] is enabled
+        else:
+            server.assert_not_called()
+
+
 class TestEmitterEventSequence:
     def test_run_start_run_complete_bookend(self, workspace_ctx):
         async def fake_query(*args, **kwargs):
