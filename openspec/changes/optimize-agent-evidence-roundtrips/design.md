@@ -4,7 +4,9 @@ Baseline source is the current local commit, recorded separately from production
 
 ## Goals / Non-Goals
 
-Goals: reduce model round trips with unchanged evidence access, output schema, conclusions and uncertainty; measure at least 20 paired rounds and at least 10 distinct subsequent log analyses. A 30% median reduction is an experimental target, not an assumed result.
+Goals: reduce model round trips with unchanged evidence access, output schema, conclusions and uncertainty; measure at least 20 paired rounds and at least 10 distinct subsequent log analyses. A 20% median reduction is an experimental target, not an assumed result.
+
+The user revised the target from 30% to 20% on 2026-10-29. Apply 20% to the final candidate's fresh end-to-end API cohort against the frozen original baseline, not as a requirement that each incremental private probe improve another 20%. Keep historical plans, measurements and failed quality decisions unchanged. Reduced model-response counts, precloned probes and a single faster pair do not establish acceptance.
 
 Non-goals: production deployment, changing model to claim an optimization, reducing the 150-turn limit, suppressing required skills, dropping attachments, hiding failures, or treating tool count as API request count.
 

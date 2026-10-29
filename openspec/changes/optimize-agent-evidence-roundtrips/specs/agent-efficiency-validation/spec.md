@@ -1,7 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: Production-derived local Docker comparison
-Acceptance SHALL include at least 20 paired timing rounds using unchanged production log bytes and original questions, with pinned source/model settings and baseline/candidate run identities. Results SHALL report successes, failures, median and P90, and the experimental 30% median-reduction target separately from observed reduction.
+Acceptance SHALL include at least 20 paired timing rounds using unchanged production log bytes and original questions, with pinned source/model settings and baseline/candidate run identities. Results SHALL report successes, failures, median and P90, and the current experimental 20% median-reduction target separately from observed reduction. The final candidate SHALL be compared with the frozen original baseline; incremental private probes SHALL NOT substitute for that end-to-end API cohort.
+
+#### Scenario: User revises the experimental target
+- **WHEN** the target changes from the historical 30% to the current 20%
+- **THEN** new acceptance uses 20%, while previous plans, results and failed quality decisions remain preserved and are not relabeled as successful
 
 #### Scenario: A run fails
 - **WHEN** either arm fails or times out
