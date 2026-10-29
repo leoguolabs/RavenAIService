@@ -27,6 +27,7 @@
 - [x] 2.19 Extend the existing optional source-context hook to verified short literal Bash reads, preserving commands/results and whole-function bounds; verify real SDK delivery and retained-command replay before new real-model evaluation.
 - [x] 2.20 Cover short MCP source ranges with the existing context hook, verifying complete request/result correspondence and shared budgets; test actual SDK delivery and retained-trace coverage without claiming latency or quality acceptance.
 - [x] 2.21 Add separately gated full-file statistics with exact extrema, explicit incomplete coverage and cancellable regex workers; verify original-log values and actual SDK delivery before new real-model screening.
+- [x] 2.22 Supplement supported native log searches with verified per-topic context when a shared preview omits a literal branch; validate actual SDK cwd, retained-query replay, unchanged output, bounds and SDK delivery before fresh quality screening.
 
 ## 3. Performance and quality acceptance
 

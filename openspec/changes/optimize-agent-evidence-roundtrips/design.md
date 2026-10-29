@@ -169,4 +169,20 @@ The combined v9 trial completed all 20 timing pairs and 10 separate holdout pair
 
 ## Migration Plan
 
+The statistics-v1 private pair did not pass: its registered statistics tool was
+never called, and a native OR search piped through `head 25` returned no mapping
+rows despite 34 original matches because frequent independent topics filled the
+preview. This is a verified missed-evidence path, not a complete explanation of
+the answer regression. Add a separate default-off Log Analysis post-tool option
+for a deliberately small literal `grep`/`head` grammar, including literal-file
+loops. The pinned SDK's PostToolUse cwd was verified to follow Bash directory
+changes and reset on resume. Resolve files against that actual cwd, require
+contained task logs, stable full reads and exact correspondence with original
+stdout, and never evaluate shell code. For literal alternatives absent from the
+preview, attach physical matching-line counts and first/last context under a
+shared byte/time budget. Two endpoint samples do not establish interior coverage;
+include bounded adjacent rows and explicit continuations. Preserve native output,
+other tools, prompts, total budgets and independent switches. Replay and wire
+delivery only justify a new real-model screen, not acceptance of this mechanism.
+
 Local-only implementation and evaluation, default disabled. Revert by disabling the flag. Production deployment requires a separate user instruction.

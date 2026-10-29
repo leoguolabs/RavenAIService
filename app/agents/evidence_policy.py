@@ -51,7 +51,8 @@ def use_snapshot_in_templates(system_prompt: str, user_template: str) -> tuple[s
     return system_prompt, user_template
 
 
-def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, source_context: bool = False, read_window: bool = False, final_review=None) -> dict:
+def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, source_context: bool = False,
+                    read_window: bool = False, topic_context: bool = False, final_review=None) -> dict:
     from claude_agent_sdk import HookMatcher
     from app.agents.evidence_context import MCP_READ_TOOL, MCP_SEARCH_TOOL, SourceContextEnricher
 
@@ -61,6 +62,11 @@ def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, sour
     if source_context:
         enricher = SourceContextEnricher(workspace, task_id, locale)
         hooks["PostToolUse"] = [HookMatcher(matcher=f"Bash|{MCP_SEARCH_TOOL}|{MCP_READ_TOOL}", hooks=[enricher.after_tool])]
+    if topic_context:
+        from app.agents.log_topic_context import LogTopicContextEnricher
+
+        topics = LogTopicContextEnricher(workspace, locale)
+        hooks.setdefault("PostToolUse", []).append(HookMatcher(matcher="Bash", hooks=[topics.after_tool]))
     if read_window:
         from app.agents.evidence_read_window import SourceReadWindow
 

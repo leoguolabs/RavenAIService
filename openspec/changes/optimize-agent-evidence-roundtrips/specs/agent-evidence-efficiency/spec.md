@@ -1,5 +1,24 @@
 ## ADDED Requirements
 
+### Requirement: Optional per-topic native log context
+Log Analysis MAY independently enable a default-off supplement for supported literal native log searches whose shared head preview omits an alternative. The server SHALL require the SDK callback's actual absolute cwd, contained stable regular log files and exact original-output verification. It SHALL retain the command and stdout, never evaluate shell syntax, and label physical matching-line counts and bounded first/last context separately from event coverage or causal certainty.
+
+#### Scenario: Frequent alternatives fill a shared preview
+- **WHEN** a verified literal alternative has matches in the full file but none in the original preview
+- **THEN** bounded counts and exact first/last adjacent rows may reach the next model request without another model-mediated retrieval, with file identity, native references and explicit omissions
+
+#### Scenario: Directory, grammar, bytes or output cannot be verified
+- **WHEN** the cwd is absent, syntax is unsupported, a path escapes task logs, a file changes, binary/processing limits apply, or original stdout differs
+- **THEN** no supplement is added and the original tool result remains available
+
+#### Scenario: Supplement reaches the SDK
+- **WHEN** an isolated pinned-SDK replay executes the supported original search
+- **THEN** both original stdout and complete bounded supplementary evidence are verified on the next request, without treating that proof as final-answer or latency acceptance
+
+#### Scenario: Supplement is disabled or preparation fails
+- **WHEN** the independent flag is off, the efficiency snapshot is unavailable or MCP prerequisites are missing
+- **THEN** the existing hook/tool/prompt behavior remains unchanged
+
 ### Requirement: Optional batched full-file statistics
 Log Analysis MAY expose a separately gated, default-off statistics tool when the efficiency snapshot is available. It SHALL retain original tools and accept bounded independent regex queries against individual contained regular files. Counts SHALL distinguish occurrences from matching native LF lines; numeric extrema SHALL preserve exact finite values and original references, without float rounding, event deduplication or diagnosis.
 

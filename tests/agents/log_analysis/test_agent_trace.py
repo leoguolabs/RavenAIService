@@ -269,6 +269,46 @@ def test_statistics_tool_and_guidance_require_all_gates(
             server.assert_not_called()
 
 
+@pytest.mark.parametrize("efficiency, enabled, snapshot_available, mcp", [
+    (True, True, True, True), (True, False, True, True), (True, True, False, True),
+    (False, True, True, True), (True, True, True, False),
+])
+@pytest.mark.parametrize("locale", ["zh", "en"])
+def test_topic_context_requires_snapshot_provider_and_explicit_switch(
+    workspace_ctx, efficiency, enabled, snapshot_available, mcp, locale,
+):
+    from contextlib import ExitStack
+    from unittest.mock import AsyncMock
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+    from app.agents.evidence_policy import execution_hooks
+
+    workspace_ctx.locale = locale
+
+    async def fake_query(*args, **kwargs):
+        yield FakeResultMessage(result=_make_good_result_json())
+
+    with ExitStack() as stack:
+        for patcher in _patch_environment():
+            stack.enter_context(patcher)
+        settings = stack.enter_context(_patch_settings("deepseek" if mcp else "unknown-provider"))
+        settings.agent_evidence_efficiency_enabled = efficiency
+        settings.agent_evidence_topic_context_enabled = enabled
+        snapshot = {"task": {}, "project_catalog": {"count": 0, "projects": [], "truncated": False}}
+        stack.enter_context(patch("app.agents.evidence_policy.prepare_snapshot", AsyncMock(
+            return_value=snapshot if snapshot_available else None,
+        )))
+        stack.enter_context(patch("app.agents.evidence_tools.get_evidence_mcp_server"))
+        spy = stack.enter_context(patch("app.agents.evidence_policy.execution_hooks", wraps=execution_hooks))
+        stack.enter_context(patch.dict("sys.modules", {"claude_agent_sdk": MagicMock(query=fake_query)}))
+        result = asyncio.run(LogAnalysisAgent().run(workspace_ctx))
+        assert result["status"] == "ok"
+        if efficiency and snapshot_available and mcp:
+            spy.assert_called_once()
+            assert spy.call_args.kwargs["topic_context"] is enabled
+        else:
+            spy.assert_not_called()
+
+
 class TestEmitterEventSequence:
     def test_run_start_run_complete_bookend(self, workspace_ctx):
         async def fake_query(*args, **kwargs):

@@ -132,6 +132,18 @@ Skill 文本包装，丢失根因、证据与建议。未带围栏的截断或�
 Mermaid 围栏随 JSON 解码恢复。数据库原文、执行轨迹、来源和既有代码修复派发状态保持不变，
 不重新调用模型，也不根据历史内容补发修复任务。
 
+日志分析可独立启用 `AGENT_EVIDENCE_TOPIC_CONTEXT_ENABLED`（默认关闭，要求效率总开关、MCP 支持和完整启动快照）。
+它在原生 Bash 检索完成后，识别有限的 `grep -n 'literal1\|literal2' file | head -N`、
+等价 ERE 写法以及字面文件列表的 `for` 循环；不执行或改写命令，不改变原始 stdout。
+使用 SDK 回调的实际 `cwd`，仅读取本任务 `logs/` 内的普通文件，并逐字核对原始预览及读取前后的文件身份。
+对于在共享前 N 行中完全未出现、但全文确有匹配的字面分支，补充独立匹配行数、首尾命中附近各两行、原生行号和源文件 SHA。
+这些是物理行统计与抽样上下文，不是去重事件数、完整事件覆盖或因果结论；缺失样本用 `next_request` 等字段显式标明。
+处理上限为四个文件、十二个字面分支、每文件 16 MiB、总计 32 MiB、两秒协作截止和 8000 字节完整补充输出。
+仅最多四个被挤出的主题获得补充；无效 UTF-8 字节转义显示。复杂正则、通配符、未知目录、二进制内容、
+变更文件、非预期输出及超限均保留原流程。本功能无新增模型调用，与源码上下文和统计工具开关相互独立。
+The optional native-search supplement retains original commands/results and supplies bounded, verified per-topic log evidence;
+offline replay and SDK delivery checks do not establish final-answer equivalence or latency improvement.
+
 日志分析可独立启用 `AGENT_EVIDENCE_STATISTICS_ENABLED`（默认关闭，同样要求效率总开关、MCP 支持和完整启动快照），
 增加 `mcp__evidence__summarize_evidence`。一次批量包含 1–8 个单文件正则统计，支持匹配次数/匹配行数、
 字面字段取值分布、精确有限十进制或十六进制极值；数值/取值模式使用 `(?P<value>...)` 捕获组。

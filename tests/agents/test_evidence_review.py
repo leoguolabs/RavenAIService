@@ -1,6 +1,7 @@
 """Final review is bounded, per-run, and does not replace terminal results."""
 import copy
 import json
+import re
 
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, UserMessage
@@ -64,7 +65,11 @@ async def test_old_sdk_without_response_ids_skips_conservatively_and_runs_are_in
 async def test_hook_wiring_is_optional_and_retains_source_hook(tmp_path):
     review = FinalEvidenceReview("zh", "task", 150)
     hooks = execution_hooks("zh", "task", str(tmp_path), source_context=True, final_review=review)
-    assert hooks["PostToolUse"][0].matcher == "Bash"
+    matcher = hooks["PostToolUse"][0].matcher
+    assert all(re.fullmatch(matcher, name) for name in (
+        "Bash", "mcp__evidence__search_evidence", "mcp__evidence__read_evidence",
+    ))
+    assert re.fullmatch(matcher, "Write") is None
     stop = hooks["Stop"][0]
     assert stop.matcher is None
     assert (await stop.hooks[0]({"hook_event_name": "Stop"}, None, {}))["decision"] == "block"
