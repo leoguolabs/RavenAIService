@@ -141,7 +141,12 @@ Mermaid 围栏随 JSON 解码恢复。数据库原文、执行轨迹、来源和
 处理上限为四个文件、十二个字面分支、每文件 16 MiB、总计 32 MiB、两秒协作截止和 8000 字节完整补充输出。
 仅最多四个被挤出的主题获得补充；无效 UTF-8 字节转义显示。复杂正则、通配符、未知目录、二进制内容、
 变更文件、非预期输出及超限均保留原流程。本功能无新增模型调用，与源码上下文和统计工具开关相互独立。
-The optional native-search supplement retains original commands/results and supplies bounded, verified per-topic log evidence;
+同一开关也支持 `search_evidence` 中的字面 OR 查询（含 Unicode 分支及分页），按服务端工作区解析明确的日志路径。
+逐一重建原始匹配行、长行截断、总数与续页参数，并核对已请求的上下文；上下文中已经展示的分支不重复补充。
+目录枚举排除符号链接和 `.git`，最多检查 256 个条目；整个批次共享上述文件、扫描时间、输出和去重预算。
+无关行中的无效 UTF-8 不阻止已验证检索，但匹配行含无效字节时该查询不补证。新增文件或目录变化也会放弃补证。
+原始多请求结果、错误、分页及上下文均保持不变；只支持大小写敏感字面分支，不解释复杂正则或 glob。
+The optional native/MCP search supplement retains original commands/results and supplies bounded, verified per-topic log evidence;
 offline replay and SDK delivery checks do not establish final-answer equivalence or latency improvement.
 
 日志分析可独立启用 `AGENT_EVIDENCE_STATISTICS_ENABLED`（默认关闭，同样要求效率总开关、MCP 支持和完整启动快照），

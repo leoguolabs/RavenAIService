@@ -19,6 +19,15 @@ Log Analysis MAY independently enable a default-off supplement for supported lit
 - **WHEN** the independent flag is off, the efficiency snapshot is unavailable or MCP prerequisites are missing
 - **THEN** the existing hook/tool/prompt behavior remains unchanged
 
+#### Scenario: Structured log search omits a literal alternative
+- **WHEN** a supported MCP literal OR query has a verified page, totals, continuation and requested context over stable contained log files
+- **THEN** the same switch may supplement alternatives absent from visible matches/context, with request index, per-file counts and exact bounded adjacent rows
+- **AND** paths resolve against the evidence server workspace; the whole batch shares file, byte, time, output and native/MCP deduplication budgets without modifying the original response
+
+#### Scenario: Directory scope or encoded text cannot be verified
+- **WHEN** a log directory changes, processing bounds are exceeded, or a matching line contains invalid UTF-8
+- **THEN** no completeness claim is added for that query; unrelated invalid bytes may remain as explicitly escaped context, and unsupported/error requests retain their original evidence without suppressing valid siblings
+
 ### Requirement: Optional batched full-file statistics
 Log Analysis MAY expose a separately gated, default-off statistics tool when the efficiency snapshot is available. It SHALL retain original tools and accept bounded independent regex queries against individual contained regular files. Counts SHALL distinguish occurrences from matching native LF lines; numeric extrema SHALL preserve exact finite values and original references, without float rounding, event deduplication or diagnosis.
 

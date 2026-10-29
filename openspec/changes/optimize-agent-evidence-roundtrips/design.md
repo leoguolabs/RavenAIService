@@ -186,3 +186,18 @@ other tools, prompts, total budgets and independent switches. Replay and wire
 delivery only justify a new real-model screen, not acceptance of this mechanism.
 
 Local-only implementation and evaluation, default disabled. Revert by disabling the flag. Production deployment requires a separate user instruction.
+
+The fresh topic-context-v1 pair did not emit any native supplement and failed
+quality review. Its observed 8.6% timing difference is not attributable to the
+mechanism. Offline replay shows that accepting an absolute `cd;` prefix alone
+would still add no context. Instead, an actual structured search omitted a
+nonempty literal branch from its shared page. Extend the same topic hook to
+MCP log requests, resolving paths at the evidence server workspace. Replay the
+entire supported literal page, clipping, totals, pagination and requested context
+against bounded stable files before selecting missing alternatives. Preserve
+raw results and require directory identity checks for the scanned scope. Share
+all budgets and deduplication across requests and native/MCP tools. Invalid UTF-8
+on an unrelated line may be skipped during literal verification and escaped in
+added context; a matching invalid line prevents enrichment of that request.
+This corrects a limitation exposed by replaying the real log, without weakening
+the byte/time limits or accepting a final-answer quality regression.
