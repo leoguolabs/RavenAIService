@@ -42,4 +42,4 @@
 ## 4. Separate failed combined mechanisms
 
 - [x] 4.1 Gate automatic source context and final review independently, default both off, and verify both Agents retain batching and fallback behavior.
-- [ ] 4.2 Measure the resulting candidate against the frozen original baseline using the user's current 20% target, at least 20 end-to-end API pairs and at least 10 distinct quality analyses; do not reuse unsuccessful runs as successful timing samples, preserve all previous cohorts and require independent quality review.
+- [ ] 4.2 Measure the resulting candidate against the frozen original baseline, minimizing median latency without a fixed percentage threshold, with at least 20 end-to-end API pairs and at least 10 distinct quality analyses; do not reuse unsuccessful runs as successful timing samples, preserve all previous cohorts and require independent quality review.

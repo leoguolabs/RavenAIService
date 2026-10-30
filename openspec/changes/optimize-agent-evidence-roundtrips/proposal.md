@@ -11,7 +11,7 @@ Production traces show minutes of Agent execution with only seconds spent in too
 - Omit empty SDK token-progress trace notices while preserving actual reasoning/answer text, evidence, routing, cancellation and idle heartbeats; measure transport savings separately from model latency.
 - Preserve original tools, complete evidence access, output schema, required skills, project-fit checks, total turn budget, and provider routing safety boundaries.
 - Add a resumable local Docker benchmark with original production archives/questions, immutable input hashes and source revisions, alternating baseline/candidate runs, and durable full results/traces.
-- Run at least 20 paired timing rounds targeting a 20% median reduction, followed by at least 10 distinct production-log analyses with paired quality verification. No production deployment is included.
+- Run at least 20 paired timing rounds to minimize median analysis time while preserving results and confidence, followed by at least 10 distinct production-log analyses with paired quality verification. There is no fixed percentage threshold. No production deployment is included.
 
 ## Capabilities
 

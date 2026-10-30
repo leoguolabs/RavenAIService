@@ -4,9 +4,11 @@ Baseline source is the current local commit, recorded separately from production
 
 ## Goals / Non-Goals
 
-Goals: reduce model round trips with unchanged evidence access, output schema, conclusions and uncertainty; measure at least 20 paired rounds and at least 10 distinct subsequent log analyses. A 20% median reduction is an experimental target, not an assumed result.
+Goals: reduce model round trips with unchanged evidence access, output schema, conclusions and uncertainty; measure at least 20 paired rounds and at least 10 distinct subsequent log analyses. Minimize median analysis time without a fixed percentage threshold.
 
-The user revised the target from 30% to 20% on 2026-10-29. Apply 20% to the final candidate's fresh end-to-end API cohort against the frozen original baseline, not as a requirement that each incremental private probe improve another 20%. Keep historical plans, measurements and failed quality decisions unchanged. Reduced model-response counts, precloned probes and a single faster pair do not establish acceptance.
+The user revised the target from 30% to 20% on 2026-10-29, then removed the fixed percentage threshold on 2026-10-31 and requested a concrete optimization result. Compare the final candidate's fresh end-to-end API cohort with the frozen original baseline. Keep historical plans, measurements and failed quality decisions unchanged. Reduced model-response counts, precloned probes and a single faster pair do not establish acceptance.
+
+Converge the final candidate around verified changes outside model reasoning before adding further prompt experiments. Optional title work, writer contention and empty trace amplification can be isolated from model inputs and reported separately. Experimental retrieval, context and prompt changes that lose findings or increase unsupported certainty remain excluded. Validate the selected patch set against the original analysis prompts/tools/model configuration, with exact retained-output replay as an additional invariance check; replay does not replace the required real API timing cohort or independent log review.
 
 Non-goals: production deployment, changing model to claim an optimization, reducing the 150-turn limit, suppressing required skills, dropping attachments, hiding failures, or treating tool count as API request count.
 
