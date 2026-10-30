@@ -99,6 +99,14 @@ history and limits; do not silently reset cwd or infer file absence from a faile
 relative lookup. This narrow prompt correction does not adopt the unsuccessful
 private no-thinking/answer-format trials or establish a performance gain.
 
+A subsequent ordinary (unstaged) native-tool screen reproduced two cwd-dependent
+path failures. Apply the same absolute-path guidance to the ordinary bilingual
+Log Analysis prompt and runtime workspace hint. Describe the initial directory
+without implying that Bash always remains there; independent calls must not rely
+on another call's `cd`. Do not reset cwd, rewrite commands, hide errors or infer
+file absence. This correction is independent of the rejected batch-frontier
+prompt and requires fresh real-model evidence before any latency claim.
+
 The staged-effort feasibility screen missed a rare critical antenna-offline event
 that its paired baseline found. The original deterministic overview also omitted
 it because it ranked groups by frequency and selected only twelve. Under the

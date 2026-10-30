@@ -57,12 +57,13 @@ claude_agent_log_analysis:
         在主聊天的后续轮次中，`repo/` 可能已经包含上一轮克隆的 Git 仓库。如果存在 `repo/.git`，请直接复用该仓库，不要再次克隆。你可以对已有仓库执行 `git -C repo status`、`git -C repo log`、`rg ... repo`以及常规的文件读取命令。
 
         ## 路径规则（非常重要）
-        当前工作目录就是上面的 `<workspace>`。所有文件读取与搜索都必须基于当前工作目录中的真实文件：
+        初始工作目录是上面的 `<workspace>`。所有文件读取与搜索都必须基于该工作区中的真实文件：
 
         - 第一次读取任务文件时，Read 工具参数必须优先使用`{"file_path":"task.json"}`。
         - 读取任务文件时也可以使用运行时提示中给出的`<workspace>/task.json` 绝对路径，但绝不能把它改写成`temp/code_repos/<task_id>/task.json` 这种相对路径；当前目录已经是 `<workspace>`，再加此前缀会得到不存在的嵌套路径。
         - 搜索日志归档时使用 `logs/...`，或使用运行时提示中给出的`<workspace>/logs/...` 绝对路径。Glob 工具参数优先使用`{"pattern":"logs/**/metadata.json"}`。
         - 主项目源码使用 `repo/...`；追加项目只使用 `mcp__project_repo__clone_project_repo` 返回的 `related_repos/...` 路径。
+        - Bash 调用可能保留前一次 `cd` 后的目录。Bash 读取和检索请使用工作区内的绝对路径，Git 使用 `git -C "<workspace>/repo" ...`；确需切换目录时，在每个命令内使用 `cd "<绝对目录>" && ...`。独立调用（尤其是并行调用）不得依赖另一个调用改变目录。相对路径报错时先核对目录，不能据此判定文件不存在。
         - 绝不要使用 `/data/task/task.json`、`/data/task/logs`、`/workspace`、`temp/code_repos/<task_id>/task.json` 等猜测路径；这些不是本系统准备的工作区路径，或不是相对于当前目录的有效路径。
         - 如果你对位置有疑问，先执行 `pwd` 或 `ls -la` 确认当前目录，不要先尝试外部绝对路径。
 
@@ -241,12 +242,13 @@ claude_agent_log_analysis:
         In subsequent rounds of the main chat, `repo/` may already contain a Git repository cloned in a previous turn. If `repo/.git` exists, reuse that checkout — do not clone again. You may run `git -C repo status`, `git -C repo log`, `rg ... repo`, and regular file-read commands on the existing repo.
 
         ## Path rules (very important)
-        The current working directory is the `<workspace>` above. All file reads and searches must use real files inside the current working directory:
+        The initial working directory is the `<workspace>` above. All file reads and searches must use real files inside that workspace:
 
         - When reading the task file for the first time, the Read tool argument must prefer `{"file_path":"task.json"}`.
         - You may also use the absolute path `<workspace>/task.json` from the runtime hint, but never rewrite it as `temp/code_repos/<task_id>/task.json`; the current directory is already `<workspace>`, so that prefix leads to a nonexistent nested path.
         - For log archive searches, use `logs/...` or the `<workspace>/logs/...` absolute path from the runtime hint. Prefer `{"pattern":"logs/**/metadata.json"}` for Glob.
         - Use `repo/...` for the primary project. For additional projects, use only the `related_repos/...` path returned by `mcp__project_repo__clone_project_repo`.
+        - Bash calls may retain the directory from an earlier `cd`. Use absolute workspace paths for Bash reads/searches and `git -C "<workspace>/repo" ...` for Git. When a command needs a different directory, include `cd "<absolute directory>" && ...` in that command. Independent calls, especially parallel calls, must not depend on another call changing directory. Check the directory after a relative-path error; it does not prove that the file is absent.
         - Never guess paths like `/data/task/task.json`, `/data/task/logs`, `/workspace`, or `temp/code_repos/<task_id>/task.json`.
         - If you are unsure of the location, run `pwd` or `ls -la` first; do not try external absolute paths.
 

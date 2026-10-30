@@ -1026,7 +1026,7 @@ class LogAnalysisAgent:
         system_prompt, user_prompt_template = get_prompts(locale=ctx.locale)
         system_prompt += (
             "\n\n## 当前运行工作区\n"
-            f"本次运行的当前工作目录是 `{ctx.temp_dir}`。"
+            f"本次运行的初始工作目录是 `{ctx.temp_dir}`。"
             f"`task.json` 的真实路径是 `{ctx.task_json_path}`，"
             f"日志目录是 `{ctx.logs_dir}`，源码目录是 `{ctx.repo_dir}`。"
             "读取文件和搜索时只使用这些路径或它们的相对路径 "
@@ -1034,7 +1034,9 @@ class LogAnalysisAgent:
             "第一次 Read 调用请使用 `{\"file_path\":\"task.json\"}`。"
             "不要尝试 `/data/task/task.json`、`/data/task/logs`，"
             "也不要尝试 `temp/code_repos/<task_id>/task.json` 这种相对路径；"
-            "当前工作目录已经是任务目录。"
+            "初始工作目录已经是任务目录。"
+            "Bash 调用可能保留前次 cd 后的目录；Bash 读取和检索使用上述绝对路径，"
+            "Git 使用 git -C 指定仓库。独立调用不得依赖另一个调用改变目录。"
             "如果路径不确定，先用 `pwd` / `ls -la` 确认当前目录。\n"
         )
 

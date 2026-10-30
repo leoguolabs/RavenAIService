@@ -112,6 +112,11 @@ Each SDK invocation SHALL override both current and legacy background-model envi
 ### Requirement: Preserve investigation semantics
 The optimized Agent SHALL retain all attachments, project-fit checks, original evidence access, required skills, output schema and uncertainty semantics. Disabled optimization SHALL use the existing execution path.
 
+#### Scenario: Ordinary native Bash retains an earlier working directory
+- **WHEN** a previous Bash call changed directory within the task workspace
+- **THEN** ordinary Log Analysis guidance identifies the workspace as the initial directory and directs Bash reads/searches to absolute workspace paths and Git to an explicit repository path
+- **AND** independent calls do not rely on another call changing directory; the service preserves commands, errors and tool behavior, and a relative-path error does not establish file absence
+
 #### Scenario: Startup snapshot available
 - **WHEN** optimization is enabled and a sanitized complete task/catalog snapshot is prepared
 - **THEN** the Agent can use it instead of repeating startup discovery calls, while still checking project fit

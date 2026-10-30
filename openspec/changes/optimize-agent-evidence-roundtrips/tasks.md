@@ -30,6 +30,8 @@
 - [x] 2.22 Supplement supported native log searches with verified per-topic context when a shared preview omits a literal branch; validate actual SDK cwd, retained-query replay, unchanged output, bounds and SDK delivery before fresh quality screening.
 - [x] 2.23 Extend the existing topic supplement to verified structured MCP log searches with shared scan/output budgets, exact page correspondence and stable directory scope; verify retained-query replay and SDK delivery before a fresh quality screen.
 
+- [x] 2.24 Clarify ordinary Log Analysis Bash paths after retained cwd-dependent failures; verify pinned SDK directory behavior and prompt delivery without claiming real-model compliance or latency acceptance.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.
