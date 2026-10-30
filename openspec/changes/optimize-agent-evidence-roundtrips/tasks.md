@@ -37,7 +37,7 @@
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.
 - [x] 3.2 Complete at least 10 distinct holdout log analyses and paired factual/evidence/uncertainty review. All ten reviewed; the combined candidate failed quality acceptance.
 - [ ] 3.3 Investigate every failed/discrepant case; rerun changes transparently without dropping unfavorable results.
-- [ ] 3.4 Verify local end-to-end browser results, review diff, run focused checks and commit scoped changes without pushing or production deployment.
+- [x] 3.4 Verify local end-to-end browser results, review diff, run focused checks and commit scoped changes without pushing or production deployment. The frozen original baseline plus four overhead-only patches passed 77 focused tests; the no-threshold harness passed 7 tests. Ego Lite verified a completed candidate conversation with its answer, table, model/duration, sidebar title and ready follow-up composer. Actual API/SQLite answer consistency and paired input checks are recorded separately. Full timing and semantic acceptance remain pending under 3.3 and 4.2.
 
 ## 4. Separate failed combined mechanisms
 
