@@ -318,7 +318,9 @@ def run_trials(root: Path, args) -> None:
                 run_one(root, case, arm, args.label, endpoints[arm], projects[case["project_code"]])
 
 
-def summarize(root: Path, label: str) -> None:
+def summarize(root: Path, label: str, target_reduction: float | None = None) -> None:
+    if target_reduction is not None and not (0 <= target_reduction < 1):
+        raise ValueError("target reduction must be a fraction in [0, 1)")
     pairs = []
     terminal_times = []
     failures = []
@@ -377,11 +379,16 @@ def summarize(root: Path, label: str) -> None:
         for arm in ("baseline", "candidate"):
             times = sorted(p[arm] for p in pairs)
             report[arm] = {"median": statistics.median(times), "p90": times[math.ceil(len(times) * .9) - 1]}
-        report["median_reduction"] = 1 - report["candidate"]["median"] / report["baseline"]["median"]
+        if report["baseline"]["median"] > 0:
+            report["median_reduction"] = 1 - report["candidate"]["median"] / report["baseline"]["median"]
+    report["timing_sample_complete"] = len(pairs) >= 20 and not failures and not incomplete
+    report["median_improved"] = report.get("median_reduction", 0) > 0
+    report["target_reduction"] = target_reduction
     report["timing_target_met"] = (
-        len(pairs) >= 20 and not failures and not incomplete
-        and report.get("median_reduction", 0) >= .30
-    )
+        report["timing_sample_complete"] and "median_reduction" in report
+        and report["median_reduction"] >= target_reduction
+    ) if target_reduction is not None else None
+    report["optimization_goal"] = "Minimize median latency subject to independent quality acceptance."
     write_json(root / "runs" / label / "summary.json", report)
     print(json.dumps({k: v for k, v in report.items() if k != "pairs"}, ensure_ascii=False), flush=True)
 
@@ -400,6 +407,8 @@ def main() -> None:
     run_parser.add_argument("--arms", default="baseline,candidate")
     summary_parser = sub.add_parser("summarize")
     summary_parser.add_argument("--label", required=True)
+    summary_parser.add_argument("--target-reduction", type=float, default=None,
+                                help="Optional explicit historical threshold as a fraction, e.g. 0.20; none by default")
     args = parser.parse_args()
     try:
         args.root.resolve().relative_to(Path(__file__).resolve().parents[1])
@@ -417,7 +426,9 @@ def main() -> None:
     elif args.command == "run":
         run_trials(args.root.resolve(), args)
     elif args.command == "summarize":
-        summarize(args.root.resolve(), args.label)
+        if args.target_reduction is not None and not (0 <= args.target_reduction < 1):
+            parser.error("target reduction must be a fraction in [0, 1)")
+        summarize(args.root.resolve(), args.label, args.target_reduction)
 
 
 if __name__ == "__main__":

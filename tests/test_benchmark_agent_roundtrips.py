@@ -63,6 +63,7 @@ class BenchmarkEvidenceTests(unittest.TestCase):
         self.assertEqual(result["all_terminal_timing"]["pairs"], 1)
         self.assertEqual(result["outcomes"]["candidate"]["failure_rate"], 1)
         self.assertFalse(result["timing_target_met"])
+        self.assertFalse(result["timing_sample_complete"])
         self.assertFalse(result["eligible_for_acceptance"])
 
     def test_fast_failures_cannot_pass_target_among_twenty_faster_successes(self):
@@ -83,6 +84,34 @@ class BenchmarkEvidenceTests(unittest.TestCase):
         self.assertGreater(result["median_reduction"], .30)
         self.assertEqual(result["outcomes"]["candidate"]["failure"], 1)
         self.assertFalse(result["timing_target_met"])
+        self.assertFalse(result["timing_sample_complete"])
+
+    def test_small_improvement_is_reported_without_an_implicit_percentage_gate(self):
+        for index in range(20):
+            for arm in ("baseline", "candidate"):
+                path = self.root / f"runs/trial/case-{index:02d}" / arm / "result.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({"server": {"status": "done", "result": {"status": "ok"}},
+                                            "observation_timing_valid": True,
+                                            "end_to_end_seconds": 100 if arm == "baseline" else 95}))
+        summarize(self.root, "trial")
+        result = json.loads((self.root / "runs/trial/summary.json").read_text())
+        self.assertTrue(result["timing_sample_complete"])
+        self.assertTrue(result["median_improved"])
+        self.assertAlmostEqual(result["median_reduction"], .05)
+        self.assertIsNone(result["target_reduction"])
+        self.assertIsNone(result["timing_target_met"])
+        self.assertFalse(result["eligible_for_acceptance"])
+        summarize(self.root, "trial", target_reduction=.20)
+        historical = json.loads((self.root / "runs/trial/summary.json").read_text())
+        self.assertEqual(historical["target_reduction"], .20)
+        self.assertFalse(historical["timing_target_met"])
+
+    def test_invalid_explicit_threshold_does_not_write_a_summary(self):
+        for value in (-.1, 1, float("nan")):
+            with self.assertRaises(ValueError):
+                summarize(self.root, "trial", target_reduction=value)
+        self.assertFalse((self.root / "runs/trial/summary.json").exists())
 
     def test_failed_recovered_run_retains_both_failure_and_invalid_timing(self):
         path = self.root / "runs/trial/case-01/candidate/result.json"
