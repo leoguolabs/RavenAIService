@@ -37,6 +37,8 @@
 
 - [x] 2.26 Extend the default-off endpoint supplement to verified native literal grep/head previews, including bounded scans of only visible files in a basename-glob page with an optional ASCII literal exclusion. Preserve command/output and all existing budgets, explicitly mark unscanned scope, and reject ambiguous pages or locale-sensitive filtering. All 142 related tests pass, including cross-tool deduplication. A network-disabled SDK 0.2.165 replay executes the exact retained case-22 native query over all 11 original files, preserves its original 40-row output and delivers the missing final inventory in the next request; all 11 proof checks pass. No real-model latency or quality acceptance follows from this proof; a fresh frozen pair is still required.
 
+- [x] 2.27 Cover common combined/separate grep options, binary-as-text, recursive directories and case-sensitive Unicode literals within the existing native endpoint gate and budgets. Verify both complete native filename-prefix forms without rewriting output. The native-v2 pair is retained as rejected: 304.63→245.64s with zero supplements and a decisive missed inventory change. All 148 related tests pass after extension. Twelve offline SDK checks over the exact newly retained single-file query pass, including original command, verified native rows, unchanged actual SDK result and missing inventory delivery; the earlier filename-prefix proof failure remains preserved. A new model pair is required before any semantic or timing acceptance.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.

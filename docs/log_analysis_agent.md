@@ -167,9 +167,13 @@ Mermaid 围栏随 JSON 解码恢复。数据库原文、执行轨迹、来源和
 双方仍把清单、文件名时间或磁盘水位外推为过强的原因/操作判断。这只是一个已知样本的预克隆筛查，
 不计入端到端 API 样本，不构成质量或稳定耗时验收，开关保持默认关闭。
 后续原生扩展支持明确文件的字面 grep/head，以及单个文件名通配符、可选 ASCII 大小写不敏感字面排除和 head 的组合。
-通配符查询只扫描预览实际出现的文件，不展开所有文件；逐行核对带文件名的原输出及排除条件。
+还支持递归目录、Unicode 字面主题及分开的 `-r`/`-I`/`-n`/`-E`、`--binary-files=text` 参数；仅为核验解析选项，不改变执行命令。
+通配符或目录查询只扫描预览实际出现的文件，不展开所有文件；逐行核对带文件名的原输出及排除条件。
+明确单文件的输出允许行号前缀或精确请求文件名加行号两种完整形式；SDK 与直接 shell 的格式差异不得通过猜测文件或改写输出弥补。
 `native_page_scope.query_scope_complete=false` 明确其他文件未扫描，计数仅对已核验文件和相同过滤条件成立。
 原始命令不被解析执行或改写，复杂语法、非 ASCII 排除匹配、输出不符及超限均不补充。
+原生 v2 真实筛查虽然耗时 304.63→245.64s，但实际补充为零，候选仍漏读相机清单 14→0，因此不接受该次速度变化。
+后续常用选项支持通过 148 项测试，并以该次真实单文件查询通过 12 项离线 SDK 检查；实际模型质量与耗时仍需另测。
 此开关不启用其他自动上下文、额外模型核查或阶段切换。离线回放和 SDK 交付验证不能替代真实配对耗时与质量验证。
 The optional native/MCP search supplement retains original commands/results and supplies bounded, verified per-topic log evidence;
 offline replay and SDK delivery checks do not establish final-answer equivalence or latency improvement.

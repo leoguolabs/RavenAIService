@@ -98,6 +98,9 @@ async def test_two_visible_files_respect_native_prefixes(workspace):
     r"grep -nE 'MOM|Mom' ../logs/a.log | head -n 2",
     r'for f in ../logs/a.log ../logs/z.log; do echo "=== $f"; grep -n "MOM\|Mom" $f | head -2; done',
     r"grep -rnE 'MOM|Mom' ../logs/*.log | head -n2",
+    r'grep -rIn --binary-files=text -E "MOM|Mom" ../logs/a.log | head -40',
+    r'grep -rIn --binary-files=text -E "MOM|Mom" ../logs/ | head -40',
+    r'grep -r -I -n --binary-files=text -E "MOM|Mom" ../logs/*.log | head -40',
 ])
 @pytest.mark.asyncio
 async def test_literal_native_head_variants_keep_original_output(workspace, command):
@@ -106,6 +109,40 @@ async def test_literal_native_head_variants_keep_original_output(workspace, comm
     items = decode(await topic.LogTopicContextEnricher(str(workspace), include_endpoints=True).after_tool(data, "native", {}))["topic_context"]
     assert any([51, "MOM totalItems=54"] in w["rows"] for i in items for w in i["windows"])
     assert data == before
+
+
+@pytest.mark.asyncio
+async def test_recursive_directory_unicode_literals_and_subdirectories(workspace):
+    nested = workspace / "logs/nested"
+    nested.mkdir()
+    (nested / "state.log").write_text("状态 运行\n" * 10 + "状态 停止\n")
+    data = event(workspace, r'grep -rIn --binary-files=text -E "状态|运行" ../logs/ | head -2')
+    items = decode(await topic.LogTopicContextEnricher(str(workspace), include_endpoints=True).after_tool(data, "unicode", {}))["topic_context"]
+    assert all(i["path"] == "logs/nested/state.log" for i in items)
+    assert any([11, "状态 停止"] in w["rows"] for i in items for w in i["windows"])
+    assert all(i["native_page_scope"]["query_scope_complete"] is False for i in items)
+
+
+@pytest.mark.asyncio
+async def test_pinned_sdk_filename_prefix_variant_is_verified_not_rewritten(workspace):
+    data = event(workspace, r'grep -rIn --binary-files=text -E "MOM|Mom" ../logs/a.log | head -40')
+    data["tool_response"]["stdout"] = "\n".join("../logs/a.log:" + row for row in data["tool_response"]["stdout"].split("\n"))
+    before = copy.deepcopy(data)
+    assert await topic.LogTopicContextEnricher(str(workspace), include_endpoints=True).after_tool(data, "prefixed", {})
+    assert data == before
+    data["tool_response"]["stdout"] = data["tool_response"]["stdout"].replace("../logs/a.log:", "../logs/wrong.log:")
+    assert await topic.LogTopicContextEnricher(str(workspace), include_endpoints=True).after_tool(data, "wrong", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_recursive_query_does_not_read_external_symlink(workspace):
+    outside = workspace / "outside"
+    outside.mkdir()
+    (outside / "a.log").write_text((workspace / "logs/a.log").read_text())
+    data = event(workspace, r'grep -rIn --binary-files=text -E "MOM|Mom" ../logs/ | head -40')
+    (workspace / "logs/a.log").unlink()
+    (workspace / "logs/a.log").symlink_to(outside / "a.log")
+    assert await topic.LogTopicContextEnricher(str(workspace), include_endpoints=True).after_tool(data, "external", {}) == {}
 
 
 @pytest.mark.parametrize("change", ["stdout", "offset", "scope", "regex", "extra_command", "stderr", "nonascii_filter", "file_change", "budget"])
