@@ -161,6 +161,11 @@ Mermaid 围栏随 JSON 解码恢复。数据库原文、执行轨迹、来源和
 对于预览已展示过的主题，也会在同次工具回传中加入尚未完整展示的首末匹配行附近上下文，避免前几条记录掩盖末尾状态变化。
 已完整显示的匹配行和请求上下文不重复；截断行仍需完整核验。原分页、错误和工具输出不变，文件身份、扫描和输出预算复用主题补充的限制。
 返回 `sampled_match_lines`、补充原因及 `event_history_complete=false`，明确首末只是文件行序样本，不是时间极值、完整轨迹或因果证明。
+2026-11-02 的同日志 Flash HIGH 双臂筛查中，该开关真实补充了 3277 字节上下文，处理约 70ms；
+两边均保留相机清单 14→0，内部耗时 558.06→341.97s，SDK 响应批次 68→59，但工具调用 75→81。
+该次补充只包含最后一次相机文件命中，最终 54 项清单由后续 Bash 查询取得，不能将发现或提速归因于补充机制。
+双方仍把清单、文件名时间或磁盘水位外推为过强的原因/操作判断。这只是一个已知样本的预克隆筛查，
+不计入端到端 API 样本，不构成质量或稳定耗时验收，开关保持默认关闭。
 此开关不启用原生 Bash 语法扩展、其他自动上下文、额外模型核查或阶段切换。离线回放和 SDK 交付验证不能替代真实配对耗时与质量验证。
 The optional native/MCP search supplement retains original commands/results and supplies bounded, verified per-topic log evidence;
 offline replay and SDK delivery checks do not establish final-answer equivalence or latency improvement.
