@@ -127,9 +127,9 @@ async def test_unicode_crlf_and_unterminated_final_line_are_exact(workspace):
     assert [3, "状态：停止\r"] in item["windows"][0]["rows"]
 
 
-def test_independent_default_off_switch_only_registers_structured_search(workspace):
+def test_independent_default_off_switch_registers_native_and_structured_search(workspace):
     assert execution_hooks("zh", workspace=str(workspace)) == {}
     hooks = execution_hooks("zh", workspace=str(workspace), search_endpoints=True)
     matcher, = hooks["PostToolUse"]
-    assert matcher.matcher == topic.MCP_SEARCH_TOOL
+    assert matcher.matcher == f"Bash|{topic.MCP_SEARCH_TOOL}"
     assert matcher.hooks[0].__self__.include_endpoints is True

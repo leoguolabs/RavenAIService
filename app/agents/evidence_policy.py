@@ -67,7 +67,7 @@ def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, sour
         from app.agents.log_topic_context import LogTopicContextEnricher
 
         topics = LogTopicContextEnricher(workspace, locale, include_endpoints=search_endpoints)
-        matcher = f"Bash|{MCP_SEARCH_TOOL}" if topic_context else MCP_SEARCH_TOOL
+        matcher = f"Bash|{MCP_SEARCH_TOOL}"
         hooks.setdefault("PostToolUse", []).append(HookMatcher(matcher=matcher, hooks=[topics.after_tool]))
     if read_window:
         from app.agents.evidence_read_window import SourceReadWindow

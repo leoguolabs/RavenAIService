@@ -157,7 +157,7 @@ Mermaid 围栏随 JSON 解码恢复。数据库原文、执行轨迹、来源和
 原始多请求结果、错误、分页及上下文均保持不变；只支持大小写敏感字面分支，不解释复杂正则或 glob。
 
 `AGENT_EVIDENCE_SEARCH_ENDPOINTS_ENABLED` 是另一个默认关闭的实验开关，要求效率总开关、MCP 支持和完整启动快照。
-它只补充经过逐行重放核验的 `search_evidence` 日志查询，允许单个字面词或字面 OR 分支。
+它补充经过逐行重放核验的 `search_evidence` 日志查询和受支持的原生 grep/head 查询，允许单个字面词或字面 OR 分支。
 对于预览已展示过的主题，也会在同次工具回传中加入尚未完整展示的首末匹配行附近上下文，避免前几条记录掩盖末尾状态变化。
 已完整显示的匹配行和请求上下文不重复；截断行仍需完整核验。原分页、错误和工具输出不变，文件身份、扫描和输出预算复用主题补充的限制。
 返回 `sampled_match_lines`、补充原因及 `event_history_complete=false`，明确首末只是文件行序样本，不是时间极值、完整轨迹或因果证明。
@@ -166,7 +166,11 @@ Mermaid 围栏随 JSON 解码恢复。数据库原文、执行轨迹、来源和
 该次补充只包含最后一次相机文件命中，最终 54 项清单由后续 Bash 查询取得，不能将发现或提速归因于补充机制。
 双方仍把清单、文件名时间或磁盘水位外推为过强的原因/操作判断。这只是一个已知样本的预克隆筛查，
 不计入端到端 API 样本，不构成质量或稳定耗时验收，开关保持默认关闭。
-此开关不启用原生 Bash 语法扩展、其他自动上下文、额外模型核查或阶段切换。离线回放和 SDK 交付验证不能替代真实配对耗时与质量验证。
+后续原生扩展支持明确文件的字面 grep/head，以及单个文件名通配符、可选 ASCII 大小写不敏感字面排除和 head 的组合。
+通配符查询只扫描预览实际出现的文件，不展开所有文件；逐行核对带文件名的原输出及排除条件。
+`native_page_scope.query_scope_complete=false` 明确其他文件未扫描，计数仅对已核验文件和相同过滤条件成立。
+原始命令不被解析执行或改写，复杂语法、非 ASCII 排除匹配、输出不符及超限均不补充。
+此开关不启用其他自动上下文、额外模型核查或阶段切换。离线回放和 SDK 交付验证不能替代真实配对耗时与质量验证。
 The optional native/MCP search supplement retains original commands/results and supplies bounded, verified per-topic log evidence;
 offline replay and SDK delivery checks do not establish final-answer equivalence or latency improvement.
 

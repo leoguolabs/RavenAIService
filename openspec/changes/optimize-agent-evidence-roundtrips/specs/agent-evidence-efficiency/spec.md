@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
-### Requirement: Independently gated structured-search endpoint context
-Log Analysis MAY enable a default-off endpoint supplement for verified structured searches over task logs. It SHALL require the efficiency snapshot and preserve original results, tools, pagination and budgets. Single literal topics and literal alternatives MAY receive exact first/last matching-line context when those complete lines are absent from the visible page and requested context.
+### Requirement: Independently gated search endpoint context
+Log Analysis MAY enable a default-off endpoint supplement for verified structured or supported native searches over task logs. It SHALL require the efficiency snapshot and preserve original commands, results, tools, pagination and budgets. Single literal topics and literal alternatives MAY receive exact first/last matching-line context when those complete lines are absent from the visible page and requested context.
 
 #### Scenario: A represented topic changes after the preview
 - **WHEN** a stable bounded full-file replay verifies the original structured page but its first or last matching line is not fully visible
@@ -14,7 +14,13 @@ Log Analysis MAY enable a default-off endpoint supplement for verified structure
 
 #### Scenario: Only endpoint supplementation is enabled
 - **WHEN** the endpoint flag is on and the existing native topic flag is off
-- **THEN** only structured evidence searches receive the hook; native Bash semantics, other optional mechanisms and model parameters remain unchanged
+- **THEN** native Bash and structured MCP search matchers are registered for this mechanism; original command execution, unsupported native syntax, other optional mechanisms and model parameters remain unchanged
+
+#### Scenario: A native glob preview hides a late state
+- **WHEN** a supported line-numbered literal grep over one basename glob, optionally followed by one ASCII case-insensitive literal exclusion, ends in a bounded head page
+- **THEN** the hook may scan only the contained files named in that page, verify their exact filtered prefixes, and append unseen first/last matching lines from those stable files without executing or rewriting the command
+- **AND** per-file counts retain the exclusion, native_page_scope explicitly marks the global query incomplete and other files unscanned, and no ordering, absence or total-count claim is made about other files
+- **AND** unstable files/directories, unmatched output, unsupported locale-sensitive filtering or exhausted existing scan/output budgets preserve original behavior without a supplement
 
 ### Requirement: Optional per-topic native log context
 Log Analysis MAY independently enable a default-off supplement for supported literal native log searches whose shared head preview omits an alternative. The server SHALL require the SDK callback's actual absolute cwd, contained stable regular log files and exact original-output verification. It SHALL retain the command and stdout, never evaluate shell syntax, and label physical matching-line counts and bounded first/last context separately from event coverage or causal certainty.
