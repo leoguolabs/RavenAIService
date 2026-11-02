@@ -75,47 +75,55 @@ class DeviceLinkManager(BaseService):
 
         async with self._lock:
             previous = self._devices.get(device_id)
-            if previous and previous.websocket and previous.websocket.application_state == WebSocketState.CONNECTED:
-                try:
-                    await previous.websocket.close()
-                except Exception:  # noqa: BLE001
-                    logger.debug("Failed to close previous websocket for %s", device_id, exc_info=True)
+            replaced = previous and previous.websocket is not websocket
+            if replaced:
+                self._fail_pending_for_device(device_id, RuntimeError(f"Device {device_id} connection replaced"))
             self._devices[device_id] = state
             self._persist_devices()
+        # Publish the replacement before closing the old socket. Its disconnect callback must not own the new state.
+        if replaced and previous.websocket and previous.websocket.application_state == WebSocketState.CONNECTED:
+            try:
+                await previous.websocket.close()
+            except Exception:  # noqa: BLE001
+                logger.debug("Failed to close previous websocket for %s", device_id, exc_info=True)
         self.log_info("Device registered", extra={"device_id": device_id, "host": info.host})
         return info
 
-    async def update_heartbeat(self, device_id: str) -> Optional[DeviceInfo]:
+    async def update_heartbeat(self, device_id: str, websocket: Optional[WebSocket] = None) -> Optional[DeviceInfo]:
         """Mark device as alive."""
         async with self._lock:
             state = self._devices.get(device_id)
-            if not state:
+            if not state or (websocket is not None and state.websocket is not websocket):
                 return None
             state.info.last_seen = datetime.utcnow()
             state.info.status = "online"
             self._persist_devices()
             return state.info
 
-    async def mark_offline(self, device_id: str) -> None:
+    async def mark_offline(self, device_id: str, websocket: Optional[WebSocket] = None) -> None:
         """Mark device offline and fail pending prompts."""
         async with self._lock:
             state = self._devices.get(device_id)
-            if not state:
+            if not state or (websocket is not None and state.websocket is not websocket):
                 return
             state.info.status = "offline"
             state.info.last_seen = datetime.utcnow()
             state.websocket = None
             self._persist_devices()
-        self._fail_pending_for_device(device_id, RuntimeError(f"Device {device_id} disconnected"))
+            self._fail_pending_for_device(device_id, RuntimeError(f"Device {device_id} disconnected"))
         self.log_info("Device disconnected", extra={"device_id": device_id})
 
-    async def update_capabilities(self, device_id: str, capabilities: dict) -> Optional[DeviceInfo]:
+    async def update_capabilities(
+        self, device_id: str, capabilities: dict, websocket: Optional[WebSocket] = None
+    ) -> Optional[DeviceInfo]:
         """Update device capabilities metadata (e.g., MCP tools/prompts/resources)."""
         normalized = capabilities if isinstance(capabilities, dict) else {"value": capabilities}
         async with self._lock:
             state = self._devices.get(device_id)
             if not state:
                 raise RuntimeError(f"Device {device_id} not registered")
+            if websocket is not None and state.websocket is not websocket:
+                return None
             state.info.capabilities = normalized or {}
             state.metadata["capabilities"] = normalized or {}
             state.info.last_seen = datetime.utcnow()
@@ -157,10 +165,13 @@ class DeviceLinkManager(BaseService):
         started_at = loop.time()
         future: asyncio.Future = loop.create_future()
         async with self._lock:
+            current = self._devices.get(device_id)
+            if current is None or current.websocket is not state.websocket:
+                raise RuntimeError(f"Device {device_id} connection replaced")
             self._pending_prompts[payload.request_id] = _PendingPrompt(
                 future=future, device_id=device_id, started_at=started_at
             )
-            state.info.last_seen = datetime.utcnow()
+            current.info.last_seen = datetime.utcnow()
 
         timeout = getattr(settings, "device_link_timeout_sec", 120)
         try:
@@ -175,7 +186,7 @@ class DeviceLinkManager(BaseService):
                 },
             )
             result = await asyncio.wait_for(future, timeout=timeout)
-            await self.update_heartbeat(device_id)
+            await self.update_heartbeat(device_id, state.websocket)
             return result  # type: ignore[return-value]
         except asyncio.TimeoutError as exc:
             elapsed_ms = int((loop.time() - started_at) * 1000)
@@ -198,9 +209,12 @@ class DeviceLinkManager(BaseService):
         finally:
             self._pending_prompts.pop(payload.request_id, None)
 
-    async def handle_prompt_result(self, device_id: str, payload: PromptResultMessage) -> None:
+    async def handle_prompt_result(
+        self, device_id: str, payload: PromptResultMessage, websocket: Optional[WebSocket] = None
+    ) -> None:
         """Resolve the waiting future for a prompt result."""
-        await self.update_heartbeat(device_id)
+        if not await self.update_heartbeat(device_id, websocket):
+            return
         request_id = payload.get("request_id")
         if not request_id:
             self.log_warning("Received prompt_result without request_id", extra={"device_id": device_id})
@@ -218,6 +232,7 @@ class DeviceLinkManager(BaseService):
                 "Prompt result device mismatch",
                 extra={"expected_device": owner, "device_id": device_id, "request_id": request_id},
             )
+            return
         else:
             elapsed_ms = int((asyncio.get_running_loop().time() - pending.started_at) * 1000)
             self.log_info(

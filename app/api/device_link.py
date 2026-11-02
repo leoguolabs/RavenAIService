@@ -45,6 +45,8 @@ async def device_link_websocket(websocket: WebSocket):
             message_type = message.get("type")
             if message_type == "register":
                 try:
+                    if device_id and device_id != message.get("device_id"):
+                        raise ValueError("修改设备ID前请重新连接 / Reconnect before changing device_id")
                     info = await device_link_manager.register_device(websocket, message)  # type: ignore[arg-type]
                     device_id = info.id
                 except Exception as exc:  # noqa: BLE001
@@ -68,25 +70,25 @@ async def device_link_websocket(websocket: WebSocket):
                 )
             elif message_type == "ping":
                 if device_id:
-                    await device_link_manager.update_heartbeat(device_id)
+                    await device_link_manager.update_heartbeat(device_id, websocket)
                 await websocket.send_text(json.dumps({"type": "pong"}))
             elif message_type == "pong":
                 if device_id:
-                    await device_link_manager.update_heartbeat(device_id)
+                    await device_link_manager.update_heartbeat(device_id, websocket)
             elif message_type == "prompt_result":
                 if not device_id:
                     await websocket.send_text(json.dumps({"type": "error", "message": "Device not registered"}))
                     continue
-                await device_link_manager.handle_prompt_result(device_id, message)  # type: ignore[arg-type]
+                await device_link_manager.handle_prompt_result(device_id, message, websocket)  # type: ignore[arg-type]
             elif message_type == "prompt_ack":
                 if device_id:
-                    await device_link_manager.update_heartbeat(device_id)
+                    await device_link_manager.update_heartbeat(device_id, websocket)
             elif message_type == "capabilities_update":
                 if not device_id:
                     await websocket.send_text(json.dumps({"type": "error", "message": "Device not registered"}))
                     continue
                 await device_link_manager.update_capabilities(
-                    device_id, message.get("capabilities") or {}
+                    device_id, message.get("capabilities") or {}, websocket
                 )  # type: ignore[arg-type]
             else:
                 await websocket.send_text(
@@ -97,11 +99,11 @@ async def device_link_websocket(websocket: WebSocket):
             "Device websocket disconnected", extra={"device_id": device_id or "<unregistered>", "client": client_addr}
         )
         if device_id:
-            await device_link_manager.mark_offline(device_id)
+            await device_link_manager.mark_offline(device_id, websocket)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Device link websocket error: %s", exc)
         if device_id:
-            await device_link_manager.mark_offline(device_id)
+            await device_link_manager.mark_offline(device_id, websocket)
         try:
             await websocket.close()
         except Exception:  # noqa: BLE001
