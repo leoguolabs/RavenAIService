@@ -120,6 +120,8 @@ def batch_plan_prompt(locale: str) -> str:
             "\n\n## Batch-first evidence dispatch (local experiment)\n"
             "Before ordinary text searches, identify the concrete evidence questions implied by the original task: "
             "the trigger and timeline, relevant identifiers or values, source behavior when applicable, and counterevidence or terminal state. "
+            "Before assigning an exact failed component, device node, error code or deployment cause, inspect all relevant source failure branches. "
+            "A generic failure return does not identify which branch ran; keep unresolved details and deployment conventions explicitly hypothetical unless logs confirm them. "
             "When multiple independent searches are already known, submit them together in one "
             "mcp__evidence__search_evidence call (up to 8 requests), rather than one tool call per keyword or file. "
             "Narrow each request to relevant attachments/source and set context_lines so matches arrive with nearby evidence. "
@@ -133,6 +135,8 @@ def batch_plan_prompt(locale: str) -> str:
     return (
         "\n\n## 先批量取证（本地实验）\n"
         "普通文本检索前，先从原问题列出需要核实的证据点：触发与时序、相关标识或数值、适用时的源码行为，以及反证或终态。"
+        "断言具体故障部件、设备节点、错误码或部署原因前，先检查源码中所有相关失败分支。"
+        "通用失败返回值不能证明执行了哪个分支；日志未直接确认时，具体节点和部署惯例须保留为待核实假设。"
         "若已知多个互不依赖的检索，将它们放进一次 mcp__evidence__search_evidence 调用（最多 8 个请求），"
         "不要按关键词或文件逐次调用工具。每个请求应限定到相关附件/源码，并设置 context_lines 一并取得命中周边证据。"
         "检查首批结果后，将决定性范围和已知缺失上下文合并到一次 mcp__evidence__read_evidence 调用（最多 8 个范围）；"

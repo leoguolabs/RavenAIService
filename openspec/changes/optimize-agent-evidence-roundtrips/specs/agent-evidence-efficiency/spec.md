@@ -1,12 +1,13 @@
 ## ADDED Requirements
 
 ### Requirement: Optional batch-first evidence plan
-Log Analysis MAY append a default-off batch-plan instruction when the efficiency snapshot and evidence tools are available. When enabled, the instruction SHALL ask the model to group currently known independent ordinary text searches into one search batch and decisive ranges into one read batch, then use result-dependent follow-up batches. It SHALL preserve all original tools, attachments, required Skills, source checks, pagination, counterevidence, output schema and uncertainty requirements; it SHALL NOT add a model call, lower the turn cap, or force an early answer.
+Log Analysis MAY append a default-off batch-plan instruction when the efficiency snapshot and evidence tools are available. When enabled, the instruction SHALL ask the model to group currently known independent ordinary text searches into one search batch and decisive ranges into one read batch, then use result-dependent follow-up batches. It SHALL preserve all original tools, attachments, required Skills, source checks, pagination, counterevidence, output schema and uncertainty requirements; it SHALL NOT add a model call, lower the turn cap, or force an early answer. A generic failure result SHALL NOT be narrowed to a specific component, node or source branch unless the observed evidence distinguishes that branch; deployment conventions SHALL remain hypotheses unless directly verified.
 
 #### Scenario: A batch plan is enabled with a complete snapshot
 - **WHEN** the independent batch-plan flag and efficiency snapshot are both enabled for Log Analysis
 - **THEN** the system prompt tells the model to combine known independent requests in one MCP search call, read decisive ranges together, and batch subsequent known gaps after inspecting results
 - **AND** it leaves native tools available for discovery, Git, complete deterministic computations, binary/unsupported work and evidence-tool recovery
+- **AND** it requires source checks across relevant failure branches before attributing a generic error to one specific component
 
 #### Scenario: A batch plan is disabled or the snapshot is unavailable
 - **WHEN** the batch-plan flag is off, efficiency is off, or complete snapshot preparation fails

@@ -40,8 +40,8 @@ def test_custom_template_text_and_fallback_are_unchanged():
 
 
 @pytest.mark.parametrize("locale, required_terms", [
-    ("zh", ("先批量取证", "mcp__evidence__search_evidence", "mcp__evidence__read_evidence", "不限制总调用数")),
-    ("en", ("Batch-first evidence dispatch", "mcp__evidence__search_evidence", "mcp__evidence__read_evidence", "does not cap total calls")),
+    ("zh", ("先批量取证", "mcp__evidence__search_evidence", "mcp__evidence__read_evidence", "通用失败返回值不能证明执行了哪个分支", "不限制总调用数")),
+    ("en", ("Batch-first evidence dispatch", "mcp__evidence__search_evidence", "mcp__evidence__read_evidence", "A generic failure return does not identify which branch ran", "does not cap total calls")),
 ])
 def test_batch_plan_guidance_is_opt_in_and_preserves_snapshot(locale, required_terms):
     snapshot = {"task": {"question": "unchanged"}, "project_catalog": {"projects": [], "count": 0}}
