@@ -164,6 +164,8 @@ class Settings(BaseSettings):
     agent_repo_clone_timeout_seconds: int = 300
     # Opt-in until paired latency and evidence-equivalence validation passes.
     agent_evidence_efficiency_enabled: bool = False
+    # Local prompt experiment: dispatch independent text searches in one MCP batch.
+    agent_evidence_batch_plan_enabled: bool = False
     # Independently opt in: added context/review failed the combined trial.
     agent_evidence_source_context_enabled: bool = False
     agent_evidence_final_review_enabled: bool = False

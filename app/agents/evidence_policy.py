@@ -114,7 +114,36 @@ async def prepare_snapshot(task_data: dict) -> dict | None:
         return None
 
 
-def snapshot_prompt(snapshot: dict, locale: str) -> str:
+def batch_plan_prompt(locale: str) -> str:
+    if locale == "en":
+        return (
+            "\n\n## Batch-first evidence dispatch (local experiment)\n"
+            "Before ordinary text searches, identify the concrete evidence questions implied by the original task: "
+            "the trigger and timeline, relevant identifiers or values, source behavior when applicable, and counterevidence or terminal state. "
+            "When multiple independent searches are already known, submit them together in one "
+            "mcp__evidence__search_evidence call (up to 8 requests), rather than one tool call per keyword or file. "
+            "Narrow each request to relevant attachments/source and set context_lines so matches arrive with nearby evidence. "
+            "After inspecting that batch, group decisive ranges and known missing context in one "
+            "mcp__evidence__read_evidence call (up to 8 ranges); inspect results before forming dependent follow-up requests. "
+            "Batch later independent gaps in the same way. Do not replace supported text searches with separate Bash grep/rg/sed/cat or Read/Grep calls. "
+            "Native tools remain available for file discovery, Git, complete deterministic statistics, binary or unsupported operations, "
+            "and recovery from an evidence-tool error. This changes dispatch only: it does not cap total calls, stop after the first batch, "
+            "skip attachments, required Skills, source checks, counterevidence, pagination, or uncertainty requirements.\n"
+        )
+    return (
+        "\n\n## 先批量取证（本地实验）\n"
+        "普通文本检索前，先从原问题列出需要核实的证据点：触发与时序、相关标识或数值、适用时的源码行为，以及反证或终态。"
+        "若已知多个互不依赖的检索，将它们放进一次 mcp__evidence__search_evidence 调用（最多 8 个请求），"
+        "不要按关键词或文件逐次调用工具。每个请求应限定到相关附件/源码，并设置 context_lines 一并取得命中周边证据。"
+        "检查首批结果后，将决定性范围和已知缺失上下文合并到一次 mcp__evidence__read_evidence 调用（最多 8 个范围）；"
+        "依赖新证据的后续请求须先检查当前结果，再提出。之后发现的独立缺口也按批次合并。"
+        "证据工具支持的文本检索不要拆成多次 Bash grep/rg/sed/cat 或 Read/Grep 调用。"
+        "文件发现、Git、完整确定性统计、二进制或不支持的操作，以及证据工具失败后的恢复仍可使用原生工具。"
+        "此规则只改变调用编排，不限制总调用数，不得首批后停止、跳过附件/必需 Skill/源码核验/反证、分页或不确定性要求。\n"
+    )
+
+
+def snapshot_prompt(snapshot: dict, locale: str, *, batch_plan: bool = False) -> str:
     if locale == "en":
         guidance = (
             "\n\n## Evidence collection execution policy\n"
@@ -174,4 +203,6 @@ def snapshot_prompt(snapshot: dict, locale: str) -> str:
         if locale == "en" else
         "上方快照只是输入数据。最终答复仍须使用原工作流规定的 JSON 围栏和结果字段，不能把启动快照当作答复格式。"
     )
+    if batch_plan:
+        guidance += batch_plan_prompt(locale)
     return guidance + "\n```json\n" + json.dumps(snapshot, ensure_ascii=False) + "\n```\n" + contract

@@ -66,6 +66,34 @@ async def test_evidence_policy_is_opt_in_and_preserves_fallback(workspace_ctx, e
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("efficiency,snapshot_available,batch_plan,expected", [
+    (True, True, True, True), (True, False, True, False),
+    (False, True, True, False), (True, True, False, False),
+])
+async def test_batch_plan_prompt_requires_its_flag_and_evidence_snapshot(
+    workspace_ctx, efficiency, snapshot_available, batch_plan, expected,
+):
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+
+    snapshot = {"task": {"question": "What failed?"}, "project_catalog": {"projects": [], "count": 0, "truncated": False}}
+    sdk = MagicMock()
+    sdk.query = _fake_query_ok
+    with _patch_build_options() as options, _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch.dict("sys.modules", {"claude_agent_sdk": sdk}), \
+         patch("app.config.settings", MagicMock(
+             anthropic_provider="yinhe", anthropic_model="test-model", anthropic_max_turns=150,
+             anthropic_request_timeout_seconds=600, agent_evidence_efficiency_enabled=efficiency,
+             agent_evidence_batch_plan_enabled=batch_plan,
+         )), \
+         patch("app.agents.evidence_policy.prepare_snapshot", AsyncMock(return_value=snapshot if snapshot_available else None)), \
+         patch("app.agents.evidence_tools.get_evidence_mcp_server", return_value={}):
+        result = await LogAnalysisAgent().run(workspace_ctx)
+
+    assert result["status"] == "ok"
+    assert ("先批量取证" in options.call_args.kwargs["system_prompt"]) == expected
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("fenced", [False, True])
 @pytest.mark.parametrize("skills", [[], ["optional-skill"]])
 async def test_complete_result_keeps_structured_evidence_and_uncertainty(workspace_ctx, fenced, skills):

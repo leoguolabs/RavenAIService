@@ -1,5 +1,21 @@
 ## ADDED Requirements
 
+### Requirement: Optional batch-first evidence plan
+Log Analysis MAY append a default-off batch-plan instruction when the efficiency snapshot and evidence tools are available. When enabled, the instruction SHALL ask the model to group currently known independent ordinary text searches into one search batch and decisive ranges into one read batch, then use result-dependent follow-up batches. It SHALL preserve all original tools, attachments, required Skills, source checks, pagination, counterevidence, output schema and uncertainty requirements; it SHALL NOT add a model call, lower the turn cap, or force an early answer.
+
+#### Scenario: A batch plan is enabled with a complete snapshot
+- **WHEN** the independent batch-plan flag and efficiency snapshot are both enabled for Log Analysis
+- **THEN** the system prompt tells the model to combine known independent requests in one MCP search call, read decisive ranges together, and batch subsequent known gaps after inspecting results
+- **AND** it leaves native tools available for discovery, Git, complete deterministic computations, binary/unsupported work and evidence-tool recovery
+
+#### Scenario: A batch plan is disabled or the snapshot is unavailable
+- **WHEN** the batch-plan flag is off, efficiency is off, or complete snapshot preparation fails
+- **THEN** the additional batch-plan instruction is absent and the prior prompt/fallback behavior remains unchanged
+
+#### Scenario: Batching does not reduce evidence scope
+- **WHEN** the model follows the batch plan
+- **THEN** batching changes only dispatch grouping; the model still follows relevant pagination, attachment/source coverage, required Skills, counterevidence and uncertainty rules, with no new fixed call/turn budget or stop condition
+
 ### Requirement: Independently gated search endpoint context
 Log Analysis MAY enable a default-off endpoint supplement for verified structured or supported native searches over task logs. It SHALL require the efficiency snapshot and preserve original commands, results, tools, pagination and budgets. Single literal topics and literal alternatives MAY receive exact first/last matching-line context when those complete lines are absent from the visible page and requested context.
 

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from app.agents.evidence_policy import use_snapshot_in_templates
+from app.agents.evidence_policy import snapshot_prompt, use_snapshot_in_templates
 from app.agents.log_analysis.prompts import render_user_prompt
 
 
@@ -37,6 +37,22 @@ def test_builtin_snapshot_templates_preserve_investigation_and_question(agent, l
 def test_custom_template_text_and_fallback_are_unchanged():
     system, user = "Custom task requirements: keep all attachments.", "Question: {question}"
     assert use_snapshot_in_templates(system, user) == (system, user)
+
+
+@pytest.mark.parametrize("locale, required_terms", [
+    ("zh", ("先批量取证", "mcp__evidence__search_evidence", "mcp__evidence__read_evidence", "不限制总调用数")),
+    ("en", ("Batch-first evidence dispatch", "mcp__evidence__search_evidence", "mcp__evidence__read_evidence", "does not cap total calls")),
+])
+def test_batch_plan_guidance_is_opt_in_and_preserves_snapshot(locale, required_terms):
+    snapshot = {"task": {"question": "unchanged"}, "project_catalog": {"projects": [], "count": 0}}
+    disabled = snapshot_prompt(snapshot, locale)
+    enabled = snapshot_prompt(snapshot, locale, batch_plan=True)
+
+    assert "Batch-first evidence dispatch" not in disabled
+    assert "先批量取证" not in disabled
+    assert all(term in enabled for term in required_terms)
+    assert '"question": "unchanged"' in enabled
+    assert "JSON" in enabled
 
 
 @pytest.mark.parametrize("startup, fallback, replacement", [

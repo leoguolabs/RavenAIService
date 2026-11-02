@@ -39,6 +39,8 @@
 
 - [x] 2.27 Cover common combined/separate grep options, binary-as-text, recursive directories and case-sensitive Unicode literals within the existing native endpoint gate and budgets. Verify both complete native filename-prefix forms without rewriting output. The native-v2 pair is retained as rejected: 304.63→245.64s with zero supplements and a decisive missed inventory change. All 148 related tests pass after extension. Twelve offline SDK checks over the exact newly retained single-file query pass, including original command, verified native rows, unchanged actual SDK result and missing inventory delivery; the earlier filename-prefix proof failure remains preserved. A new model pair is required before any semantic or timing acceptance.
 
+- [ ] 2.28 Add an independent default-off Log Analysis batch-plan prompt after the unpaired 2026-10-29 trace showed 31 Bash calls and zero MCP calls under unchanged generic batching guidance. The treatment must group known independent MCP searches and decisive reads without removing native tools, narrowing evidence coverage, adding a call cap or injecting prior answers. Verify default-off/fallback behavior and exact prompt delivery; run a fresh paired real-Flash screen, retain all traces and quality-review every proposed fix before deciding whether to continue. The earlier unpaired run remains non-timing evidence and is not paired with a later control.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.
