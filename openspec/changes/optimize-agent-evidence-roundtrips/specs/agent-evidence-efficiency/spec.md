@@ -1,5 +1,21 @@
 ## ADDED Requirements
 
+### Requirement: Independently gated structured-search endpoint context
+Log Analysis MAY enable a default-off endpoint supplement for verified structured searches over task logs. It SHALL require the efficiency snapshot and preserve original results, tools, pagination and budgets. Single literal topics and literal alternatives MAY receive exact first/last matching-line context when those complete lines are absent from the visible page and requested context.
+
+#### Scenario: A represented topic changes after the preview
+- **WHEN** a stable bounded full-file replay verifies the original structured page but its first or last matching line is not fully visible
+- **THEN** the same tool return may include those missing endpoints with native lines, source identity, physical match counts, explicit omitted context and a statement that event history remains incomplete
+- **AND** endpoints are file-order samples, not chronological extrema, causal proof or evidence of an unchanged intervening state
+
+#### Scenario: Endpoints are already visible or verification fails
+- **WHEN** the complete endpoint lines are already in the page/context, or path, content, encoding, grammar or budget cannot be verified
+- **THEN** no unsupported supplement is added, original output remains unchanged and native tools remain available
+
+#### Scenario: Only endpoint supplementation is enabled
+- **WHEN** the endpoint flag is on and the existing native topic flag is off
+- **THEN** only structured evidence searches receive the hook; native Bash semantics, other optional mechanisms and model parameters remain unchanged
+
 ### Requirement: Optional per-topic native log context
 Log Analysis MAY independently enable a default-off supplement for supported literal native log searches whose shared head preview omits an alternative. The server SHALL require the SDK callback's actual absolute cwd, contained stable regular log files and exact original-output verification. It SHALL retain the command and stdout, never evaluate shell syntax, and label physical matching-line counts and bounded first/last context separately from event coverage or causal certainty.
 

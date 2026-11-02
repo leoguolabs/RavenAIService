@@ -1338,6 +1338,7 @@ class LogAnalysisAgent:
                 source_context=settings.agent_evidence_source_context_enabled is True,
                 read_window=settings.agent_evidence_read_window_enabled is True,
                 topic_context=settings.agent_evidence_topic_context_enabled is True,
+                search_endpoints=settings.agent_evidence_search_endpoints_enabled is True,
                 final_review=evidence_review,
             )
 

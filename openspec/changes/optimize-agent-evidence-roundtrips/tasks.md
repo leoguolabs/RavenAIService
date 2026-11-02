@@ -32,6 +32,8 @@
 
 - [x] 2.24 Clarify ordinary Log Analysis Bash paths after retained cwd-dependent failures; verify pinned SDK directory behavior and prompt delivery without claiming real-model compliance or latency acceptance.
 
+- [x] 2.25 Add an independent default-off structured-search endpoint supplement for already represented topics; preserve exact pages and bounded source evidence, verify omitted tail-state recovery and pinned SDK delivery before a fresh quality screen under the user-revised natural-variation criterion. The 123 related tests pass. A network-disabled SDK 0.2.165 exchange over an original retained log preserves the structured page and delivers the previously omitted final inventory record in the next request, within the unchanged 8000-byte budget. The query is an explicitly scoped structured equivalent, not a model-selected MCP trace. No latency or semantic acceptance is inferred from this mechanism proof.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.

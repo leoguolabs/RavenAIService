@@ -12,6 +12,10 @@ Converge the final candidate around verified changes outside model reasoning bef
 
 Non-goals: production deployment, changing model to claim an optimization, reducing the 150-turn limit, suppressing required skills, dropping attachments, hiding failures, or treating tool count as API request count.
 
+On 2026-11-02 the user resumed work and explicitly allowed reasonable variation from independent AI analyses while retaining comparable confidence and no large result deviation. Review wording, formatting and secondary coverage separately from decisive evidence losses, contradicted factual claims and unsupported exclusion. Shared baseline errors are not gold findings. Preserve the original strict reviews and report any revised judgment separately; natural baseline variation does not excuse a demonstrated decisive error. Keep the full 20-pair plus 10-distinct-log requirement and measure real model-response changes separately from the four platform-only improvements.
+
+The 30-pair audit exposed a retrieval gap not addressed by the previous missing-topic hook: a topic may appear early while its final state is omitted from the shared preview. Add an independent default-off structured-search endpoint supplement. Verify the original page and requested context against stable bounded files, then append unobserved first/last matching lines in the same tool return. Keep old results/pagination intact, report exact counts and file-order sampling limits, and avoid another model-mediated search solely to retrieve those endpoints. This does not infer a diagnosis, force early completion or guarantee fewer model calls. No case-specific findings enter the implementation or prompts; real-log replay is only mechanism evidence before a fresh quality screen.
+
 ## Decisions
 
 1. Keep the existing SDK loop and opt in with `agent_evidence_efficiency_enabled`. Supply a sanitized task/project snapshot only when preparation succeeds; preserve the legacy flow when disabled or incomplete. Include the complete discovery catalog to retain project-fit semantics. Do not preload full logs, source or past answers.

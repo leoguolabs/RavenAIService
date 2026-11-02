@@ -22,6 +22,11 @@ After optimization, at least 10 distinct production logs SHALL complete analysis
 - **WHEN** a candidate omits a decisive finding or increases certainty beyond the evidence
 - **THEN** the case fails quality acceptance regardless of runtime
 
+#### Scenario: User permits natural model variation
+- **WHEN** independent runs differ in wording, presentation or nondecisive detail under the revised user requirement
+- **THEN** review material conclusions, valid evidence and calibrated certainty separately, retain original strict judgments, and report any revised interpretation explicitly rather than treating all textual differences as failure or using shared baseline mistakes as gold answers
+- **AND** decisive missed evidence, contradicted factual claims and unsupported causal exclusion still prevent acceptance; baseline variation alone does not turn a demonstrated error into a pass
+
 ### Requirement: Durable resumable evidence
 Validation SHALL persist input hashes, revision/configuration identifiers, live process/run identities and complete terminal outputs without credentials in Git.
 

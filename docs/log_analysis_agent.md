@@ -155,6 +155,13 @@ Mermaid 围栏随 JSON 解码恢复。数据库原文、执行轨迹、来源和
 目录枚举排除符号链接和 `.git`，最多检查 256 个条目；整个批次共享上述文件、扫描时间、输出和去重预算。
 无关行中的无效 UTF-8 不阻止已验证检索，但匹配行含无效字节时该查询不补证。新增文件或目录变化也会放弃补证。
 原始多请求结果、错误、分页及上下文均保持不变；只支持大小写敏感字面分支，不解释复杂正则或 glob。
+
+`AGENT_EVIDENCE_SEARCH_ENDPOINTS_ENABLED` 是另一个默认关闭的实验开关，要求效率总开关、MCP 支持和完整启动快照。
+它只补充经过逐行重放核验的 `search_evidence` 日志查询，允许单个字面词或字面 OR 分支。
+对于预览已展示过的主题，也会在同次工具回传中加入尚未完整展示的首末匹配行附近上下文，避免前几条记录掩盖末尾状态变化。
+已完整显示的匹配行和请求上下文不重复；截断行仍需完整核验。原分页、错误和工具输出不变，文件身份、扫描和输出预算复用主题补充的限制。
+返回 `sampled_match_lines`、补充原因及 `event_history_complete=false`，明确首末只是文件行序样本，不是时间极值、完整轨迹或因果证明。
+此开关不启用原生 Bash 语法扩展、其他自动上下文、额外模型核查或阶段切换。离线回放和 SDK 交付验证不能替代真实配对耗时与质量验证。
 The optional native/MCP search supplement retains original commands/results and supplies bounded, verified per-topic log evidence;
 offline replay and SDK delivery checks do not establish final-answer equivalence or latency improvement.
 
