@@ -210,6 +210,54 @@ def sdk_response_evidence(workspace: Path, projects: Path) -> dict:
     }
 
 
+def static_prompt_context(project_code: str) -> dict:
+    """Hash configured prompt layers; never export their potentially private text.
+
+    This is static context evidence, not a capture of the complete SDK wire
+    prompt or proof that historical runs used today's files.
+    """
+    import hashlib
+    from app.agents.log_analysis.prompts import get_prompts
+    from app.agents.required_skill_policy import _SKILLS_ROOT, required_skill_names
+    from app.services.project_prompt_service import get_project_prompt_text
+
+    def digest(text):
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    system, user = get_prompts(locale="zh")
+    skills = []
+    for name in required_skill_names("log_analysis"):
+        directory = _SKILLS_ROOT / name
+        skills.append({"name": name,
+                       "skill_sha256": hashlib.sha256((directory / "SKILL.md").read_bytes()).hexdigest(),
+                       "policy_sha256": hashlib.sha256((directory / "response_policy.md").read_bytes()).hexdigest()})
+    return {"verified": True, "scope": "configured static prompt layers; not complete SDK input",
+            "locale": "zh", "project_code": project_code,
+            "base_system_sha256": digest(system), "user_template_sha256": digest(user),
+            "project_shared_sha256": digest(get_project_prompt_text(project_code)),
+            "project_agent_sha256": digest(get_project_prompt_text(project_code, "log_analysis")),
+            "required_skills": skills}
+
+
+def capture_prompt_context(endpoint: dict, project_code: str | None) -> dict:
+    if not endpoint.get("container") or not project_code:
+        return {"verified": False, "reason": "missing container or project identity"}
+    script = "import json,sys\n" + inspect.getsource(static_prompt_context) + "\nprint(json.dumps(static_prompt_context(sys.argv[1])))"
+    try:
+        result = subprocess.run(["docker", "exec", endpoint["container"], "python", "-c", script, project_code],
+                                capture_output=True, text=True, timeout=30, check=True)
+        return json.loads(result.stdout)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return {"verified": False, "reason": type(exc).__name__}
+
+
+def prompt_context_receipt(state: dict, endpoint: dict) -> dict:
+    before = state.get("static_prompt_context_before")
+    after = capture_prompt_context(endpoint, state.get("project_code"))
+    return {"before": before, "after": after,
+            "verified_unchanged": bool(before and before.get("verified") and after.get("verified") and before == after)}
+
+
 def checkout_evidence(endpoint: dict, status: dict, artifacts: Path | None = None) -> dict:
     """Read exact source identities without exposing credential-bearing remotes."""
     container = endpoint.get("container")
@@ -269,16 +317,20 @@ def run_one(root: Path, case: dict, arm: str, label: str, endpoint: dict, projec
             raise RuntimeError(f"Existing run {state['session_id']} is not cached; reconcile persisted DB/trace before retrying")
         if status["status"] == "done":
             write_json(result_path, {"state": state, "resumed": True, "observation_timing_valid": False,
-                                     "server": status, "checkout_evidence": checkout_evidence(endpoint, status, directory)})
+                                     "server": status, "checkout_evidence": checkout_evidence(endpoint, status, directory),
+                                     "static_prompt_context": prompt_context_receipt(state, endpoint)})
             return json.loads(result_path.read_text())
         fields = {"session_id": state["session_id"], "message": ""}
         files = []
     else:
+        # Read before starting the API clock; do not charge benchmark metadata
+        # collection to user-visible analysis latency.
+        context_before = capture_prompt_context(endpoint, case.get("project_code"))
         state = {"case_id": case["case_id"], "arm": arm, "label": label,
                  "session_id": str(uuid.uuid4()), "started_epoch": time.time(),
                  "pid": os.getpid(), "question_sha256": case["question_sha256"],
                  "inputs": case["inputs"], "project_code": case["project_code"],
-                 "endpoint": endpoint["url"]}
+                 "endpoint": endpoint["url"], "static_prompt_context_before": context_before}
         write_json(state_path, state)
         fields = {"session_id": state["session_id"], "message": case["question"],
                   "project_repo_id": project_id, "remember": "true"}
@@ -300,7 +352,8 @@ def run_one(root: Path, case: dict, arm: str, label: str, endpoint: dict, projec
         return run_one(root, case, arm, label, endpoint, project_id)
     result = {"state": state, "resumed": resumed, "observation_timing_valid": not resumed,
               "end_to_end_seconds": finished - state["started_epoch"], "server": status,
-              "checkout_evidence": checkout_evidence(endpoint, status, directory)}
+              "checkout_evidence": checkout_evidence(endpoint, status, directory),
+              "static_prompt_context": prompt_context_receipt(state, endpoint)}
     write_json(result_path, result)
     print(json.dumps({"event": "terminal", "case": case["case_id"], "arm": arm,
                       "seconds": result["end_to_end_seconds"], "status": status.get("status"),

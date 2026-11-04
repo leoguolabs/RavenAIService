@@ -6,7 +6,10 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from scripts.benchmark_agent_roundtrips import prepare_inputs, run_one, summarize, sdk_response_evidence
+from scripts.benchmark_agent_roundtrips import (
+    prepare_inputs, run_one, summarize, sdk_response_evidence,
+    static_prompt_context, prompt_context_receipt,
+)
 
 
 class BenchmarkEvidenceTests(unittest.TestCase):
@@ -50,6 +53,29 @@ class BenchmarkEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["observed_model_response_ids"], 1)
         self.assertEqual(evidence["verification_observed_model_response_ids"], 0)
         self.assertEqual(evidence["total_observed_model_response_ids"], 1)
+
+    def test_prompt_context_keeps_project_authority_and_skills_without_exporting_text(self):
+        skill = self.root / "humanizer-zh"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text("PRIVATE_SKILL")
+        (skill / "response_policy.md").write_text("PRIVATE_POLICY")
+        with patch("app.agents.log_analysis.prompts.get_prompts", return_value=("PRIVATE_BASE", "PRIVATE_USER")), \
+             patch("app.agents.required_skill_policy._SKILLS_ROOT", self.root), \
+             patch("app.services.project_prompt_service.get_project_prompt_text", side_effect=["PRIVATE_SHARED", "PRIVATE_AGENT"]):
+            context = static_prompt_context("example")
+        self.assertTrue(context["verified"])
+        self.assertEqual(context["project_shared_sha256"], hashlib.sha256(b"PRIVATE_SHARED").hexdigest())
+        self.assertEqual(context["project_agent_sha256"], hashlib.sha256(b"PRIVATE_AGENT").hexdigest())
+        self.assertEqual(context["required_skills"][0]["policy_sha256"], hashlib.sha256(b"PRIVATE_POLICY").hexdigest())
+        self.assertNotIn("PRIVATE_", json.dumps(context))
+
+    def test_context_change_or_missing_before_is_not_certified(self):
+        before = {"verified": True, "project_shared_sha256": "original"}
+        with patch("scripts.benchmark_agent_roundtrips.capture_prompt_context", return_value=before):
+            self.assertTrue(prompt_context_receipt({"static_prompt_context_before": before}, {})["verified_unchanged"])
+            self.assertFalse(prompt_context_receipt({}, {})["verified_unchanged"])
+        with patch("scripts.benchmark_agent_roundtrips.capture_prompt_context", return_value={**before, "project_shared_sha256": "changed"}):
+            self.assertFalse(prompt_context_receipt({"static_prompt_context_before": before}, {})["verified_unchanged"])
 
     def test_original_duplicate_names_restored_without_reference_answer(self):
         path = self.root / "download.zip"
