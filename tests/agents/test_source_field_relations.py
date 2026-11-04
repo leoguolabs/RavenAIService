@@ -395,3 +395,71 @@ async def test_missing_optional_parser_is_not_an_agent_tool_failure(
         await SourceContextEnricher(str(tmp_path)).after_tool(data, "no-parser", {})
         == {}
     )
+
+
+@pytest.mark.asyncio
+async def test_log_first_clone_later_revalidates_references_without_another_search(
+    tmp_path,
+):
+    import hashlib
+    from app.agents.evidence_context import SourceContextEnricher, MCP_CLONE_TOOL
+
+    rows = fixture(tmp_path)
+    (tmp_path / "repo").rename(tmp_path / "staged-repo")
+    hook = SourceContextEnricher(str(tmp_path))
+    assert await hook.after_tool(search_event(rows), "log-before-clone", {}) == {}
+    assert hook.related_references == {
+        (rows[0][0], rows[0][1]): hashlib.sha256(rows[0][2].encode()).hexdigest()
+    }
+    (tmp_path / "staged-repo").rename(tmp_path / "repo")
+    event = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": MCP_CLONE_TOOL,
+        "tool_input": {},
+        "tool_response": [],
+    }
+    result = await hook.after_tool(event, "clone-complete", {})
+    payload = json.loads(
+        result["hookSpecificOutput"]["additionalContext"].split("\n", 1)[1]
+    )
+    assert payload["source_relations"][0]["field"] == "mode"
+    assert await hook.after_tool(event, "same-clone-fact", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_pending_log_reference_hash_rejects_changed_or_forged_text(tmp_path):
+    from app.agents.evidence_context import SourceContextEnricher, MCP_CLONE_TOOL
+
+    rows = fixture(tmp_path)
+    (tmp_path / "repo").rename(tmp_path / "staged-repo")
+    hook = SourceContextEnricher(str(tmp_path))
+    assert await hook.after_tool(search_event(rows), "before-clone", {}) == {}
+    p = tmp_path / rows[0][0]
+    p.write_text(p.read_text().replace("mode=18", "mode=19"))
+    (tmp_path / "staged-repo").rename(tmp_path / "repo")
+    event = {"hook_event_name": "PostToolUse", "tool_name": MCP_CLONE_TOOL}
+    assert await hook.after_tool(event, "clone", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_pending_references_are_bounded_and_hold_no_log_text(
+    tmp_path, monkeypatch
+):
+    from app.agents import evidence_context
+
+    rows = fixture(tmp_path)
+    monkeypatch.setattr(evidence_context, "MAX_RELATED_REFERENCES", 2)
+    hook = evidence_context.SourceContextEnricher(str(tmp_path))
+    await hook.after_tool(
+        search_event([(rows[0][0], n, rows[0][2]) for n in range(1, 6)]), "bounded", {}
+    )
+    assert len(hook.related_references) == 2
+    assert all(len(digest) == 64 for digest in hook.related_references.values())
+
+
+def test_registered_matcher_includes_repository_ready_event(tmp_path):
+    import re
+    from app.agents.evidence_context import MCP_CLONE_TOOL
+    from app.agents.evidence_policy import execution_hooks
+    hooks = execution_hooks("zh", workspace=str(tmp_path), source_context=True)
+    assert re.fullmatch(hooks["PostToolUse"][0].matcher, MCP_CLONE_TOOL)

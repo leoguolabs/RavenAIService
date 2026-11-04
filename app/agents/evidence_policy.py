@@ -55,14 +55,14 @@ def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, sour
                     read_window: bool = False, topic_context: bool = False,
                     search_endpoints: bool = False, final_review=None) -> dict:
     from claude_agent_sdk import HookMatcher
-    from app.agents.evidence_context import MCP_READ_TOOL, MCP_SEARCH_TOOL, SourceContextEnricher
+    from app.agents.evidence_context import MCP_CLONE_TOOL, MCP_READ_TOOL, MCP_SEARCH_TOOL, SourceContextEnricher
 
     if not workspace:
         return {}
     hooks = {}
     if source_context:
         enricher = SourceContextEnricher(workspace, task_id, locale)
-        hooks["PostToolUse"] = [HookMatcher(matcher=f"Bash|{MCP_SEARCH_TOOL}|{MCP_READ_TOOL}", hooks=[enricher.after_tool])]
+        hooks["PostToolUse"] = [HookMatcher(matcher=f"Bash|{MCP_SEARCH_TOOL}|{MCP_READ_TOOL}|{MCP_CLONE_TOOL}", hooks=[enricher.after_tool])]
     if topic_context or search_endpoints:
         from app.agents.log_topic_context import LogTopicContextEnricher
 

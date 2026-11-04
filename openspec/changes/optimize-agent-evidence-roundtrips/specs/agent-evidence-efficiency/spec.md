@@ -289,6 +289,12 @@ When efficiency and the separate source-context switch are enabled, successful n
 - **AND** named-symbol shadowing, macro overrides, unsupported syntax/formatting, source changes, ambiguity or processing limits retain the original evidence and native tools
 - **AND** the relation contains raw source, identity hashes and explicit non-exhaustive/source-version limits, without evaluating enum values or inferring compiled branches or event state
 
+#### Scenario: Log evidence precedes repository readiness
+- **WHEN** verified structured log search rows arrive before the repository is cloned
+- **THEN** the hook may retain at most 128 bounded path/line/text-hash references, without retaining log text, file buffers or ASTs
+- **AND** repository-clone completion and existing source-context callbacks may revalidate those references against current native log bytes and source under the same scan/context budgets
+- **AND** mutated, forged, unsupported or missing evidence produces no relation; no repeated search or extra model lookup is required
+
 #### Scenario: Related declarations share the original context budget
 - **WHEN** existing source windows already occupy available slots or the complete relation cannot fit the unchanged shared two-window/8000-byte payload
 - **THEN** original source windows retain priority and no clipped relation is added

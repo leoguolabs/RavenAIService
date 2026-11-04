@@ -546,43 +546,55 @@ class SourceFieldRelations:
             )
         return out
 
+    def log_lines(self, relative):
+        candidate = self.root / relative
+        if Path(relative).is_absolute() or ".." in Path(relative).parts:
+            raise ValueError("invalid log path")
+        if any(
+            (p.is_symlink() for p in [candidate, *candidate.parents] if p != self.root)
+        ):
+            raise ValueError("log symlink")
+        lp = candidate.resolve(strict=True)
+        lp.relative_to(self.root / "logs")
+        if lp not in self.logs:
+            identity = source_identity(lp)
+            if (
+                identity[2] > 16 * 1024 * 1024
+                or len(self.logs) >= 8
+                or self.logbytes + identity[2] > 32 * 1024 * 1024
+            ):
+                raise ValueError("log bound")
+            with lp.open("rb") as stream:
+                lograw = stream.read(16 * 1024 * 1024 + 1)
+            if len(lograw) != identity[2] or source_identity(lp) != identity:
+                raise ValueError("log mutation")
+            self.logbytes += len(lograw)
+            self.logs[lp] = (
+                identity,
+                hashlib.sha256(lograw).digest(),
+                lograw.decode().splitlines(),
+            )
+        lines = self.logs[lp][2]
+        return lines
+
+    def collect_references(self, references):
+        """Revalidate bounded line/hash references after a repository becomes ready."""
+        matches = []
+        for (relative, number), digest in references:
+            self.limit()
+            lines = self.log_lines(relative)
+            if 1 <= number <= len(lines):
+                text = lines[number - 1]
+                if hashlib.sha256(text.encode()).hexdigest() == digest:
+                    matches.append((relative, number, text))
+        return self.collect(matches)
+
     def collect(self, matches):
         groups = {}
         verified = []
         for relative, number, text in matches:
             self.limit()
-            candidate = self.root / relative
-            if Path(relative).is_absolute() or ".." in Path(relative).parts:
-                continue
-            if any(
-                (
-                    p.is_symlink()
-                    for p in [candidate, *candidate.parents]
-                    if p != self.root
-                )
-            ):
-                continue
-            lp = candidate.resolve(strict=True)
-            lp.relative_to(self.root / "logs")
-            if lp not in self.logs:
-                identity = source_identity(lp)
-                if (
-                    identity[2] > 16 * 1024 * 1024
-                    or len(self.logs) >= 8
-                    or self.logbytes + identity[2] > 32 * 1024 * 1024
-                ):
-                    raise ValueError("log bound")
-                with lp.open("rb") as stream:
-                    lograw = stream.read(16 * 1024 * 1024 + 1)
-                if len(lograw) != identity[2] or source_identity(lp) != identity:
-                    raise ValueError("log mutation")
-                self.logbytes += len(lograw)
-                self.logs[lp] = (
-                    identity,
-                    hashlib.sha256(lograw).digest(),
-                    lograw.decode().splitlines(),
-                )
-            lines = self.logs[lp][2]
+            lines = self.log_lines(relative)
             if not 1 <= number <= len(lines) or lines[number - 1] != text:
                 continue
             rec = _RECORD.fullmatch(text)
