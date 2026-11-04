@@ -353,3 +353,5 @@ token-bearing URLs. Project attribution is limited to non-sensitive identifiers
 追问通过独立 SDK 调用读取原工作空间，只提供有路径边界检查的只读 list/read/search MCP 工具；禁用所有内置工具、项目设置/钩子、自动记忆及 SDK 会话持久化，CLI 配置使用独立临时目录并在结束/取消时清理。追问不调用普通聊天服务，不写入 ChatSession、ChatMessage、ChatAgentRun、分享快照或 metrics 正文日志，也不复用原用户 SDK session ID。当前弹窗仅在浏览器内存保留临时问答，关闭、卸载页面或切换对话会取消请求并清空。重新打开从空临时历史开始。
 
 流事件为 `start`、`delta(text)`、`done(answer)` 或 `error(message)`，连接意外结束不能作为完成答案。该路由排除请求/响应正文日志，响应使用 `Cache-Control: no-store`；异常原文不返回客户端。每个问题最多 8000 字符，临时历史最多 40 条/100000 字符，单条回答最多 32000 字符，原对话上下文最多 300000 字符，运行最多 300 秒。仅支持能提供 in-process MCP 的模型端点。临时追问可查询同一工作空间的日志/源码，但不执行原 Agent 的设备、写文件等操作。
+
+For optional isolated evidence verification, Log Analysis duration includes packet construction and the separate verifier call. The verifier terminal usage is added to the run token totals; helper/title activity must be accounted for when checking end-to-end API time and routing. Safe trace notices distinguish total verification seconds and model seconds. These are mechanism measurements, not benchmark acceptance. Packets, edit JSON and credentials are not metric labels.

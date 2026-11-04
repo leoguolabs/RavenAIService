@@ -300,3 +300,5 @@ Rate limits, billing, authentication, request size, and turn limits have separat
 messages. Ordinary answers and quoted diagnostic examples are left unchanged.
 Raw persisted errors and server diagnostics are retained; this presentation
 change does not alter the trace schema or endpoint retry policy.
+
+Optional isolated evidence verification emits `system_notice` with `kind=evidence_verification` and `phase=start|complete`. Completion metadata is limited to model, edit count, packet bytes and elapsed seconds. Internal edit JSON and the evidence packet are never answer deltas. Primary answer deltas remain provisional; `run_complete.final_text` contains the authoritative verified public result. Malformed verification emits error without `run_complete`; cancellation retains the existing cancelled terminal contract. Original primary raw text/trace remains diagnostic evidence.

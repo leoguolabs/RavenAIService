@@ -1342,6 +1342,10 @@ class LogAnalysisAgent:
         system_prompt += required_skill_prompt
         evidence_hooks = None
         evidence_review = None
+        from app.agents.isolated_review import isolated_mode
+        isolated_selected = isolated_mode(settings, evidence_snapshot)
+        isolated_result = None
+        primary_options = {"value": None}
         if evidence_snapshot is not None:
             from app.agents.evidence_policy import execution_hooks, snapshot_prompt
             from app.agents.evidence_review import FinalEvidenceReview
@@ -1360,7 +1364,7 @@ class LogAnalysisAgent:
                     system_prompt += log_overview_prompt(overview, ctx.locale)
                 except Exception:
                     logger.warning("Log overview unavailable; retaining native evidence access")
-            if settings.agent_evidence_final_review_enabled is True:
+            if settings.agent_evidence_final_review_enabled is True and not isolated_selected:
                 evidence_review = FinalEvidenceReview(ctx.locale, ctx.task_id, settings.anthropic_max_turns)
             evidence_hooks = execution_hooks(
                 ctx.locale, ctx.task_id, ctx.temp_dir,
@@ -1377,7 +1381,7 @@ class LogAnalysisAgent:
             system_prompt += comparison_execution_prompt(ctx.locale)
 
         def _make_options(endpoint: Optional[Any]) -> Any:
-            return build_options(
+            options = build_options(
                 system_prompt=system_prompt,
                 allowed_tools=allowed_tools,
                 cwd=ctx.temp_dir,
@@ -1393,6 +1397,9 @@ class LogAnalysisAgent:
                 use_extended_context=settings.agent_evidence_extended_context_enabled is True,
                 **({"hooks": evidence_hooks} if evidence_hooks else {}),
             )
+
+            primary_options["value"] = options
+            return options
 
         def _on_endpoint(endpoint: Any) -> None:
             served["model"] = endpoint.model
@@ -1497,6 +1504,31 @@ class LogAnalysisAgent:
                     continue
                 _emit_for_message(message, state=state)
 
+            if isolated_selected:
+                from app.agents.isolated_review import verify, VerificationError
+                candidate = _extract_fenced_json(state.final_text)
+                if candidate is None or not _validate_result_schema(candidate):
+                    raise VerificationError("Primary draft cannot be verified")
+                if candidate.get("status", "ok") == "ok" and not candidate.get("error_kind"):
+                    state.emit(build_event(
+                        SYSTEM_NOTICE, task_id=ctx.task_id, seq_counter=state.seq_counter,
+                        kind="evidence_verification", phase="start",
+                        detail="Checking conclusions" if ctx.locale == "en" else "\u6b63\u5728\u6838\u67e5\u7ed3\u8bba",
+                    ))
+                    isolated_result, verification = await verify(
+                        workspace=ctx.temp_dir, draft=candidate,
+                        primary_options=primary_options["value"],
+                        required_prompt=required_skill_prompt, locale=ctx.locale,
+                        check_cancel=_check_cancel,
+                    )
+                    _accumulate_token_usage(verification.pop("usage", None), state.token_usage)
+                    state.emit(build_event(
+                        SYSTEM_NOTICE, task_id=ctx.task_id, seq_counter=state.seq_counter,
+                        kind="evidence_verification", phase="complete",
+                        detail="Conclusions checked" if ctx.locale == "en" else "\u7ed3\u8bba\u6838\u67e5\u5b8c\u6210",
+                        **verification,
+                    ))
+
         except AgentCancelled:
             duration = time.monotonic() - start
             _log_workflow(
@@ -1572,11 +1604,13 @@ class LogAnalysisAgent:
                 task_id=ctx.task_id,
                 seq_counter=state.seq_counter,
                 trace_summary=trace_summary,
-                final_text=coerce_excerpt(mask_tokens(final_text), DEFAULT_EXCERPT_MAX_BYTES * 4),
+                final_text=coerce_excerpt(mask_tokens(
+                    "```json\n" + json.dumps(isolated_result, ensure_ascii=False) + "\n```"
+                    if isolated_result is not None else final_text), DEFAULT_EXCERPT_MAX_BYTES * 4),
             )
         )
 
-        parsed = _extract_fenced_json(final_text)
+        parsed = isolated_result if isolated_result is not None else _extract_fenced_json(final_text)
         tool_trace = derive_tool_trace(state.trace_events)
         common_extra = {
             "tool_trace": tool_trace,

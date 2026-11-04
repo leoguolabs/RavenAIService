@@ -175,6 +175,7 @@ class Settings(BaseSettings):
     # Independently opt in: added context/review failed the combined trial.
     agent_evidence_source_context_enabled: bool = False
     agent_evidence_final_review_enabled: bool = False
+    agent_evidence_final_review_mode: str = "session"  # session | isolated; review gate remains default off
     agent_evidence_log_overview_enabled: bool = False
     agent_evidence_statistics_enabled: bool = False
     agent_evidence_topic_context_enabled: bool = False

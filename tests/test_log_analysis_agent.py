@@ -1196,3 +1196,69 @@ async def test_compare_server_flag_requires_complete_snapshot(
         prompt = options.call_args.kwargs["system_prompt"]
         assert prompt.rfind("确定性分组比较") > prompt.rfind("证据收集执行策略")
         assert "优先调用一次" in prompt and "工具报错" in prompt
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('outcome', ['patched', 'invalid', 'cancelled'])
+async def test_isolated_review_finalization_uses_captured_options_and_never_publishes_patch(workspace_ctx, outcome):
+    import threading
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+    from app.agents.isolated_review import VerificationError
+
+    events = []
+    cancel = threading.Event()
+    snapshot = {'task': {}, 'project_catalog': {'projects': [], 'count': 0}}
+    sdk = MagicMock()
+    sdk.query = _fake_query_ok
+    checked = []
+
+    async def verify(**kwargs):
+        assert not any(e['type'] == 'run_complete' for e in events)
+        assert kwargs['primary_options'] is options.return_value
+        assert kwargs['workspace'] == workspace_ctx.temp_dir
+        checked.append(True)
+        await asyncio.sleep(0.03)
+        if outcome == 'cancelled':
+            cancel.set()
+            kwargs['check_cancel']()
+        if outcome == 'invalid':
+            raise VerificationError('Invalid literal verification edits')
+        return {**kwargs['draft'], 'summary': 'Checked conclusion'}, {
+            'model': 'yinhe-thinking', 'edits': 1, 'seconds': 0.03,
+            'model_seconds': 0.02, 'packet_bytes': 100,
+            'usage': {'input_tokens': 13, 'output_tokens': 7},
+        }
+
+    with _patch_build_options() as options, _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch.dict('sys.modules', {'claude_agent_sdk': sdk}), \
+         patch('app.config.settings', MagicMock(
+             anthropic_provider='yinhe', anthropic_model='yinhe-thinking',
+             anthropic_max_turns=150, anthropic_request_timeout_seconds=60,
+             agent_evidence_efficiency_enabled=True, agent_evidence_final_review_enabled=True,
+             agent_evidence_final_review_mode='isolated',
+         )), \
+         patch('app.agents.evidence_policy.prepare_snapshot', AsyncMock(return_value=snapshot)), \
+         patch('app.agents.evidence_tools.get_evidence_mcp_server', return_value={}), \
+         patch('app.agents.isolated_review.verify', side_effect=verify):
+        if outcome == 'invalid':
+            with pytest.raises(VerificationError):
+                await LogAnalysisAgent().run(workspace_ctx, cancel_event=cancel, trace_emitter=events.append)
+        else:
+            result = await LogAnalysisAgent().run(workspace_ctx, cancel_event=cancel, trace_emitter=events.append)
+    assert checked == [True]
+    assert 'Stop' not in (options.call_args.kwargs.get('hooks') or {})
+    if outcome == 'patched':
+        assert result['summary'] == 'Checked conclusion'
+        assert result['raw'] == _make_good_result_json()
+        assert result['duration_seconds'] >= 0.03
+        assert result['token_usage']['input_tokens'] >= 13
+        complete = [e for e in events if e['type'] == 'run_complete']
+        assert len(complete) == 1 and 'Checked conclusion' in complete[0]['final_text']
+        assert not any('"edits"' in e.get('text', '') for e in events)
+        notices = [e for e in events if e.get('kind') == 'evidence_verification']
+        assert [e['phase'] for e in notices] == ['start', 'complete']
+    else:
+        assert not any(e['type'] == 'run_complete' for e in events)
+        assert any(e['type'] == ('error' if outcome == 'invalid' else 'cancelled') for e in events)
+        if outcome == 'cancelled':
+            assert result['status'] == 'cancelled'

@@ -314,3 +314,5 @@ enabled Agent/project catalog as `available_skills`; actual use requires a
 
 For schema details, sequencing invariants, and the cancellation
 contract, see [agent_trace_protocol.md](../agent_trace_protocol.md).
+
+For the default-off isolated review experiment, confirm both the complete evidence snapshot and `AGENT_EVIDENCE_FINAL_REVIEW_ENABLED=true`, then set `AGENT_EVIDENCE_FINAL_REVIEW_MODE=isolated` only in the authorized validation environment. Verify the primary has no Stop review and the verifier has no tools or project/session continuation, uses the effective primary model/endpoint and includes complete required Skills. Inspect safe verification start/complete notices and authoritative final text; do not infer success from a streamed draft. Invalid edits must fail without run_complete; cancelling a blocked verifier must close its generator. Compare fresh API totals including verification, preserve failed runs and review native evidence before expanding timing tests. Never dump whole raw results or tool traces to check this mode.
