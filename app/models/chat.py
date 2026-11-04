@@ -41,7 +41,7 @@ class ChatRequest(BaseModel):
     )
     images: List[ImageAttachment] = Field(
         default_factory=list,
-        description="可选的随消息附带图片（base64），由后端 OCR 转文字后合并进提示词",
+        description="可选图片（base64）；OpenAI 直接接收原图，其他 provider 按 OCR 配置处理 / Optional images; OpenAI receives originals directly",
     )
 
 

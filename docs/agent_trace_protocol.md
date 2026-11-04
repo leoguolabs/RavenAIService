@@ -5,6 +5,14 @@ Unified event schema for streaming Claude Agent SDK internal messages
 frontend. One event type, two transport channels, same TypeScript and
 Python definitions on both sides.
 
+OpenAI runs use the same trace contract. `provider_query` translates the native
+Responses text/function-argument stream through a per-run loopback bridge while
+the SDK executes existing tools and permission checks. `run_start.provider` is
+`openai`; model and usage describe the actual OpenAI model. Original image input
+does not create a separate OCR run. Encrypted reasoning is retained only in the
+bridge for tool continuation and is never emitted as user-visible thinking.
+Missing upstream terminal events and provider failures remain errors.
+
 - Python source of truth: [app/agents/log_analysis/trace.py](../app/agents/log_analysis/trace.py)
 - TypeScript mirror: [frontend/src/types/agentTrace.ts](../frontend/src/types/agentTrace.ts)
 

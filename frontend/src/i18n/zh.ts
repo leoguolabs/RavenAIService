@@ -836,10 +836,10 @@ export default {
       resetFail: '恢复默认失败',
       resetDone: '已恢复为环境变量默认值',
       resetConfirm: '确定要清除后台的所有模型覆盖、恢复为环境变量 / .env 默认值吗？',
-      anthropicSectionTitle: 'Anthropic 主力模型',
+      anthropicSectionTitle: '主力模型',
       anthropicSectionDesc:
-        '日志分析、设备联动等对话智能体使用此 Anthropic 兼容端点。BugFix 使用下方独立配置。此处配置会立即覆盖 .env 默认值，无需重启。',
-      backupSectionTitle: 'Anthropic 备用模型（故障转移）',
+        '日志分析、设备联动等对话智能体使用此模型端点，支持 OpenAI 原生 Responses 和 Anthropic Messages 协议。BugFix 使用下方独立配置。此处配置会立即覆盖 .env 默认值，无需重启。',
+      backupSectionTitle: '备用模型（故障转移）',
       backupSectionDesc:
         '主力端点降级或不可用时自动切换到此端点，恢复后自动切回。适合「主力免费但高峰期慢、备用付费但随时可用」的成本优化场景。字段含义与主力完全一致。',
       backupEnabledLabel: '启用备用端点',
@@ -917,8 +917,9 @@ export default {
       modelCustomOption: '自定义（在下方输入框填写）',
       customRequiredPlaceholder: 'custom provider 必填',
       smallFastModelHint: '标题生成等轻量任务用的小 / 快模型；留空则使用 provider 默认值。',
+      openaiUnifiedHint: 'OpenAI 模式固定使用上方主力模型处理文字、截图和标题，跳过独立 OCR。',
       maxTokensHint: '单次请求最大输出 tokens，默认 8192。',
-      ocrApiKeyHint: '未配置即视为「未配置」，对图片自动降级（仅按文本作答）。',
+      ocrApiKeyHint: 'OpenAI 模式无需 OCR 配置；其他 provider 未配置时图片降级为仅按文本作答。',
       ocrModelPlaceholder: 'qwen3.5-ocr',
       ocrModelHint: '阿里云 OCR 模型名，如 qwen3.5-ocr / qwen-vl-ocr-latest / qwen-vl-ocr。',
       ocrBaseUrlPlaceholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -946,7 +947,7 @@ export default {
       envFallbackNote:
         '· 未在此配置（显示为「环境变量」）的项，将回退到 .env / app/config.py 的默认值。其余细粒度调优参数（历史轮数、超时、字节上限等）仍由环境变量控制。',
       ocrComplianceNote:
-        '· 合规提示：图片会发往上游 OCR provider（默认阿里云北京地域）；原图随聊天附件与 BugFix 证据快照保留，区域 / 合规由部署方按 provider 负责。',
+        '· OpenAI 模式下原图直接发给主力模型，不调用 OCR。其他模式下图片会发往上游 OCR provider（默认阿里云北京地域）；原图随聊天附件与 BugFix 证据快照保留，区域 / 合规由部署方按 provider 负责。',
       providerCapabilityNote:
         '· 第三方 Anthropic 兼容网关（DeepSeek / 百炼 / 智谱 / Kimi / MiniMax / 阶跃 / MiMo / 混元 / 银河内部）均支持标准 tool use 与 MCP 工具，但 thinking budget、文档输入等扩展能力不生效；OCR 文本会传递给下游智能体，支持视觉的 BugFix 模型还可读取保存的原图。',
     },

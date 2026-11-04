@@ -108,6 +108,7 @@ class DeviceAgentContext:
     session_id: str
     user_message: str
     target_device_id: str
+    images_json: Optional[str] = None
     target_device_name: Optional[str] = None
     # 最近 N 轮历史，按时间顺序，每条 ``{"role": "user"|"assistant", "content": str}``。
     # 由 ``AIChatService`` 从 ``chat_history_service`` 拉取后传入，已含本次用户消息之前
@@ -261,7 +262,8 @@ class DeviceAgent:
         from app.agents.routed_query import routed_query
         from app.services import model_router
 
-        endpoints = model_router.candidates(agent_kind="device_agent", require_mcp=True)
+        endpoints = model_router.candidates(agent_kind="device_agent", require_mcp=True,
+            require_image=settings.anthropic_provider == "openai" and bool(ctx.images_json))
         chosen = endpoints[0] if endpoints else None
         if chosen is not None:
             provider = chosen.provider
@@ -316,6 +318,8 @@ class DeviceAgent:
             workspace_path = workspace_mod.prepare_session(
                 session_id, run_id=ctx.run_id, owner_scope=ctx.owner_scope
             )
+            from app.services import chat_image_store
+            chat_image_store.materialize_session_images(session_id, ctx.images_json, workspace_path)
 
             available_skills: List[str] = []
             materialized: List[str] = []

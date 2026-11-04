@@ -320,7 +320,7 @@ class BugFixCodingAgent:
             "BugFixCodingAgent run_start task=%s model=%s", ctx.task_id, effective_model
         )
 
-        from claude_agent_sdk import query as _query
+        from app.agents.provider_query import query as _query
 
         run_error: Optional[Exception] = None
         try:

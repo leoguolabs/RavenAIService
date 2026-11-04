@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # Selectable providers, in Admin dropdown order. Mirrors
 # ``anthropic_client.PROVIDER_PROFILES``; a test asserts the two stay in sync.
 ANTHROPIC_PROVIDERS: Tuple[str, ...] = (
+    "openai",
     "anthropic",
     "deepseek",
     "aliyun",
@@ -308,6 +309,7 @@ def _provider_profiles() -> List[Dict[str, Any]]:
         profiles.append(
             {
                 "name": profile.name,
+                "api_protocol": profile.api_protocol,
                 "label": profile.label or profile.name,
                 "default_base_url": profile.default_base_url,
                 "default_model": profile.default_model,
@@ -716,6 +718,14 @@ def _openai_reply_text(data: Dict[str, Any]) -> str:
     return str(message.get("content") or "").strip()
 
 
+def _responses_reply_text(data: Dict[str, Any]) -> str:
+    return " ".join(
+        str(part.get("text") or "")
+        for item in data.get("output") or [] if item.get("type") == "message"
+        for part in item.get("content") or [] if part.get("type") == "output_text"
+    ).strip()
+
+
 async def _probe_yinhe_key_access(
     *,
     target: str,
@@ -865,25 +875,33 @@ async def _test_anthropic(slot: AnthropicSlot, payload: Dict[str, Any]) -> Dict[
         *,
         timeout_seconds: int = _TEST_TIMEOUT_SECONDS,
     ) -> Dict[str, Any]:
-        result = await _probe(
-            target=target,
-            url=f"{base_url.rstrip('/')}/v1/messages",
-            # Mirror what the Claude Agent SDK sends (ANTHROPIC_API_KEY →
-            # x-api-key), so a green test means the agent path authenticates.
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            body={
-                "model": model,
-                "max_tokens": _TEST_MAX_TOKENS,
-                "messages": [{"role": "user", "content": _TEST_PROMPT}],
-            },
-            context={**context, "key_id": key_identifier(api_key)},
-            parse_reply=_anthropic_reply_text,
-            timeout_seconds=timeout_seconds,
-        )
+        if provider == "openai":
+            result = await _probe(
+                target=target, url=f"{base_url.rstrip('/')}/responses",
+                headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+                body={"model": model, "input": _TEST_PROMPT, "max_output_tokens": 256,
+                      "store": False},
+                context={**context, "key_id": key_identifier(api_key)},
+                parse_reply=_responses_reply_text, timeout_seconds=timeout_seconds,
+            )
+        else:
+            result = await _probe(
+                target=target,
+                url=f"{base_url.rstrip('/')}/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                body={
+                    "model": model,
+                    "max_tokens": _TEST_MAX_TOKENS,
+                    "messages": [{"role": "user", "content": _TEST_PROMPT}],
+                },
+                context={**context, "key_id": key_identifier(api_key)},
+                parse_reply=_anthropic_reply_text,
+                timeout_seconds=timeout_seconds,
+            )
         # A provider is not trusted to keep credentials out of its own error
         # body. Strip the exact submitted secret before either a single-key or
         # aggregate result can cross the Admin API boundary.

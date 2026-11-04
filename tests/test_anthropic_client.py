@@ -169,6 +169,18 @@ class TestBuildOptions:
         assert opts.env["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
         assert opts.env["ANTHROPIC_API_KEY"] == "sk-test"
 
+    def test_openai_protocol_and_auxiliary_models_follow_main(self, base_settings):
+        base_settings.anthropic_provider = "openai"
+        base_settings.anthropic_model = "gpt-6.1-terra"
+        base_settings.anthropic_small_fast_model = "old-provider-model"
+        base_settings.anthropic_max_tokens = 8192
+        opts = self._build(base_settings, requires_image_input=True)
+        assert opts.env["RAVEN_API_PROTOCOL"] == "openai_responses"
+        assert opts.env["ANTHROPIC_BASE_URL"] == "https://api.openai.com/v1"
+        assert opts.env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "gpt-6.1-terra"
+        assert opts.env["ANTHROPIC_SMALL_FAST_MODEL"] == "gpt-6.1-terra"
+        assert opts.env["RAVEN_OPENAI_MAX_OUTPUT_TOKENS"] == "8192"
+
     def test_caller_max_turns_overrides_settings(self, base_settings):
         opts = self._build(base_settings, max_turns=10)
         assert opts.max_turns == 10

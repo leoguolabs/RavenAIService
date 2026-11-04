@@ -151,6 +151,16 @@ def test_capabilities_preserve_route_order_and_credentials(
     assert response.headers["vary"] == "Authorization"
 
 
+def test_openai_route_declares_responses_protocol_and_vision(client, monkeypatch):
+    choice = _choice("primary", provider="openai", api_key="project-key",
+                     base_url="https://api.openai.com/v1", model="gpt-6.1-terra")
+    monkeypatch.setattr(model_router, "candidates", lambda **kwargs: [choice])
+    route = client.get("/api/v1/client-ai/capabilities").json()["data"]["routes"][0]
+    assert route["api_protocol"] == "openai_responses"
+    assert route["capabilities"]["image_input"] is True
+    assert route["capabilities"]["tool_use"] is True
+
+
 def test_capability_revision_changes_when_key_or_order_changes(
     client: TestClient,
     monkeypatch,

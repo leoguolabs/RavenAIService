@@ -564,7 +564,7 @@ async def routed_query(
     message arrives — so they select first and hand the result in here.
     """
     if sdk_query is None:
-        from claude_agent_sdk import query as sdk_query  # type: ignore[no-redef]
+        from app.agents.provider_query import query as sdk_query  # type: ignore[no-redef]
 
     choices = (
         candidates

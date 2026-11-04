@@ -570,6 +570,7 @@ class ChatRunService:
         ctx_kwargs = {
             "session_id": session_id,
             "user_message": user_message,
+            "images_json": images_json,
             "target_device_id": target_device_id or "",
             "target_device_name": target_device_name,
             "history": history,
@@ -939,6 +940,7 @@ class ChatRunService:
         ctx_kwargs = {
             "session_id": session_id,
             "user_message": user_message,
+            "images_json": images_json,
             "history": history,
             "system_prompt_override": system_prompt_override,
             "run_id": run_id,

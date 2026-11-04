@@ -127,6 +127,7 @@ class AIChatService(BaseService):
         answer_text: str,
         session_title: Optional[str] = None,
         title_hint: Optional[str] = None,
+        images_json: Optional[str] = None,
     ) -> None:
         await chat_history_service.save_exchange(
             db,
@@ -136,6 +137,7 @@ class AIChatService(BaseService):
             ai_content=answer_text,
             session_title=session_title,
             title_hint=title_hint,
+            **({"user_images_json": images_json} if images_json else {}),
         )
 
     async def generate_session_title(
@@ -260,10 +262,16 @@ class AIChatService(BaseService):
         history = await self._prepare_history(payload, session_id, db, user)
         is_new_session = len(history) == 0
 
+        from app.services import chat_image_store
+        images_json = chat_image_store.to_meta_json(
+            chat_image_store.save_turn_images(payload.images, session_id=session_id)
+        )
+
         suggested_agent_type: Optional[str] = None
         if self._is_device_agent(payload):
             ctx = DeviceAgentContext(
                 session_id=session_id,
+                images_json=images_json,
                 user_message=payload.message,
                 target_device_id=payload.target_device_id or "",
                 target_device_name=payload.target_device_name,
@@ -276,6 +284,7 @@ class AIChatService(BaseService):
         else:
             ctx_general = GeneralAgentContext(
                 session_id=session_id,
+                images_json=images_json,
                 user_message=payload.message,
                 history=history,
                 system_prompt_override=payload.system_prompt,
@@ -298,6 +307,7 @@ class AIChatService(BaseService):
                     db, user, session_id,
                     payload.message, answer_text,
                     title_hint=None,
+                    **({"images_json": images_json} if images_json else {}),
                 )
                 if is_new_session:
                     await self._try_generate_and_update_session_title(
@@ -333,9 +343,15 @@ class AIChatService(BaseService):
 
         yield self._sse_event({"event": "session", "session_id": session_id})
 
+        from app.services import chat_image_store
+        images_json = chat_image_store.to_meta_json(
+            chat_image_store.save_turn_images(payload.images, session_id=session_id)
+        )
+
         if self._is_device_agent(payload):
             ctx = DeviceAgentContext(
                 session_id=session_id,
+                images_json=images_json,
                 user_message=payload.message,
                 target_device_id=payload.target_device_id or "",
                 target_device_name=payload.target_device_name,
@@ -347,6 +363,7 @@ class AIChatService(BaseService):
         else:
             ctx_general = GeneralAgentContext(
                 session_id=session_id,
+                images_json=images_json,
                 user_message=payload.message,
                 history=history,
                 system_prompt_override=payload.system_prompt,
@@ -407,6 +424,7 @@ class AIChatService(BaseService):
                     db, user, session_id,
                     payload.message, answer_text,
                     title_hint=None,
+                    **({"images_json": images_json} if images_json else {}),
                 )
                 if is_new_session:
                     await self._try_generate_and_update_session_title(

@@ -51,6 +51,7 @@ export interface ModelSettingFieldEntry {
 }
 
 export interface ModelProviderProfile {
+  api_protocol?: 'anthropic_messages' | 'openai_responses'
   name: string
   /** Human-readable vendor name, e.g. '阿里云百炼 / 通义千问'. */
   label: string

@@ -6,6 +6,18 @@ Every AI invocation and selected business event is persisted as one row in the
 `metric_events` table — the single auditable fact source — and exposed through
 admin/self HTTP APIs plus a low-cardinality Prometheus `/metrics` endpoint.
 
+For provider `openai`, the shared Responses bridge maps actual response usage to
+the existing SDK counters: cached input is separated from uncached input and
+output includes billed reasoning tokens. These counters are recorded under the
+existing agent run; native screenshot input does not produce an `ocr` event.
+The SDK context-count hint is a conservative byte upper bound, not billable
+usage. Monetary estimates require a matching provider/model pricing entry;
+they do not establish the account's promotional credit balance or charges.
+
+RavenClient capability routes include `api_protocol` (`openai_responses` or
+`anthropic_messages`). The desktop uses it to select the corresponding native
+client while keeping synchronized credentials out of persisted Redux state.
+
 - Model / API schemas: [app/models/metrics.py](../app/models/metrics.py)
 - Aggregation + recording service: [app/services/metrics_service.py](../app/services/metrics_service.py)
 - HTTP APIs: [app/api/admin_metrics.py](../app/api/admin_metrics.py)

@@ -492,6 +492,22 @@ async def test_anthropic_probe_falls_back_to_saved_key_and_provider_defaults(
     assert calls[0]["headers"]["x-api-key"] == "sk-stored"
 
 
+async def test_openai_probe_uses_native_responses_and_parses_reply(
+    isolated_store, blank_model_env, fake_upstream, monkeypatch
+):
+    box, calls = fake_upstream
+    box["response"] = _FakeResponse(payload={"status": "completed", "output": [
+        {"type": "message", "content": [{"type": "output_text", "text": "pong"}]}]})
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-stored")
+    result = await mss.test_connection({"target": "anthropic", "provider": "openai"})
+    assert result["ok"] is True and result["reply"] == "pong"
+    assert calls[0]["url"] == "https://api.openai.com/v1/responses"
+    assert calls[0]["headers"]["Authorization"] == "Bearer sk-stored"
+    assert calls[0]["body"]["store"] is False
+    assert calls[0]["body"]["model"] == "gpt-6.1-terra"
+    assert "sk-stored" not in json.dumps(result)
+
+
 async def test_anthropic_probe_reports_upstream_error(isolated_store, blank_model_env, fake_upstream, monkeypatch):
     box, _calls = fake_upstream
     box["response"] = _FakeResponse(

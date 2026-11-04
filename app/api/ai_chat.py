@@ -141,6 +141,11 @@ async def chat_endpoint(
         user=current_user,
     )
     try:
+        validate_images(request.images, locale=locale)
+    except ImageValidationError as exc:
+        raise HTTPException(status_code=413 if exc.reason == "image_too_large" else 400,
+                            detail={"reason": exc.reason, "message": exc.message}) from exc
+    try:
         response = await ai_chat_service.chat(
             request, db=db, user=current_user, locale=locale
         )

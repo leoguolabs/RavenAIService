@@ -306,7 +306,7 @@ class PackageSearchAgent:
     ) -> AsyncIterator[Any]:
         """Yield messages from the SDK loop. Overridden in tests."""
         try:
-            from claude_agent_sdk import query  # noqa: WPS433
+            from app.agents.provider_query import query  # noqa: WPS433
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
                 "claude-agent-sdk is required. Install with: pip install claude-agent-sdk>=0.1"
@@ -576,8 +576,10 @@ class PackageSearchAgent:
 
         # Resolve before RUN_START: that event carries the model id and is
         # already on the wire to the browser once the stream begins.
+        from app.services.chat_image_store import native_image_input_required
         endpoints = model_router.candidates(
-            agent_kind="package_search", require_mcp=True
+            agent_kind="package_search", require_mcp=True,
+            require_image=native_image_input_required(ctx.temp_dir),
         )
         chosen = endpoints[0] if endpoints else None
 

@@ -374,6 +374,8 @@ def _resolve(
     small_fast = str(getattr(settings, slot_spec.small_fast_model_key) or "").strip() or (
         profile.default_small_fast_model or None
     )
+    if profile.api_protocol == "openai_responses":
+        small_fast = model
 
     return EndpointChoice(
         slot=slot_spec.name,

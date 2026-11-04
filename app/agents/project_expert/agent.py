@@ -178,7 +178,9 @@ class ProjectExpertAgent:
         from app.agents.routed_query import routed_query
         from app.services import model_router
 
-        endpoints = model_router.candidates(agent_kind=AGENT_KEY, require_mcp=True)
+        from app.services.chat_image_store import native_image_input_required
+        endpoints = model_router.candidates(agent_kind=AGENT_KEY, require_mcp=True,
+            require_image=native_image_input_required(ctx.temp_dir))
         chosen = endpoints[0] if endpoints else None
         if chosen is not None:
             provider = chosen.provider

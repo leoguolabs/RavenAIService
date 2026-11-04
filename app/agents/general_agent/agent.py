@@ -116,6 +116,7 @@ class GeneralAgentContext:
 
     session_id: str
     user_message: str
+    images_json: Optional[str] = None
     history: List[Dict[str, str]] = field(default_factory=list)
     system_prompt_override: Optional[str] = None
     run_id: Optional[str] = None
@@ -158,6 +159,8 @@ def _resolve_small_fast_model() -> str:
     )
     from app.config import settings
 
+    if settings.anthropic_provider == "openai":
+        return settings.anthropic_model or PROVIDER_PROFILES["openai"].default_model
     if settings.anthropic_small_fast_model:
         return settings.anthropic_small_fast_model
     profile = PROVIDER_PROFILES.get(settings.anthropic_provider)
@@ -245,6 +248,7 @@ class GeneralAgent:
             agent_kind=AGENT_KEY,
             require_mcp=True,
             require_small_fast=True,
+            require_image=settings.anthropic_provider == "openai" and bool(ctx.images_json),
         )
         chosen = endpoints[0] if endpoints else None
 
@@ -281,6 +285,8 @@ class GeneralAgent:
 
         try:
             with tempfile.TemporaryDirectory(prefix="general-agent-") as tmpdir:
+                from app.services import chat_image_store
+                chat_image_store.materialize_session_images(ctx.session_id, ctx.images_json, tmpdir)
                 available_skills: List[str] = []
                 materialized_skills: List[str] = []
                 skill_overviews: List[Dict[str, str]] = []

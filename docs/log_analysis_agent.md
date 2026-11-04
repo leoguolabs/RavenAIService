@@ -22,6 +22,14 @@ SDK 离线测试可验证目录行为与提示的传递，实际模型是否遵�
 
 ## SDK 后台模型与运行时配置
 
+选择 `openai` provider 时，公共 `provider_query` 为每次运行创建仅监听 loopback、
+以随机令牌认证的临时协议桥。工具、MCP、技能、权限和取消仍由 SDK 执行；远程推理使用
+OpenAI 原生 `/v1/responses`（`store=false`）。文字、截图、工具返回的图像与辅助请求
+使用同一选定模型，不调用独立 OCR。原图来自服务端验证并物化的工作区 manifest；
+缺失或不安全路径明确报错。携带原图的运行不允许故障转移到纯文本模型。
+协议桥在运行结束或取消时关闭，密钥不写入 SDK transcript；OpenAI 加密推理项仅在本轮
+后端内存中随工具往返保留，不暴露给用户或计量记录。原有非 OpenAI provider 路径保持兼容。
+
 每轮 SDK 子进程同时设置 `ANTHROPIC_DEFAULT_HAIKU_MODEL` 和兼容旧版的
 `ANTHROPIC_SMALL_FAST_MODEL`，使用本轮端点已经解析的辅助模型；该端点未指定辅助模型时使用本轮主模型。
 不经路由器的调用按运行时设置、provider 默认辅助模型、实际主模型依次解析。

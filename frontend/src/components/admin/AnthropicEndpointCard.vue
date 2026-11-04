@@ -11,7 +11,7 @@
  * ``form`` is mutated in place: the parent owns one reactive object per slot and
  * passes the slice down, matching how the rest of the page already works.
  */
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircle2, PlugZap, XCircle } from 'lucide-vue-next'
 import type {
@@ -89,6 +89,10 @@ const primaryKeySource = computed(() => {
 const profileOf = (name: string) => props.profiles.find((p) => p.name === name) ?? null
 const selectedProfile = computed(() => profileOf(props.form.provider))
 const isCustomProvider = computed(() => props.form.provider === 'custom')
+const isOpenAI = computed(() => props.form.provider === 'openai')
+watch(() => [props.form.provider, props.form.model], () => {
+  if (isOpenAI.value) props.form.small_fast_model = props.form.model
+}, { immediate: true })
 
 const providerLabel = (name: string) => {
   const label = profileOf(name)?.label
@@ -245,6 +249,7 @@ const testBtnLabel = computed(() =>
         v-if="modelPresets.length"
         class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none bg-white"
         :value="presetValue(form.small_fast_model)"
+        :disabled="isOpenAI"
         @change="applyPreset('small_fast_model', $event)"
       >
         <option v-for="m in modelPresets" :key="m" :value="m">{{ m }}</option>
@@ -252,12 +257,13 @@ const testBtnLabel = computed(() =>
       </select>
       <input
         v-model="form.small_fast_model"
+        :disabled="isOpenAI"
         type="text"
         spellcheck="false"
         class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none"
         :placeholder="selectedProfile?.default_small_fast_model || t('admin.modelSettings.customRequiredPlaceholder')"
       />
-      <p class="text-xs text-slate-500 mt-1">{{ t('admin.modelSettings.smallFastModelHint') }}</p>
+      <p class="text-xs text-slate-500 mt-1">{{ t(isOpenAI ? 'admin.modelSettings.openaiUnifiedHint' : 'admin.modelSettings.smallFastModelHint') }}</p>
     </label>
 
     <!-- Slot-specific extras (the primary's max-tokens field lives here). -->

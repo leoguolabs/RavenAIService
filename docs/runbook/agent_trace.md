@@ -11,6 +11,25 @@ touching the agent loop itself.
 
 ---
 
+## OpenAI text and screenshot requests
+
+Select `openai` in Admin → Model settings, use `https://api.openai.com/v1`, and
+choose a vision-capable Responses model (the preset is `gpt-6.1-terra`). Existing
+`ANTHROPIC_*` configuration names are retained for compatibility. Test connection
+uses native Responses; a green probe verifies inference, not the whole tool/UI
+path. OpenAI fixes the auxiliary model to the main model and bypasses independent
+OCR, even without an OCR key. Allow sufficient output/time budget for image and
+tool work. Check `run_start` provider/model, real tool results, terminal status,
+and persisted usage in an authenticated screenshot conversation.
+
+The SDK may log `unrecognized_model` for an OpenAI id: this is its local catalogue,
+not an upstream model rejection. The selected id must remain unchanged on the
+Responses request. The loopback bridge is private and temporary; do not expose
+its port or log credentials. An upstream `credit_balance_exhausted` is a failure,
+not a reason to buy credits, enable recharge or silently select a paid fallback.
+API subscription credits can be used without an API payment method; monitor
+their actual balance/expiry in API Platform separately from model token metrics.
+
 ## Excessive empty token-progress notices
 
 Group trace events by `type` and `subtype` before attributing a large history to

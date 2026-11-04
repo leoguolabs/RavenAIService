@@ -50,6 +50,7 @@ class ClientAIRoute(BaseModel):
 
     slot: Literal["primary", "backup"]
     provider: str
+    api_protocol: Literal["anthropic_messages", "openai_responses"] = "anthropic_messages"
     base_url: str
     api_key: str
     model: str
@@ -103,6 +104,7 @@ def _serialize_route(choice: model_router.EndpointChoice) -> ClientAIRoute:
     return ClientAIRoute(
         slot=choice.slot,
         provider=choice.provider,
+        api_protocol=getattr(profile, "api_protocol", "anthropic_messages"),
         base_url=choice.base_url,
         api_key=choice.api_key,
         model=choice.model,

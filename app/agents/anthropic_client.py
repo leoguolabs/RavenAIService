@@ -79,6 +79,7 @@ class ProviderProfile:
     # Never a whitelist — ``anthropic_model`` stays free-text so a newly shipped
     # model can be used before this table catches up.
     models: tuple = ()
+    api_protocol: str = "anthropic_messages"
 
 
 # 除 anthropic 官方端点外，其余均为 Anthropic-compatible 第三方网关：它们实现
@@ -93,6 +94,18 @@ class ProviderProfile:
 # 更新预设不迁移管理员已保存的模型；仅替换正在退出服务的默认候选。
 # yhroot / yinhe 内部模型不参与公网目录更新；custom 仍由管理员填写。
 PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
+    "openai": ProviderProfile(
+        name="openai", label="OpenAI 官方",
+        default_base_url="https://api.openai.com/v1",
+        default_model="gpt-6.1-terra", default_small_fast_model="gpt-6.1-terra",
+        supports_image_input=True, supports_document_input=False,
+        supports_mcp_server_tools=True, thinking_budget_tokens_effective=False,
+        disable_parallel_tool_use_effective=True, supports_partial_streaming=True,
+        models=("gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.4", "gpt-4.1"),
+        api_protocol="openai_responses",
+        notes="OpenAI 原生 Responses API；文字、原始截图及工具结果使用同一模型，"
+              "跳过独立 OCR。Native Responses API; one model for text, images and tools, without separate OCR.",
+    ),
     "anthropic": ProviderProfile(
         name="anthropic",
         label="Anthropic 官方",
@@ -525,6 +538,8 @@ def build_options(
         if endpoint is not None else
         (settings.anthropic_small_fast_model or profile.default_small_fast_model or effective_model)
     )
+    if profile.api_protocol == "openai_responses":
+        effective_small_fast_model = effective_model
     if endpoint is not None:
         effective_base_url = endpoint.base_url
         effective_api_key = endpoint.api_key
@@ -618,6 +633,12 @@ def build_options(
             "ANTHROPIC_SMALL_FAST_MODEL": effective_small_fast_model,
         },
     }
+
+    if profile.api_protocol == "openai_responses":
+        options_kwargs["env"].update({
+            "RAVEN_API_PROTOCOL": "openai_responses",
+            "RAVEN_OPENAI_MAX_OUTPUT_TOKENS": str(max_tokens or settings.anthropic_max_tokens),
+        })
 
     if sdk_model != effective_model:
         # Per-run only: never change administrator settings or auxiliary models.

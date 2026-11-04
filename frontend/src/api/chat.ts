@@ -7,8 +7,9 @@ export type ChatPermissionDecision = 'allow' | 'deny'
 
 /**
  * One image attachment sent alongside a chat turn. ``data`` is a base64 string
- * (may include a ``data:<mime>;base64,`` prefix); the backend OCR service turns
- * it into text and merges it into the user prompt. Raw bytes are never persisted.
+ * (may include a ``data:<mime>;base64,`` prefix). OpenAI receives originals with
+ * text; other providers use the configured OCR path. Originals are retained in
+ * the authorized session image store for history and evidence.
  */
 export interface ChatImageAttachment {
   media_type: string

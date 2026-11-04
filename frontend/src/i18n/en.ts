@@ -837,10 +837,10 @@ export default {
       resetDone: 'Reverted to environment-variable defaults',
       resetConfirm:
         'Clear all admin model overrides and revert to the environment / .env defaults?',
-      anthropicSectionTitle: 'Anthropic primary model',
+      anthropicSectionTitle: 'Primary model',
       anthropicSectionDesc:
-        'Log analysis and conversational agents use this Anthropic-compatible endpoint. BugFix uses its dedicated configuration below. Values set here override the .env defaults immediately — no restart required.',
-      backupSectionTitle: 'Anthropic backup model (failover)',
+        'Log analysis and conversational agents use this endpoint, supporting native OpenAI Responses and Anthropic Messages. BugFix uses its dedicated configuration below. Values set here override the .env defaults immediately — no restart required.',
+      backupSectionTitle: 'Backup model (failover)',
       backupSectionDesc:
         'Automatically takes over when the primary endpoint degrades or becomes unavailable, and hands back once it recovers. Built for the "primary is free but slow at peak, backup costs money but is always available" trade-off. Fields mean exactly what they do for the primary.',
       backupEnabledLabel: 'Enable backup endpoint',
@@ -920,8 +920,9 @@ export default {
       customRequiredPlaceholder: 'required for custom provider',
       smallFastModelHint:
         'Small / fast model for lightweight tasks like title generation; leave blank to use the provider default.',
+      openaiUnifiedHint: 'OpenAI uses the main model above for text, original images and titles, without separate OCR.',
       maxTokensHint: 'Max output tokens per request; default 8192.',
-      ocrApiKeyHint: 'When unset, images degrade gracefully (text-only answer).',
+      ocrApiKeyHint: 'OpenAI needs no OCR configuration. Other providers fall back to text-only when this is unset.',
       ocrModelPlaceholder: 'qwen3.5-ocr',
       ocrModelHint: 'Alibaba Cloud OCR model, e.g. qwen3.5-ocr / qwen-vl-ocr-latest / qwen-vl-ocr.',
       ocrBaseUrlPlaceholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -951,7 +952,7 @@ export default {
       envFallbackNote:
         '· Fields not configured here (shown as “env”) fall back to the .env / app/config.py defaults. Finer-grained tuning params (history turns, timeouts, byte caps) remain env-controlled.',
       ocrComplianceNote:
-        '· Compliance note: images are sent to the upstream OCR provider (Alibaba Cloud Beijing region by default). Originals are retained with chat attachments and BugFix evidence snapshots; region/compliance is the deployer’s responsibility per provider.',
+        '· OpenAI sends original images directly to the main model without OCR. Other providers send images to the OCR provider (Alibaba Cloud Beijing region by default). Originals are retained with chat attachments and BugFix evidence snapshots; region/compliance is the deployer’s responsibility per provider.',
       providerCapabilityNote:
         '· Third-party Anthropic-compatible gateways (DeepSeek, Bailian, Zhipu, Kimi, MiniMax, StepFun, MiMo, Hunyuan, internal Yinhe) all support standard tool use and MCP tools, but extensions such as thinking budget and document input do not apply; OCR text is shared with downstream agents; a vision-capable BugFix model can also read the saved originals.',
     },

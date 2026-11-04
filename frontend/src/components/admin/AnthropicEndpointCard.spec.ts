@@ -58,6 +58,15 @@ const render = async (
 }
 
 describe('AnthropicEndpointCard', () => {
+  it('uses one main model and disables the auxiliary model for OpenAI', async () => {
+    const form = emptyForm({ provider: 'openai', model: 'gpt-6.1-terra', small_fast_model: 'old-model' })
+    const html = await render({ slotName: 'primary', form,
+      providerOptions: ['openai'], profiles: [profile({ name: 'openai', label: 'OpenAI',
+        api_protocol: 'openai_responses', models: ['gpt-6.1-terra'], supports_image_input: true })] })
+    expect(form.small_fast_model).toBe('gpt-6.1-terra')
+    expect(html).toContain('OpenAI 模式固定使用上方主力模型')
+    expect(html).toContain('disabled')
+  })
   it('reads source badges from the primary keys for the primary slot', async () => {
     const fields: Record<string, ModelSettingFieldEntry> = {
       anthropic_provider: { group: 'anthropic', source: 'override' },

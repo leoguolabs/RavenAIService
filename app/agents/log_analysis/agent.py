@@ -1014,7 +1014,8 @@ class LogAnalysisAgent:
         from app.config import settings
 
         try:
-            from claude_agent_sdk import query, AssistantMessage, ResultMessage  # noqa: F401
+            from claude_agent_sdk import AssistantMessage, ResultMessage  # noqa: F401
+            from app.agents.provider_query import query
         except ImportError as exc:
             raise RuntimeError(
                 "claude-agent-sdk is required. Install with: pip install claude-agent-sdk>=0.1"
@@ -1076,7 +1077,9 @@ class LogAnalysisAgent:
         from app.agents.routed_query import routed_query
         from app.services import model_router
 
-        endpoints = model_router.candidates(agent_kind=AGENT_KEY, require_mcp=True)
+        from app.services.chat_image_store import native_image_input_required
+        endpoints = model_router.candidates(agent_kind=AGENT_KEY, require_mcp=True,
+            require_image=native_image_input_required(ctx.temp_dir))
         chosen = endpoints[0] if endpoints else None
         if chosen is not None:
             provider = chosen.provider

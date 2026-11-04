@@ -41,6 +41,9 @@ def _resolve_small_fast_model() -> Optional[str]:
     from app.agents.anthropic_client import PROVIDER_PROFILES
     from app.config import settings
 
+    if settings.anthropic_provider == "openai":
+        profile = PROVIDER_PROFILES["openai"]
+        return settings.anthropic_model or profile.default_model
     if settings.anthropic_small_fast_model:
         return settings.anthropic_small_fast_model
     profile = PROVIDER_PROFILES.get(settings.anthropic_provider)

@@ -117,12 +117,16 @@ def save_turn_images(
     image_list = list(images or [])
     if not image_list:
         return []
+    from app.config import settings
+    native = settings.anthropic_provider == "openai"
 
     session_dir = _base_dir() / _sanitize_session(session_id)
     try:
         session_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         logger.warning("chat_image_store: cannot create %s: %s", session_dir, exc)
+        if native:
+            raise ValueError("Unable to store original images / 无法保存截图原件") from exc
         return []
 
     stored: List[StoredImage] = []
@@ -155,6 +159,8 @@ def save_turn_images(
             )
         )
 
+    if native and len(stored) != len(image_list):
+        raise ValueError("Some original images could not be stored / 部分截图原件无法保存")
     if stored:
         logger.info(
             "chat_image_store: stored %d image(s) for session=%s",
@@ -222,10 +228,38 @@ def workspace_materialization_enabled() -> bool:
     from app.agents.anthropic_client import PROVIDER_PROFILES
     from app.config import settings
 
+    if getattr(settings, "anthropic_provider", "") == "openai":
+        return True
     if not getattr(settings, "chat_image_workspace_materialize", True):
         return False
     profile = PROVIDER_PROFILES.get(getattr(settings, "anthropic_provider", ""))
     return bool(profile and profile.supports_image_input)
+
+
+def materialize_session_images(session_id: str, raw_meta: Optional[str], workspace_dir: Any) -> None:
+    """Restore only API-authorized session attachments into this run's workspace."""
+    from app.config import settings
+
+    stored = []
+    for item in parse_meta_json(raw_meta):
+        path = resolve_path(session_id, item.get("id", ""))
+        if path is None:
+            if settings.anthropic_provider == "openai":
+                raise ValueError("Original image unavailable / 截图原件不可用")
+            continue
+        stored.append(StoredImage(id=item["id"], media_type=item["media_type"],
+            name=item.get("name", ""), size=path.stat().st_size, path=str(path)))
+    result = materialize_into_workspace(stored, workspace_dir)
+    if stored and settings.anthropic_provider == "openai" and result is None:
+        raise ValueError("Unable to prepare original images / 无法准备截图原件")
+
+
+def native_image_input_required(workspace_dir: Any) -> bool:
+    """A native-image turn must never fail over to a text-only endpoint."""
+    from app.config import settings
+    return settings.anthropic_provider == "openai" and (
+        Path(workspace_dir) / "images" / "manifest.json"
+    ).is_file()
 
 
 def materialize_into_workspace(
@@ -242,6 +276,10 @@ def materialize_into_workspace(
     Cleanup is inherited: every caller's workspace is a per-run temp directory
     already removed in a ``finally`` block.
     """
+    from app.config import settings
+    native = settings.anthropic_provider == "openai"
+    if stored and not workspace_dir and native:
+        raise ValueError("Image workspace unavailable / 图片工作区不可用")
     if not stored or not workspace_dir:
         return None
     if not workspace_materialization_enabled():
@@ -254,6 +292,8 @@ def materialize_into_workspace(
         for index, item in enumerate(stored, start=1):
             source = Path(item.path)
             if not source.is_file():
+                if native:
+                    raise ValueError("Original image unavailable / 截图原件不可用")
                 continue
             filename = f"image_{index}{source.suffix}"
             shutil.copyfile(source, images_dir / filename)
@@ -272,6 +312,8 @@ def materialize_into_workspace(
         )
     except OSError as exc:
         logger.warning("chat_image_store: workspace materialization failed: %s", exc)
+        if native:
+            raise ValueError("Unable to prepare original images / 无法准备截图原件") from exc
         return None
 
     logger.info(
