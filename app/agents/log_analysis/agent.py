@@ -1373,6 +1373,7 @@ class LogAnalysisAgent:
                 topic_context=settings.agent_evidence_topic_context_enabled is True,
                 search_endpoints=settings.agent_evidence_search_endpoints_enabled is True,
                 final_review=evidence_review,
+                progress_budget=getattr(settings, "agent_evidence_progress_budget_enabled", False) is True,
             )
 
         if evidence_snapshot is not None and settings.agent_evidence_compare_enabled is True:

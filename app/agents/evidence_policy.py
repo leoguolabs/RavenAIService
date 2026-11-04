@@ -53,7 +53,7 @@ def use_snapshot_in_templates(system_prompt: str, user_template: str) -> tuple[s
 
 def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, source_context: bool = False,
                     read_window: bool = False, topic_context: bool = False,
-                    search_endpoints: bool = False, final_review=None) -> dict:
+                    search_endpoints: bool = False, final_review=None, progress_budget: bool = False) -> dict:
     from claude_agent_sdk import HookMatcher
     from app.agents.evidence_context import MCP_CLONE_TOOL, MCP_READ_TOOL, MCP_SEARCH_TOOL, SourceContextEnricher
 
@@ -69,6 +69,11 @@ def execution_hooks(locale: str, task_id: str = "", workspace: str = "", *, sour
         topics = LogTopicContextEnricher(workspace, locale, include_endpoints=search_endpoints, producer_context=topic_context)
         matcher = f"Bash|{MCP_SEARCH_TOOL}"
         hooks.setdefault("PostToolUse", []).append(HookMatcher(matcher=matcher, hooks=[topics.after_tool]))
+    if progress_budget:
+        from app.agents.evidence_progress import EvidenceProgress
+
+        progress = EvidenceProgress(locale)
+        hooks.setdefault("PostToolUse", []).append(HookMatcher(hooks=[progress.after_tool]))
     if read_window:
         from app.agents.evidence_read_window import SourceReadWindow
 

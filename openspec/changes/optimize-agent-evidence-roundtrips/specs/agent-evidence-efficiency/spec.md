@@ -466,3 +466,16 @@ The default-off final-review experiment MAY select an isolated verifier instead 
 - **WHEN** evidence identity changes, a response/edit is malformed or ambiguous, or cancellation occurs
 - **THEN** verification does not silently pass the unverified draft, fuzzy-match text or apply a subset of edits
 - **AND** the original trace/evidence and run cancellation semantics are preserved
+
+### Requirement: Optional soft evidence-completion checkpoints
+Under a default-off Log Analysis gate and complete evidence snapshot, a run MAY add bounded tool-result progress checkpoints. It SHALL preserve original tool results, native tools, complete required Skills, configured turn cap, final schema and cancellation/error semantics. It SHALL NOT force termination, invent evidence or issue a separate model call.
+
+#### Scenario: Tool collection expands without convergence
+- **WHEN** a run observes its80th or120th distinct PostToolUse result
+- **THEN** it may append one soft next-step instruction to retain supported findings/counterevidence and inspect only decisive remaining gaps before finalization with calibrated unknowns
+- **AND** the count is labeled tool results rather than model turns, duplicate IDs do not advance it, state is per-run and bounded, and absent context/gate preserves original behavior
+
+#### Scenario: Evidence remains incomplete
+- **WHEN** a checkpoint is reached before decisive attachment/source evidence is verified
+- **THEN** the Agent retains tool access and must not drop that evidence or claim uninspected coverage to finish
+- **AND** native evidence and independent quality review, rather than a checkpoint or a faster failure, determine acceptance

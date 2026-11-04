@@ -1262,3 +1262,36 @@ async def test_isolated_review_finalization_uses_captured_options_and_never_publ
         assert any(e['type'] == ('error' if outcome == 'invalid' else 'cancelled') for e in events)
         if outcome == 'cancelled':
             assert result['status'] == 'cancelled'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('efficiency,available,flag,expected', [
+    (True, True, True, True), (True, False, True, False),
+    (False, True, True, False), (True, True, False, False),
+])
+async def test_progress_checkpoints_require_opt_in_snapshot_and_preserve_tools_turns(workspace_ctx, efficiency, available, flag, expected):
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+    from claude_agent_sdk import HookMatcher
+    sdk = MagicMock()
+    sdk.HookMatcher = HookMatcher
+    sdk.query = _fake_query_ok
+    snapshot = {'task': {}, 'project_catalog': {'projects': [], 'count': 0}}
+    with _patch_build_options() as options, _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch.dict('sys.modules', {'claude_agent_sdk': sdk}), \
+         patch('app.config.settings', MagicMock(
+             anthropic_provider='yinhe', anthropic_model='yinhe-thinking', anthropic_max_turns=150,
+             anthropic_request_timeout_seconds=60, agent_evidence_efficiency_enabled=efficiency,
+             agent_evidence_progress_budget_enabled=flag,
+         )), \
+         patch('app.agents.evidence_policy.prepare_snapshot', AsyncMock(return_value=snapshot if available else None)), \
+         patch('app.agents.evidence_tools.get_evidence_mcp_server', return_value={}):
+        result = await LogAnalysisAgent().run(workspace_ctx)
+    assert result['status'] == 'ok'
+    actual = options.call_args.kwargs
+    # The hook does not override the normal Settings-backed SDK turn budget.
+    assert 'max_turns' not in actual
+    assert all(tool in actual['allowed_tools'] for tool in ['Bash', 'Read', 'Grep', 'Glob', 'Skill'])
+    hooks = actual.get('hooks') or {}
+    assert ('PostToolUse' in hooks) is expected
+    if expected:
+        assert type(hooks['PostToolUse'][0].hooks[0].__self__).__name__ == 'EvidenceProgress'
