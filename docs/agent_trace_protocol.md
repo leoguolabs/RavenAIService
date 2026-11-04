@@ -173,9 +173,24 @@ single-terminal-event invariant below are unaffected.
 - `answer_delta` events are produced only when the active provider
   supports SDK chunked streaming (`include_partial_messages`). When it
   does not, the run emits **no** `answer_delta` and the client falls
-  back to rendering `run_complete.final_text` in one shot. Either way
+  back to receiving the complete answer in `run_complete.final_text` or
+  the specialist chat's formatted `done.answer`. The web UI progressively
+  reveals newly received answers even on this fallback path; stored history
+  renders immediately. Either way
   `run_complete.final_text` is the authoritative full answer body and
   is used for persistence and reconnect replay correction.
+
+The web chat consumes `answer_delta` both as a bare event and as
+`{"event":"agent_trace","type":"answer_delta",...}`. Specialist trace
+envelopes can omit `run_id`; clients use the owning subscription's run ID
+for sequence deduplication. Answer deltas never become tool/thinking cards.
+Specialist JSON result streams are projected into their top-level `answer`
+string before the string or object closes, decoding complete escapes and
+hiding the JSON envelope. The authoritative formatted `done.answer` still
+supplies completion metadata and any additional answer sections. Presentation
+pacing does not modify stored/exported text, respects reduced motion, and
+stops on unmount. Active snapshots restore accumulated answer deltas before
+replay resumes, without duplicating text.
 
 ## Trace summary
 

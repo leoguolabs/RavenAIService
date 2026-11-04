@@ -25,6 +25,7 @@ import {
 } from '@/stores/conversationRuns'
 import type { PendingClarification } from '@/types/agentTrace'
 import AgentTraceStream from '@/components/AgentTraceStream.vue'
+import StreamingAnswer from '@/components/StreamingAnswer.vue'
 import ClarificationCard from '@/components/ClarificationCard.vue'
 import ShareConversationModal from '@/components/ShareConversationModal.vue'
 import ProjectRepoSelect from '@/components/ProjectRepoSelect.vue'
@@ -1046,13 +1047,10 @@ const chooseSuggestedAgent = () => {
   }
 }
 
-// 渲染结果按内容缓存，确保相同内容在组件多次重渲染时返回**完全相同**的 HTML
-// 字符串。否则 markdownRenderer 内部的自增计数器会让每次渲染生成不同的
-// mermaid 容器 id，导致 v-html 字符串变化、Vue 重新 patch innerHTML，
-// 从而抹掉 processMermaidBlocks() 异步插入的 SVG（表现为图表一直“渲染中…”）。
-const aiMessageHtmlCache = new Map<string, string>()
+// Keep result metadata stable; StreamingAnswer owns the paced Markdown view.
 const agentMessageViewCache = new Map<string, AgentMessageView>()
 const AI_MESSAGE_CACHE_LIMIT = 200
+const answerDisplayBusy = ref<Record<string, boolean>>({})
 
 const getAgentMessageView = (content: string): AgentMessageView => {
   const key = formatAgentErrorMessage(content || '', t)
@@ -1065,20 +1063,6 @@ const getAgentMessageView = (content: string): AgentMessageView => {
   }
   agentMessageViewCache.set(key, view)
   return view
-}
-
-const renderAiMessage = (content: string) => {
-  const key = getAgentMessageView(content).displayMarkdown
-  const cached = aiMessageHtmlCache.get(key)
-  if (cached !== undefined) return cached
-  const html = renderMarkdown(key, { wrapperClass: 'markdown-content text-ink' })
-  // 简单 FIFO 上限，避免流式过程中逐 token 的中间内容无限堆积。
-  if (aiMessageHtmlCache.size >= AI_MESSAGE_CACHE_LIMIT) {
-    const oldest = aiMessageHtmlCache.keys().next().value
-    if (oldest !== undefined) aiMessageHtmlCache.delete(oldest)
-  }
-  aiMessageHtmlCache.set(key, html)
-  return html
 }
 
 const visualAnalysisForMessage = (message: ChatEntry, messageIndex: number): VisualAnalysis | null => {
@@ -1125,7 +1109,10 @@ let mermaidZoomSource = ''
 let mermaidRenderScheduled = false
 
 const scheduleMermaidRender = () => {
-  if (isSending.value || loadingMessages.value || mermaidRenderScheduled) return
+  if (
+    isSending.value || loadingMessages.value || mermaidRenderScheduled ||
+    Object.values(answerDisplayBusy.value).some(Boolean)
+  ) return
   mermaidRenderScheduled = true
   nextTick(() => {
     mermaidRenderScheduled = false
@@ -2265,10 +2252,17 @@ const openShareModal = () => {
               <template v-if="msg.content === THINKING_PLACEHOLDER">
                 <div v-if="!msg.traceRunning" class="rw-thinking">{{ t('aiChat.thinking') }}</div>
               </template>
-              <template v-else>
-                <div class="rw-ai-text" v-html="renderAiMessage(msg.content)"></div>
+              <StreamingAnswer
+                :content="msg.content === THINKING_PLACEHOLDER ? '' : getAgentMessageView(msg.content).displayMarkdown"
+                :animate="!!msg.animateAnswer"
+                :running="!!msg.traceRunning"
+                @progress="scrollToBottom"
+                @busy="answerDisplayBusy[msg.id] = $event"
+                @settled="msg.animateAnswer = false"
+              />
+              <template v-if="msg.content !== THINKING_PLACEHOLDER">
                 <div
-                  v-if="msg.content && msg.content.trim()"
+                  v-if="msg.content && msg.content.trim() && !msg.traceRunning && !answerDisplayBusy[msg.id]"
                   class="rw-ai-actions"
                 >
                   <div class="rw-ai-action-group">

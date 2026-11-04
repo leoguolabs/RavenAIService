@@ -21,6 +21,7 @@ import type { ChatMessageRecord } from '@/types'
 import { hasPersistedLogAttachmentMarker } from '@/utils/logWorkspaceReplacement'
 import { formatPackageAttachmentMessage } from '@/utils/packageAttachments'
 import { appendChatImageFiles } from '@/utils/chatImageUploads'
+import { projectStreamedAnswer } from '@/utils/streamedAnswer'
 
 class ChatHttpError extends Error {}
 
@@ -59,6 +60,10 @@ export type ChatEntry = {
   kind?: 'plan' | 'device_action' | 'answer' | 'user'
   traceEvents?: AgentTraceEvent[]
   traceRunning?: boolean
+  /** Raw provider increments, kept separate from their readable answer projection. */
+  streamedAnswer?: string
+  /** Pace newly generated answers only; persisted history is shown immediately. */
+  animateAnswer?: boolean
   /** Set when this turn attached images but OCR was unconfigured/failed. */
   ocrStatus?: OcrStatusInfo
   /** Images the user attached to this turn, rendered as thumbnails in the bubble. */
@@ -403,7 +408,9 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
   const ensureAnswerMessage = (state: ConversationState, answerId: string): ChatEntry => {
     const idx = findMessageIndex(state, answerId)
     if (idx !== -1) return state.messages[idx]
-    const placeholder: ChatEntry = { id: answerId, role: 'ai', content: THINKING_PLACEHOLDER, kind: 'answer' }
+    const placeholder: ChatEntry = {
+      id: answerId, role: 'ai', content: THINKING_PLACEHOLDER, kind: 'answer', animateAnswer: true,
+    }
     state.messages.push(placeholder)
     return placeholder
   }
@@ -477,7 +484,11 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
   // ---- event application --------------------------------------------------
 
   const applyEventToState = (state: ConversationState, payload: any) => {
-    const type = payload?.event || payload?.type
+    // Specialist transports wrap answer deltas in agent_trace. They are answer
+    // prose, not trace cards, and must reach the same path as bare deltas.
+    const type = payload?.event === 'agent_trace' && payload?.type === 'answer_delta'
+      ? 'answer_delta'
+      : payload?.event || payload?.type
     const eventRunId: string | undefined = payload?.run_id
     const eventSessionId: string | undefined = payload?.session_id
 
@@ -502,8 +513,11 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
 
     // Dedupe by `(run_id, seq)` so replay+follow doesn't double-render.
     const seq = typeof payload?.seq === 'number' ? payload.seq : null
-    if (eventRunId && seq !== null) {
-      const key = `${eventRunId}:${seq}`
+    // Specialist trace envelopes carry task_id/seq but omit run_id; the
+    // subscription's session prologue already established their owning run.
+    const sequenceRunId = eventRunId || state.activeRunId
+    if (sequenceRunId && seq !== null) {
+      const key = `${sequenceRunId}:${seq}`
       if (state.seenSeq[key]) return
       state.seenSeq[key] = 1
     }
@@ -608,12 +622,9 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
       const chunk = typeof payload?.text_chunk === 'string' ? payload.text_chunk : ''
       if (!chunk) return
       const target = ensureAnswerMessage(state, answerId)
-      // First delta clears the placeholder before appending.
-      if (target.content === THINKING_PLACEHOLDER) {
-        target.content = chunk.replace(/^\s+/, '')
-      } else {
-        target.content += chunk
-      }
+      target.streamedAnswer = (target.streamedAnswer || '') + chunk
+      target.content = projectStreamedAnswer(target.streamedAnswer) || THINKING_PLACEHOLDER
+      target.animateAnswer = true
       target.kind = 'answer'
       target.traceRunning = true
       return
@@ -631,10 +642,13 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
         // Authoritative correction: `final_text` is the de-sensitised /
         // trimmed full answer. Overwrite whatever the `answer_delta` stream
         // accumulated so the rendered bubble matches the persisted text. When
-        // no `answer_delta` arrived this run (e.g. provider downgrade), this is
-        // also the whole-segment render path — behaviour identical to before.
+        // no `answer_delta` arrived (e.g. provider downgrade), the presentation
+        // component progressively reveals this newly received full answer.
         const finalText = (payload as any)?.final_text
-        if (typeof finalText === 'string' && finalText.trim()) target.content = finalText.trimStart()
+        if (typeof finalText === 'string' && finalText.trim()) {
+          target.animateAnswer = true
+          target.content = finalText.trimStart()
+        }
         applySuggestedAgent(state, (payload as any)?.suggested_agent_type)
         state.runStatus = 'succeeded'
         target.traceRunning = false
@@ -683,8 +697,12 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
         target.content += chunk
       }
     } else if (type === 'done') {
-      if (typeof payload?.answer === 'string' && payload.answer) target.content = payload.answer.trimStart()
-      else if (!target.content || target.content === THINKING_PLACEHOLDER) target.content = t('aiChat.runs.emptyResponse')
+      if (typeof payload?.answer === 'string' && payload.answer) {
+        target.animateAnswer = true
+        target.content = payload.answer.trimStart()
+      } else if (!target.content || target.content === THINKING_PLACEHOLDER) {
+        target.content = t('aiChat.runs.emptyResponse')
+      }
       applySuggestedAgent(state, payload?.suggested_agent_type)
       const resultStatus = String(payload?.result?.status || '').toLowerCase()
       if (resultStatus === 'cancelled') state.runStatus = 'cancelled'
@@ -698,6 +716,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
       // to a generic friendly line when no message was provided.
       const backendMsg = typeof payload?.message === 'string' ? payload.message.trim() : ''
       target.content = backendMsg || t('aiChat.runs.genericError')
+      target.animateAnswer = false
       state.runStatus = 'failed'
       target.traceRunning = false
     }
@@ -813,13 +832,24 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
     const target = ensureAnswerMessage(state, state.currentAnswerId)
     target.traceEvents = []
     target.traceRunning = state.runStatus === 'running'
-    for (const ev of trace) {
+    target.animateAnswer = false
+    target.streamedAnswer = ''
+    const snapshotSeq = new Set<number>()
+    for (const ev of [...trace].sort((a, b) => (a?.seq || 0) - (b?.seq || 0))) {
       if (ev && typeof ev.seq === 'number' && typeof ev.type === 'string') {
-        target.traceEvents.push(ev as AgentTraceEvent)
+        if (snapshotSeq.has(ev.seq)) continue
+        snapshotSeq.add(ev.seq)
         const key = `${runId}:${ev.seq}`
+        // A snapshot can itself contain duplicate trace frames.
+        if (ev.type === 'answer_delta') {
+          target.streamedAnswer += typeof ev.text_chunk === 'string' ? ev.text_chunk : ''
+        } else {
+          target.traceEvents.push(ev as AgentTraceEvent)
+        }
         state.seenSeq[key] = 1
       }
     }
+    if (target.streamedAnswer) target.content = projectStreamedAnswer(target.streamedAnswer) || THINKING_PLACEHOLDER
     // If the snapshot has an answer-so-far, render it.
     const answerSoFar = snapshot.answer_so_far
     if (typeof answerSoFar === 'string' && answerSoFar.trim()) {
@@ -1102,6 +1132,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
       kind: 'answer',
       traceEvents: [],
       traceRunning: true,
+      animateAnswer: true,
     })
     state.isSending = true
     state.runStatus = 'running'
@@ -1279,6 +1310,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
       kind: 'answer',
       traceEvents: [],
       traceRunning: true,
+      animateAnswer: true,
     })
     state.isSending = true
     state.runStatus = 'running'
@@ -1439,6 +1471,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
       kind: 'answer',
       traceEvents: [],
       traceRunning: true,
+      animateAnswer: true,
     })
     state.isSending = true
     state.runStatus = 'running'

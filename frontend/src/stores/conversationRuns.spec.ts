@@ -594,6 +594,49 @@ describe('conversationRuns store', () => {
     expect(answer?.content).toBe('ABCD')
   })
 
+  it.each(['log_analysis', 'project_expert', 'package_search'] as const)(
+    'displays wrapped %s answer deltas before done without polluting trace cards', (agentKind) => {
+      const store = useConversationRunsStore()
+      const state = store.ensureState('session-a')
+      state.runAgentKind = agentKind
+      store.applyEventToState(state, traceEvent('run-a', 'session-a', 1, 'run_start'))
+      const wrapped = (seq: number, chunk: string) => ({
+        ...answerDelta('run-a', 'session-a', seq, chunk), event: 'agent_trace',
+      })
+      store.applyEventToState(state, wrapped(2, '```json\n{"status":"ok","answer":"根据'))
+      const answer = state.messages.find((message) => message.role === 'ai')!
+      expect(answer.content).toBe('根据')
+      store.applyEventToState(state, wrapped(3, '日志分析，'))
+      store.applyEventToState(state, wrapped(3, '日志分析，'))
+      expect(answer.content).toBe('根据日志分析，')
+      expect(answer.traceEvents?.some((frame) => frame.type === 'answer_delta')).toBe(false)
+      expect(state.runStatus).toBe('running')
+      store.applyEventToState(state, { event: 'done', answer: '权威全文' })
+      expect(answer.content).toBe('权威全文')
+    },
+  )
+
+  it('restores answer deltas from an active snapshot and dedupes subsequent replay', () => {
+    const store = useConversationRunsStore()
+    const state = store.ensureState('session-a')
+    const first = answerDelta('run-a', 'session-a', 2, '{"answer":"已有')
+    store.mergeSnapshot(state, {
+      run_id: 'run-a', status: 'running', agent_kind: 'project_expert',
+      trace_events: [first, traceEvent('run-a', 'session-a', 1, 'run_start'), first],
+    })
+    const answer = state.messages.find((message) => message.role === 'ai')!
+    expect(answer.content).toBe('已有')
+    expect(answer.animateAnswer).toBe(false)
+    // Production specialist trace frames omit run_id after the prologue.
+    const { run_id: _runId, ...replayed } = first
+    store.applyEventToState(state, { ...replayed, event: 'agent_trace' })
+    store.applyEventToState(state, {
+      ...answerDelta('run-a', 'session-a', 3, '内容'), event: 'agent_trace',
+    })
+    expect(answer.content).toBe('已有内容')
+    expect(answer.animateAnswer).toBe(true)
+  })
+
   it('corrects the bubble to final_text on run_complete after streaming deltas', () => {
     const store = useConversationRunsStore()
     const state = store.ensureState('session-a')
