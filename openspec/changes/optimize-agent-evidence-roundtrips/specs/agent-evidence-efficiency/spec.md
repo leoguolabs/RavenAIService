@@ -495,3 +495,11 @@ A default-off native-SDK execution flag MAY disable SDK nonessential traffic inc
 - **WHEN** the independent flag is enabled for a native SDK run
 - **THEN** only its per-run environment sets CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 - **AND** actual pinned-SDK protocol verification must show the unused auxiliary request is omitted while normalized primary input and replayed result remain unchanged, with no implied real latency or semantic acceptance from synthetic testing
+
+### Requirement: Independent concise confidence guidance
+A default-off Log Analysis prompt flag MAY append generic confidence and provenance guidance to the original complete prompt independently of evidence retrieval experiments. It SHALL preserve native tools, required Skills, schema, configured turn budget and effective model, without another model call or injected case answers.
+
+#### Scenario: An original-prompt run enables the addendum
+- **WHEN** the independent flag is enabled with or without an evidence snapshot
+- **THEN** the locale-appropriate addendum distinguishes observations, operations, actors, current-source identity, runtime references and completion, requiring consistent qualifications and supported recommendation direction
+- **AND** disabled runs retain their original prompt; mechanism tests do not establish quality or timing acceptance

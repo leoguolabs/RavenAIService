@@ -1295,3 +1295,28 @@ async def test_progress_checkpoints_require_opt_in_snapshot_and_preserve_tools_t
     assert ('PostToolUse' in hooks) is expected
     if expected:
         assert type(hooks['PostToolUse'][0].hooks[0].__self__).__name__ == 'EvidenceProgress'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('enabled,locale', [(False, 'zh'), (True, 'zh'), (True, 'en')])
+async def test_concise_confidence_prompt_is_independent_of_retrieval_and_keeps_native_workflow(workspace_ctx, enabled, locale):
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+    from app.agents.confidence_prompt import confidence_bounds
+    sdk = MagicMock()
+    sdk.query = _fake_query_ok
+    workspace_ctx.locale = locale
+    with _patch_build_options() as options, _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch.dict('sys.modules', {'claude_agent_sdk': sdk}), \
+         patch('app.config.settings', MagicMock(
+             anthropic_provider='yinhe', anthropic_model='yinhe-thinking', anthropic_max_turns=150,
+             anthropic_request_timeout_seconds=60, agent_evidence_efficiency_enabled=False,
+             agent_analysis_confidence_bounds_enabled=enabled,
+         )):
+        result = await LogAnalysisAgent().run(workspace_ctx)
+    assert result['status'] == 'ok'
+    actual = options.call_args.kwargs
+    assert actual['system_prompt'].endswith(confidence_bounds(locale)) is enabled
+    assert actual['system_prompt'].startswith('You are a test agent.')
+    assert all(tool in actual['allowed_tools'] for tool in ['Bash', 'Read', 'Grep', 'Glob', 'Skill'])
+    assert not actual.get('hooks')
+    assert 'max_turns' not in actual

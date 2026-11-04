@@ -162,6 +162,7 @@ class Settings(BaseSettings):
     )
     # Local experiment: omit unused SDK session titles/nonessential traffic.
     agent_sdk_disable_nonessential_traffic: bool = False
+    agent_analysis_confidence_bounds_enabled: bool = False
     agent_related_repo_max_count: int = 4
     agent_repo_clone_timeout_seconds: int = 300
     # Opt-in until paired latency and evidence-equivalence validation passes.

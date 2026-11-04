@@ -4,6 +4,8 @@ Baseline source is the current local commit, recorded separately from production
 
 ## Goals / Non-Goals
 
+An independent default-off concise confidence addendum retains the original full Log Analysis prompt rather than the rejected compact prompt. It adds generic provenance, partial-progress/completion, external-reference and recommendation-direction bounds, without case facts, numeric correction constants, tool changes or a separate reviewer. Its motivation is native-evidence contradictions in the fresh platform-only cohort, not a claim that unchanged platform inputs caused them. Actual assembled-SDK delivery and independent quality screening precede any timing expansion; configuration/test proof alone is insufficient.
+
 Goals: reduce model round trips with unchanged evidence access, output schema, conclusions and uncertainty; measure at least 20 paired rounds and at least 10 distinct subsequent log analyses. Minimize median analysis time without a fixed percentage threshold.
 
 The user revised the target from 30% to 20% on 2026-10-29, then removed the fixed percentage threshold on 2026-10-31 and requested a concrete optimization result. Compare the final candidate's fresh end-to-end API cohort with the frozen original baseline. Keep historical plans, measurements and failed quality decisions unchanged. Reduced model-response counts, precloned probes and a single faster pair do not establish acceptance.

@@ -1381,6 +1381,11 @@ class LogAnalysisAgent:
 
             system_prompt += comparison_execution_prompt(ctx.locale)
 
+        if getattr(settings, "agent_analysis_confidence_bounds_enabled", False) is True:
+            from app.agents.confidence_prompt import confidence_bounds
+
+            system_prompt += confidence_bounds(ctx.locale)
+
         def _make_options(endpoint: Optional[Any]) -> Any:
             options = build_options(
                 system_prompt=system_prompt,
