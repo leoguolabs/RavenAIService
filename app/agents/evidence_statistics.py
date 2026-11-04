@@ -19,6 +19,8 @@ from decimal import Decimal, InvalidOperation
 MAX_FILE_BYTES = 16 * 1024 * 1024
 MAX_LINE_BYTES = 64 * 1024
 MAX_VALUES = 32
+MAX_COMPARE_VALUES = 256
+MAX_COMPARE_VALUE_CHARS = 512
 MAX_VALUE_CHARS = 128
 MAX_OUTPUT_BYTES = 16_000
 SCAN_SECONDS = 2.0
@@ -53,14 +55,23 @@ def scan_statistics(workspace: str, request: dict) -> dict:
     if not isinstance(pattern, str) or not 1 <= len(pattern) <= 1000:
         raise ValueError("pattern must contain 1..1000 characters")
     mode = request.get("mode", "count")
-    if mode not in ("count", "numeric", "values"):
-        raise ValueError("mode must be count, numeric or values")
+    if mode not in ("count", "numeric", "values", "compare"):
+        raise ValueError("mode must be count, numeric, values or compare")
     ignore_case = request.get("ignore_case", False)
     if type(ignore_case) is not bool:
         raise ValueError("ignore_case must be boolean")
     regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
     if mode != "count" and "value" not in regex.groupindex:
         raise ValueError("numeric/values mode requires a named (?P<value>...) capture")
+
+    selected_groups = None
+    if mode == "compare":
+        selected_groups = (request.get("left_group"), request.get("right_group"))
+        if ("group" not in regex.groupindex or any(not isinstance(g, str) or not 1 <= len(g) <= 128 for g in selected_groups)
+                or selected_groups[0] == selected_groups[1]):
+            raise ValueError("compare requires named group/value captures and two distinct group identifiers")
+    grouped = {g: {} for g in selected_groups or ()}
+    group_refs = {}
 
     result = {"path": path.relative_to(root).as_posix(), "pattern": pattern, "mode": mode,
               "complete": False, "scanned_bytes": 0, "lines": 0, "matched_lines": 0,
@@ -137,8 +148,28 @@ def scan_statistics(workspace: str, request: dict) -> dict:
                 if mode == "count":
                     continue
                 captured = match.group("value")
-                if captured is None or len(captured) > MAX_VALUE_CHARS:
+                if mode == "compare":
+                    group = match.group("group")
+                    if group is None:
+                        result["invalid_values"] += 1
+                        continue
+                    if group not in grouped:
+                        result["outside_selected_group_matches"] = result.get("outside_selected_group_matches", 0) + 1
+                        continue
+                if captured is None or len(captured) > (MAX_COMPARE_VALUE_CHARS if mode == "compare" else MAX_VALUE_CHARS):
                     result["invalid_values"] += 1
+                    continue
+                if mode == "compare":
+                    bucket = grouped[group]
+                    if captured not in bucket:
+                        if len(bucket) >= MAX_COMPARE_VALUES:
+                            result["unindexed_value_matches"] = result.get("unindexed_value_matches", 0) + 1
+                            continue
+                        bucket[captured] = dict(value=captured, count=0, first_line=result["lines"], last_line=result["lines"])
+                    bucket[captured]["count"] += 1
+                    bucket[captured]["last_line"] = result["lines"]
+                    ref = dict(line=result["lines"], prefix=text[:160], prefix_excerpted=len(text) > 160)
+                    group_refs.setdefault(group, {"first": ref})["last"] = ref
                     continue
                 sample = {**sample, "value": captured}
                 if mode == "values":
@@ -175,6 +206,19 @@ def scan_statistics(workspace: str, request: dict) -> dict:
     if mode == "values":
         result["values"] = list(values.values())
         result["values_complete"] = result["complete"] and not result.get("unindexed_value_matches")
+    if mode == "compare":
+        left_id, right_id = selected_groups
+        left, right = grouped[left_id], grouped[right_id]
+        def group_summary(identifier, bucket):
+            return dict(group=identifier, unique_values=len(bucket),
+                        indexed_matches=sum(v["count"] for v in bucket.values()),
+                        observed=identifier in group_refs, **group_refs.get(identifier, {}))
+        result["comparison"] = dict(
+            left=group_summary(left_id, left), right=group_summary(right_id, right), complete=result["complete"],
+            common_unique_values=len(left.keys() & right.keys()) if result["complete"] else None,
+            only_left=[left[k] for k in sorted(left.keys() - right.keys())] if result["complete"] else None,
+            only_right=[right[k] for k in sorted(right.keys() - left.keys())] if result["complete"] else None,
+            scope="Captured literal value sets in the two selected regex groups only; not physical deletion, chronology or causal proof.")
     if len(json.dumps(result, ensure_ascii=False).encode()) > MAX_OUTPUT_BYTES:
         raise ValueError("statistics output budget exceeded; narrow the capture")
     return result

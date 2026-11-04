@@ -51,6 +51,10 @@
 
 - [ ] 2.33 Verify the regex endpoint supplement reaches the next request through the pinned SDK, then run new frozen yinhe-thinking paired quality screens. Only proceed to the full 20-pair/10-distinct-log cohort if material findings and confidence are preserved. Keep old failures, default-off flags, nr-test read-only and local 09:00 pause.
 
+- [x] 2.34 Add independently gated captured-set comparison using the isolated statistics worker, two selected group IDs, exact unique/physical counts, native group references and bounded set differences. Partial scans suppress difference claims; missing groups are explicitly unobserved. Generic tool guidance contains no production paths, IDs or answers. The retained worker proof reproduces 71/54 unique values and the exact 17 removed captures with matching source SHA.
+
+- [ ] 2.35 Verify compare_evidence through the pinned SDK, then evaluate fresh yinhe-thinking API pairs with matched frozen runtime/source. Keep prompt/retrieval failures, baseline errors and corrected reviews. Regex endpoint-only screen was196.44→196.17s,115→111response IDs with12actual supplements/58rows; no practical speedup or full quality acceptance. The earlier categorical04:41:27timestamp-error judgment was corrected: grouped scan begins27.676andends51.521, so exact disappearance bounds remain uncertain. Current native audit points to repeated Tk/Tid grouping attempts; do not claim their mechanical replacement reduces model turns before fresh tests. Preserve the full20-pair/10-distinct-log goal and local09:00stop.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.

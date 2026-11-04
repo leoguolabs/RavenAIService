@@ -1141,8 +1141,19 @@ class LogAnalysisAgent:
                 mcp_servers["evidence"] = get_evidence_mcp_server(
                     ctx.temp_dir, statistics=statistics,
                     **({"regex_endpoints": True} if settings.agent_evidence_regex_endpoints_enabled is True else {}),
+                    **({"compare": True} if settings.agent_evidence_compare_enabled is True else {}),
                 )
                 allowed_tools.extend(TOOL_NAMES)
+                if settings.agent_evidence_compare_enabled is True:
+                    allowed_tools.append("mcp__evidence__compare_evidence")
+                    system_prompt += (
+                        "\nFor repeated record-set counts/differences, use mcp__evidence__compare_evidence with grouping fields "
+                        "verified from source records. Check complete/observed and native group line references; a set difference "
+                        "does not establish physical deletion or a cause. Agent-generated echo/print labels are notes, not source evidence.\n"
+                        if ctx.locale == "en" else
+                        "\n重复记录的分组计数和集合差异可用 mcp__evidence__compare_evidence 一次核验；先从原记录确认分组字段，"
+                        "核对 complete/observed 与分组原始行号，集合差异不能证明物理删除或原因。Agent 自己的 echo/print 标签只是笔记，不能作为源证据。\n"
+                    )
                 if statistics:
                     from app.agents.evidence_statistics import TOOL_NAME
 

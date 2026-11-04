@@ -374,3 +374,17 @@ Log Analysis MAY enable an independent default-off replay for supported task-log
 - **WHEN** source, encoding, scope, time or output limits prevent a verified supplement
 - **THEN** the original page remains available, without claiming complete event history or causal certainty
 - **AND** cancellation propagates and terminates/reaps any active replay process
+
+### Requirement: Independently gated captured-set comparison
+Log Analysis MAY expose a default-off batched comparison tool under a complete efficiency snapshot. Each request SHALL name one contained file, a bounded regex with group/value captures, and two distinct group identifiers. The isolated worker SHALL preserve native LF references, physical occurrence counts, unique values, and stable-source identity. It SHALL bound files, lines, regex runtime, selected-group values and output.
+
+#### Scenario: Complete selected groups
+- **WHEN** a stable complete scan indexes both selected captured-value sets
+- **THEN** it returns common count and exact only-left/only-right captured values, with duplicate counts and source references
+- **AND** it does not infer physical deletion, chronology or causal attribution from those differences
+
+#### Scenario: Unobserved group or incomplete scan
+- **WHEN** no matching record belongs to a selected group
+- **THEN** that group is explicitly unobserved, distinct from a confirmed empty snapshot
+- **WHEN** processing or value limits prevent a complete comparison
+- **THEN** difference fields are unavailable and limits remain visible; original evidence tools remain available

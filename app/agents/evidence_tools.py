@@ -311,7 +311,7 @@ def encode_evidence(payload: dict) -> str:
     return json.dumps(encoded, ensure_ascii=False, separators=(",", ":"))
 
 
-def get_evidence_mcp_server(workspace: str, *, statistics: bool = False, regex_endpoints: bool = False):
+def get_evidence_mcp_server(workspace: str, *, statistics: bool = False, regex_endpoints: bool = False, compare: bool = False):
     from claude_agent_sdk import create_sdk_mcp_server, tool
 
     def schema(properties: dict, required: list[str]) -> dict:
@@ -378,4 +378,26 @@ def get_evidence_mcp_server(workspace: str, *, statistics: bool = False, regex_e
             return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}]}
 
         tools.append(summarize)
-    return create_sdk_mcp_server(name="evidence", version="1.3.0" if statistics else "1.2.0", tools=tools)
+    if compare:
+        from app.agents.evidence_statistics import run_statistics_batch
+
+        @tool("compare_evidence",
+              "Batch 1-8 exact captured-value set comparisons in individual UTF-8 files. Supply a Python regex with "
+              "named (?P<group>...) and (?P<value>...) captures plus two distinct left_group/right_group identifiers. "
+              "Choose grouping fields from evidence, not similar-looking identifiers. Returns group unique counts, "
+              "physical match counts, first/last native line references, common count and only-left/only-right values. "
+              "Differences are available only for a complete bounded scan; they do not prove physical deletion or a cause. "
+              "Use this for repeated record-set counts/differences instead of serial shell pipelines; original tools remain available.",
+              schema({"path": {"type": "string"}, "pattern": {"type": "string", "maxLength": 1000},
+                      "left_group": {"type": "string", "minLength": 1, "maxLength": 128},
+                      "right_group": {"type": "string", "minLength": 1, "maxLength": 128},
+                      "ignore_case": {"type": "boolean"}}, ["path", "pattern", "left_group", "right_group"]))
+        async def compare_sets(args):
+            requests = args.get("requests")
+            if isinstance(requests, list):
+                requests = [{**r, "mode": "compare"} if isinstance(r, dict) else r for r in requests]
+            payload = await run_statistics_batch(workspace, requests)
+            return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}]}
+
+        tools.append(compare_sets)
+    return create_sdk_mcp_server(name="evidence", version="1.4.0" if compare else "1.3.0" if statistics else "1.2.0", tools=tools)
