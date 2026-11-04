@@ -448,3 +448,21 @@ Under the existing default-off topic-context switch and complete efficiency snap
 #### Scenario: Unsupported or ambiguous log evidence
 - **WHEN** cwd/output/path/record verification, regular-file identity, LF coordinates, bounds or thread-label consistency cannot be established
 - **THEN** the original tools/results and150turn cap remain unchanged, with no extra model lookup and no source/log buffers retained across callbacks
+
+### Requirement: Optional isolated evidence verification
+The default-off final-review experiment MAY select an isolated verifier instead of the same-session Stop review. It SHALL preserve the primary Agent tools,150turn budget, complete required Skills/policy and public final schema. It SHALL use the run's effective main model/provider credentials privately, never reference answers or an independently selected public model.
+
+#### Scenario: Isolated mode checks a completed draft
+- **WHEN** the guarded isolated mode is selected and the primary draft is usable
+- **THEN** it constructs a bounded packet of allowlisted public fields, safe contained native citation windows, file identity/omission metadata and explicit unknown runtime/coverage limits
+- **AND** it requests bounded literal narrative edits, with no second same-session reviewer or tool_trace/raw/credential input
+
+#### Scenario: A verifier edit is accepted
+- **WHEN** every edit targets an allowed narrative leaf and an exact unique nonoverlapping original span while preserving native citations
+- **THEN** all edits apply atomically without changing status/schema/evidence arrays or unedited bytes
+- **AND** internal edit JSON is not streamed as the answer; finalization and E2E timing include verification and auxiliary costs
+
+#### Scenario: Verification cannot be validated
+- **WHEN** evidence identity changes, a response/edit is malformed or ambiguous, or cancellation occurs
+- **THEN** verification does not silently pass the unverified draft, fuzzy-match text or apply a subset of edits
+- **AND** the original trace/evidence and run cancellation semantics are preserved
