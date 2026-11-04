@@ -1,4 +1,5 @@
 """Preloaded task data must not coexist with mandatory duplicate read calls."""
+import json
 from pathlib import Path
 
 import pytest
@@ -92,6 +93,18 @@ def test_batch_plan_v4_is_opt_in_and_front_loads_known_checks(locale, required_t
     assert "聚焦式证据批次" not in enabled and "先批量取证" not in enabled
     assert '"question": "unchanged"' in enabled
     assert "JSON" in enabled
+
+
+@pytest.mark.parametrize("locale, heading, reuse", [
+    ("zh", "## 前置合并证据检索", "按已证实的事实复用证据"),
+    ("en", "## Front-loaded evidence batches", "Reuse established facts"),
+])
+def test_v4_execution_guidance_follows_snapshot_data_without_changing_it(locale, heading, reuse):
+    snapshot = {"task": {"question": "unchanged"}, "project_catalog": {"projects": ["catalog-tail-marker"]}}
+    enabled = snapshot_prompt(snapshot, locale, batch_plan_v4=True)
+    assert enabled.index(heading) > enabled.index("catalog-tail-marker")
+    assert enabled.count(heading) == 1 and reuse in enabled
+    assert json.loads(enabled.split("```json\n", 1)[1].split("\n```", 1)[0]) == snapshot
 
 
 @pytest.mark.parametrize("startup, fallback, replacement", [

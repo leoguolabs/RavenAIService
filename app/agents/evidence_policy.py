@@ -191,6 +191,10 @@ def batch_plan_v4_prompt(locale: str) -> str:
             "query or investigate adjacent anomalies that cannot change the answer. Further batches are appropriate only for a "
             "specific unresolved fact that could change the conclusion; there is no total-call cap. Once requested findings and "
             "material counterevidence are supported, answer without another exploratory round.\n"
+            "Reuse established facts, not just identical commands: changing grep/awk, sorting or output format does not justify "
+            "rechecking the same count, membership or source branch. Recheck only if new counterevidence or a material coverage "
+            "gap could change that fact. If attribution requires missing peer logs or runtime state, state that boundary and the "
+            "next check; more local searches cannot turn a source-code possibility into observed execution.\n"
             "Before treating a later status or version as completion, trace its producer and freshness: distinguish a fresh "
             "measurement or terminal result from persisted/cache data. A target value or cached report cannot prove execution "
             "success, restart or recovery. Check all relevant failure branches before naming a specific failed component. "
@@ -213,6 +217,9 @@ def batch_plan_v4_prompt(locale: str) -> str:
         "先检查整批结果再追加。新发现且互不依赖的重要缺口合并到下一次搜索批次；决定性范围用一次 read_evidence 批量读取。"
         "不要重复未变化的查询，也不要追查不可能改变答案的相邻异常。只有具体未决事实可能改变结论时才继续下一批，"
         "总调用数不设上限。问题所需发现和重要反证都有依据后，不再做探索性检索，及时答复。\n"
+        "按已证实的事实复用证据，而不只是按命令去重：更换 grep/awk、排序或展示格式，不能成为重新核对同一计数、成员关系或源码分支的理由。"
+        "只有新反证或重要覆盖缺口可能改变该事实时才重查。归因若需要缺失的对端日志或运行态，明确边界及下一步；"
+        "继续检索本地源码不能把可能分支变成已观察到的执行。\n"
         "把后续状态或版本当成完成证据前，追查其产生路径和新鲜度，区分实时测量/执行终态与持久化缓存。"
         "目标值或缓存上报不能证明执行成功、重启或恢复；指定故障部件前须核对所有相关失败分支。"
         "对于未出现、消失、未收到或未转发等判断，核实已检查的文件/时间范围、分页、相关动作及终态。"
@@ -285,13 +292,12 @@ def snapshot_prompt(snapshot: dict, locale: str, *, batch_plan: bool = False,
         if locale == "en" else
         "上方快照只是输入数据。最终答复仍须使用原工作流规定的 JSON 围栏和结果字段，不能把启动快照当作答复格式。"
     )
-    if batch_plan_v4:
-        guidance += batch_plan_v4_prompt(locale)
-    elif batch_plan_v3:
+    if not batch_plan_v4 and batch_plan_v3:
         guidance += batch_plan_v3_prompt(locale)
-    elif batch_plan:
+    elif not batch_plan_v4 and batch_plan:
         guidance += batch_plan_prompt(locale)
-    return guidance + "\n```json\n" + json.dumps(snapshot, ensure_ascii=False) + "\n```\n" + contract
+    result = guidance + "\n```json\n" + json.dumps(snapshot, ensure_ascii=False) + "\n```\n" + contract
+    return result + (batch_plan_v4_prompt(locale) if batch_plan_v4 else "")
 
 
 def comparison_execution_prompt(locale: str) -> str:

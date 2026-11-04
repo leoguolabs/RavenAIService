@@ -61,6 +61,8 @@
 
 - [ ] 2.38 Evaluate a separately labeled combined yinhe screen (v4 batching/provenance, verified regex endpoints, clarified compare) with generic latest-record/inventory counterevidence guidance. Preserve parameter-only73.95→197.06s/27→86responses/zero compare calls as failed: both arms miss final54inventory. Earlier positive samples cannot establish ongoing presence; no validation IDs, paths or diagnoses in generic runtime policy. Check complete SDK exposure and original-output preservation, then quality before formal20pairs/10logs.
 
+- [ ] 2.39 Candidate-only quality screen final-position v4 fact-reuse guidance before another paired baseline. Combinedv1 failed254.99s/150turns,141distinctBashcommands,lateinventory delivered but noanswer. Actual policy at25996/31263chars precedes~5k snapshotdata. Place v4after snapshot data; reuse proved counts/membership/source facts unless counterevidence/coverage changes. Missing peer runtime remains unknown. No hard lower turn limit, case-specific hints, lost tools/Skills or unpaired latency claims.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.
