@@ -426,3 +426,20 @@ Lenient terminal recovery SHALL NOT absorb known result fields across a mismatch
 - **WHEN** standard string decoding fails and a mismatched apostrophe boundary precedes another known result field before any valid closing delimiter
 - **THEN** the entire result is rejected rather than swallowing later fields into answer or returning an earlier answer with corrupted summary
 - **AND** raw terminal text remains available without an additional model call
+
+### Requirement: Optional bounded log producer observations
+Under the existing default-off topic-context switch and complete efficiency snapshot, Log Analysis MAY supplement verified structured or native log rows with physical-record observations from the same literal producer labels/source position and optional thread labels. Existing topic supplements SHALL retain priority. Native commands SHALL never be evaluated by the supplement; contained literal file tokens are hints and complete output rows SHALL match unique native file lines before selecting a producer.
+
+#### Scenario: A head preview omits a later producer/thread group
+- **WHEN** verified rows select a supported producer and bounded stable regular log files can be scanned
+- **THEN** the supplement may expose source-label/thread physical counts and first/last native references, including sibling groups absent from the original query output
+- **AND** it labels file-order samples, unparsed lines, omitted/already-emitted groups and file hashes without inferring event boundaries, unique file inventories, deletion, actor, causality or deployed source identity
+
+#### Scenario: Producer observations share the existing topic budget
+- **WHEN** the old topic supplement has already produced evidence or exhausted the shared cooperative two-second/32MiB read budget
+- **THEN** the old evidence is unchanged and no producer supplement exceeds the remaining budget
+- **AND** the entire added payload including introduction fits8000UTF8bytes; per-run bounded dedup is marked only after successful emission, and file-identity changes invalidate prior facts
+
+#### Scenario: Unsupported or ambiguous log evidence
+- **WHEN** cwd/output/path/record verification, regular-file identity, LF coordinates, bounds or thread-label consistency cannot be established
+- **THEN** the original tools/results and150turn cap remain unchanged, with no extra model lookup and no source/log buffers retained across callbacks
