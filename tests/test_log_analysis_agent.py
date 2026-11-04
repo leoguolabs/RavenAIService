@@ -1169,3 +1169,8 @@ async def test_compare_server_flag_requires_complete_snapshot(
 
     assert ("mcp__evidence__compare_evidence" in options.call_args.kwargs["allowed_tools"]) is expected
     assert ("echo/print" in options.call_args.kwargs["system_prompt"]) is expected
+    if expected:
+        prompt = options.call_args.kwargs["system_prompt"]
+        assert prompt.rfind("确定性分组比较") > prompt.rfind("证据收集执行策略")
+        assert "优先调用一次" in prompt and "工具报错" in prompt
+

@@ -55,6 +55,8 @@
 
 - [ ] 2.35 Verify compare_evidence through the pinned SDK, then evaluate fresh yinhe-thinking API pairs with matched frozen runtime/source. Keep prompt/retrieval failures, baseline errors and corrected reviews. Regex endpoint-only screen was196.44→196.17s,115→111response IDs with12actual supplements/58rows; no practical speedup or full quality acceptance. The earlier categorical04:41:27timestamp-error judgment was corrected: grouped scan begins27.676andends51.521, so exact disappearance bounds remain uncertain. Current native audit points to repeated Tk/Tid grouping attempts; do not claim their mechanical replacement reduces model turns before fresh tests. Preserve the full20-pair/10-distinct-log goal and local09:00stop.
 
+- [ ] 2.36 Screen final-position comparison guidance after the first compare-only yinhe run did not call the tool. Pinned SDK delivery passed; real Agent.run assembly with initialized DB confirms registered/autoapproved compare_evidence and guidance. Preserve the initial no-DB diagnostic as invalid for runtime exposure. Baseline failed at150turns/202.12s; candidate101responses/228.89s,zero compare calls and unsupported runtime file-location certainty. Keep the failed cohort; move concise task-conditional comparison guidance after all snapshot/Skill rules, retaining unsupported/error fallback, uncertainty and150turns. Fresh adoption/quality evidence is required.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.

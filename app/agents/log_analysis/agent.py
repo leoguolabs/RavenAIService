@@ -1146,14 +1146,6 @@ class LogAnalysisAgent:
                 allowed_tools.extend(TOOL_NAMES)
                 if settings.agent_evidence_compare_enabled is True:
                     allowed_tools.append("mcp__evidence__compare_evidence")
-                    system_prompt += (
-                        "\nFor repeated record-set counts/differences, use mcp__evidence__compare_evidence with grouping fields "
-                        "verified from source records. Check complete/observed and native group line references; a set difference "
-                        "does not establish physical deletion or a cause. Agent-generated echo/print labels are notes, not source evidence.\n"
-                        if ctx.locale == "en" else
-                        "\n重复记录的分组计数和集合差异可用 mcp__evidence__compare_evidence 一次核验；先从原记录确认分组字段，"
-                        "核对 complete/observed 与分组原始行号，集合差异不能证明物理删除或原因。Agent 自己的 echo/print 标签只是笔记，不能作为源证据。\n"
-                    )
                 if statistics:
                     from app.agents.evidence_statistics import TOOL_NAME
 
@@ -1363,6 +1355,11 @@ class LogAnalysisAgent:
                 search_endpoints=settings.agent_evidence_search_endpoints_enabled is True,
                 final_review=evidence_review,
             )
+
+        if evidence_snapshot is not None and settings.agent_evidence_compare_enabled is True:
+            from app.agents.evidence_policy import comparison_execution_prompt
+
+            system_prompt += comparison_execution_prompt(ctx.locale)
 
         def _make_options(endpoint: Optional[Any]) -> Any:
             return build_options(
