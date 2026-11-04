@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import hashlib
+import inspect
 import json
 from pathlib import Path
 import random
@@ -181,6 +182,34 @@ def multipart(fields: dict, files: list) -> tuple[bytes, str]:
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
+
+def sdk_response_evidence(workspace: Path, projects: Path) -> dict:
+    """Count primary and isolated-review SDK responses separately, never raw content."""
+    key = str(workspace).replace("/", "-").replace("_", "-")
+    by_stage = {}
+    for stage, folder in (("primary", projects / key),
+                          ("verification", projects / (key + "--verification"))):
+        responses = {}
+        for transcript in folder.glob("*.jsonl"):
+            for line in transcript.read_text().splitlines():
+                entry = json.loads(line)
+                message = entry.get("message") or {}
+                if entry.get("type") == "assistant" and isinstance(message, dict) and message.get("id"):
+                    usage = responses.setdefault(message["id"], {})
+                    for name, value in (message.get("usage") or {}).items():
+                        if type(value) is int:
+                            usage[name] = max(usage.get(name, 0), value)
+        by_stage[stage] = responses
+    return {
+        "observed_model_response_ids": len(by_stage["primary"]),
+        "usage_by_response_id": by_stage["primary"],
+        "verification_observed_model_response_ids": len(by_stage["verification"]),
+        "verification_usage_by_response_id": by_stage["verification"],
+        "total_observed_model_response_ids": sum(len(v) for v in by_stage.values()),
+        "model_count_note": "Distinct assistant IDs per primary/verification SDK transcript stage; total includes both stages, excludes auxiliary title requests and requests without an assistant response.",
+    }
+
+
 def checkout_evidence(endpoint: dict, status: dict, artifacts: Path | None = None) -> dict:
     """Read exact source identities without exposing credential-bearing remotes."""
     container = endpoint.get("container")
@@ -188,7 +217,7 @@ def checkout_evidence(endpoint: dict, status: dict, artifacts: Path | None = Non
     if not container or not task_id:
         return {"verified": False, "reason": "missing container or run_start task identity"}
     task_id = str(uuid.UUID(task_id))
-    script = """import json,pathlib,subprocess,sys
+    script = "import json,pathlib,subprocess,sys\nfrom pathlib import Path\n" + inspect.getsource(sdk_response_evidence) + """
 root=pathlib.Path('/app/temp/code_repos').resolve()
 workspace=(root/sys.argv[1]).resolve();workspace.relative_to(root)
 rows=[]
@@ -196,16 +225,8 @@ for marker in workspace.rglob('.git'):
  p=marker.parent
  def git(*args): return subprocess.check_output(['git','-C',str(p),*args],text=True).strip()
  rows.append({'path':str(p.relative_to(workspace)),'commit':git('rev-parse','HEAD'),'changes':git('status','--porcelain')})
-responses={}
-sessions=pathlib.Path('/home/appuser/.claude/projects')/str(workspace).replace('/','-').replace('_','-')
-for transcript in sessions.glob('*.jsonl'):
- for line in transcript.read_text().splitlines():
-  entry=json.loads(line);message=entry.get('message') or {}
-  if entry.get('type')=='assistant' and isinstance(message,dict) and message.get('id'):
-   usage=responses.setdefault(message['id'],{})
-   for key,value in (message.get('usage') or {}).items():
-    if type(value) is int: usage[key]=max(usage.get(key,0),value)
-print(json.dumps({'verified':True,'task_id':sys.argv[1],'repositories':rows,'observed_model_response_ids':len(responses),'usage_by_response_id':responses,'model_count_note':'Distinct assistant message IDs in SDK transcripts; excludes requests without an assistant response.'}))
+evidence=sdk_response_evidence(workspace,pathlib.Path('/home/appuser/.claude/projects'))
+print(json.dumps({'verified':True,'task_id':sys.argv[1],'repositories':rows,**evidence}))
 """
     try:
         result = subprocess.run(["docker", "exec", container, "python", "-c", script, task_id],
@@ -216,6 +237,10 @@ print(json.dumps({'verified':True,'task_id':sys.argv[1],'repositories':rows,'obs
             copied = subprocess.run(["docker", "cp", f"{container}:{transcript_path}", str(artifacts / "sdk-session")],
                                     capture_output=True, timeout=45)
             evidence["sdk_transcript_saved"] = copied.returncode == 0
+            verifier_path = transcript_path + "--verification"
+            copied_verifier = subprocess.run(["docker", "cp", f"{container}:{verifier_path}", str(artifacts / "sdk-verification-session")],
+                                             capture_output=True, timeout=45)
+            evidence["sdk_verification_transcript_saved"] = copied_verifier.returncode == 0
         return evidence
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         return {"verified": False, "reason": type(exc).__name__}

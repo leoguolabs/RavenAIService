@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from scripts.benchmark_agent_roundtrips import prepare_inputs, run_one, summarize
+from scripts.benchmark_agent_roundtrips import prepare_inputs, run_one, summarize, sdk_response_evidence
 
 
 class BenchmarkEvidenceTests(unittest.TestCase):
@@ -16,6 +16,40 @@ class BenchmarkEvidenceTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_response_count_includes_isolated_verifier_without_double_counting_frames(self):
+        workspace = Path("/app/temp/code_repos/unique-run")
+        primary = self.root / "-app-temp-code-repos-unique-run"
+        verifier = self.root / "-app-temp-code-repos-unique-run--verification"
+        unrelated = self.root / "-app-temp-code-repos-other-run"
+        def save(folder, rows):
+            folder.mkdir()
+            (folder / "session.jsonl").write_text("\n".join(json.dumps(r) for r in rows))
+        def response(identity, tokens):
+            return {"type": "assistant", "message": {"id": identity, "usage": {"input_tokens": tokens},
+                    "content": [{"text": "PRIVATE_CONTENT_NOT_METRICS"}]}}
+        save(primary, [response("main1", 3), response("main1", 5), response("main2", 2),
+                       {"type": "user", "message": {"id": "not-a-response"}}])
+        save(verifier, [response("review1", 7), response("review1", 9)])
+        save(unrelated, [response("unrelated", 1000)])
+        evidence = sdk_response_evidence(workspace, self.root)
+        self.assertEqual(evidence["observed_model_response_ids"], 2)
+        self.assertEqual(evidence["verification_observed_model_response_ids"], 1)
+        self.assertEqual(evidence["total_observed_model_response_ids"], 3)
+        self.assertEqual(evidence["usage_by_response_id"]["main1"]["input_tokens"], 5)
+        self.assertEqual(evidence["verification_usage_by_response_id"]["review1"]["input_tokens"], 9)
+        self.assertNotIn("PRIVATE_CONTENT", json.dumps(evidence))
+        self.assertNotIn("unrelated", json.dumps(evidence))
+
+    def test_missing_verifier_keeps_original_response_count_semantics(self):
+        workspace = Path("/app/temp/code_repos/unique-run")
+        primary = self.root / "-app-temp-code-repos-unique-run"
+        primary.mkdir()
+        (primary / "session.jsonl").write_text(json.dumps({"type": "assistant", "message": {"id": "one"}}))
+        evidence = sdk_response_evidence(workspace, self.root)
+        self.assertEqual(evidence["observed_model_response_ids"], 1)
+        self.assertEqual(evidence["verification_observed_model_response_ids"], 0)
+        self.assertEqual(evidence["total_observed_model_response_ids"], 1)
 
     def test_original_duplicate_names_restored_without_reference_answer(self):
         path = self.root / "download.zip"
