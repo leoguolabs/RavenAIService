@@ -196,3 +196,47 @@ def test_omissions_reference_original_citations_not_synthetic_window_starts(
     assert (
         coverage["included"] + coverage["omitted"] == coverage["requested"] == len(refs)
     )
+
+
+def test_short_log_citation_requires_unique_explicit_attachment(tmp_path):
+    draft = fixture(tmp_path)
+    draft["answer"] = "Inspect input.log (log:30)"
+    draft.pop("root_cause_hypotheses")
+    packet = p.build(tmp_path, draft)
+    assert packet["resolved_short_citations"] == [
+        {"reference": "log:30", "path": "logs/input.log", "line": 30}
+    ]
+    assert any(
+        w["path"] == "logs/input.log" and w["start_line"] <= 30 <= w["end_line"]
+        for w in packet["cited_windows"]
+    )
+    assert not packet["unresolved_short_citations"]
+    draft["answer"] = "Inspect log:30"
+    packet = p.build(tmp_path, draft)
+    assert (
+        not packet["resolved_short_citations"] and packet["unresolved_short_citations"]
+    )
+
+
+@pytest.mark.parametrize("duplicate_name", [False, True])
+def test_ambiguous_short_citation_never_guesses_attachment(tmp_path, duplicate_name):
+    draft = fixture(tmp_path)
+    (tmp_path / "logs/sub").mkdir()
+    name = "input.log" if duplicate_name else "other.log"
+    (tmp_path / "logs/sub" / name).write_text("data\n")
+    draft["answer"] = "Inspect input.log other.log (log:1)"
+    draft.pop("root_cause_hypotheses")
+    packet = p.build(tmp_path, draft)
+    assert (
+        not packet["resolved_short_citations"] and packet["unresolved_short_citations"]
+    )
+
+
+def test_explicit_paths_are_never_misread_as_short_references(tmp_path):
+    draft = fixture(tmp_path)
+    draft["answer"] = "log:logs/input.log:999 logs/input.log:2"
+    packet = p.build(tmp_path, draft)
+    assert (
+        not packet["resolved_short_citations"]
+        and not packet["unresolved_short_citations"]
+    )

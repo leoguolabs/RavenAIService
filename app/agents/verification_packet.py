@@ -80,6 +80,36 @@ def citations(draft):
     return sorted(refs, key=lambda r: (not r[0].startswith("logs/"), r[0], r[1]))
 
 
+def short_log_citations(draft, inventory):
+    """Resolve shorthand only when one explicitly named native attachment is unique."""
+    text = "\n".join(strings(draft))
+    numbers = sorted(
+        {
+            int(n)
+            for n in re.findall(r"(?<![A-Za-z0-9_./:-])log:(\d{1,7})(?![\d:])", text)
+        }
+    )
+    by_name = {}
+    for item in inventory:
+        path = item["path"]
+        name = Path(path).name
+        if re.search(
+            r"(?<![A-Za-z0-9_.-])" + re.escape(name) + r"(?![A-Za-z0-9_.-])", text
+        ):
+            by_name.setdefault(name, []).append(path)
+    candidates = [paths[0] for paths in by_name.values() if len(paths) == 1]
+    unique = len(candidates) == 1 and len(by_name) == 1
+    return [(candidates[0], n) for n in numbers] if unique else [], [
+        {
+            "reference": "log:" + str(n),
+            "line": n,
+            "reason": "no unique explicitly named attachment",
+        }
+        for n in numbers
+        if not unique
+    ]
+
+
 def safe_file(root, relative):
     parts = Path(relative).parts
     if (
@@ -136,7 +166,13 @@ def build(workspace, raw_draft):
                         "bytes": path.stat().st_size,
                     }
                 )
-    refs = citations(draft)
+    short_refs, unresolved_short = short_log_citations(draft, available)
+    refs = sorted(
+        set(citations(draft) + short_refs),
+        key=lambda r: (not r[0].startswith("logs/"), r[0], r[1]),
+    )
+    if len(refs) > MAX_REFS:
+        raise ValueError("citation bound")
     files = {}
     windows = []
     omitted = []
@@ -304,6 +340,10 @@ def build(workspace, raw_draft):
         "cited_files": [x["metadata"] for x in files.values()],
         "cited_windows": windows,
         "omitted_citations": omitted,
+        "unresolved_short_citations": unresolved_short,
+        "resolved_short_citations": [
+            {"reference": "log:" + str(n), "path": p, "line": n} for p, n in short_refs
+        ],
         "producer_observations": observations,
         "producer_unavailable_reason": producer_error,
     }
