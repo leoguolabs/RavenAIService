@@ -283,6 +283,17 @@ When efficiency and the separate source-context switch are enabled, successful n
 - **WHEN** a native line-number search returns a verified repository source reference
 - **THEN** the SDK can add a bounded surrounding excerpt with exact lines and continuation while retaining the original search result
 
+#### Scenario: A verified log field needs a source declaration
+- **WHEN** the existing source-context flag is enabled and a structured search returns complete zero-column native log rows with supported C source/function hints
+- **THEN** a bounded optional scanner may attach a source relation only after verifying the log bytes, unique contained source file, matching literal message format/argument, declared struct/pointer aliases, same-member constant comparison and unambiguous included enum body
+- **AND** named-symbol shadowing, macro overrides, unsupported syntax/formatting, source changes, ambiguity or processing limits retain the original evidence and native tools
+- **AND** the relation contains raw source, identity hashes and explicit non-exhaustive/source-version limits, without evaluating enum values or inferring compiled branches or event state
+
+#### Scenario: Related declarations share the original context budget
+- **WHEN** existing source windows already occupy available slots or the complete relation cannot fit the unchanged shared two-window/8000-byte payload
+- **THEN** original source windows retain priority and no clipped relation is added
+- **AND** unchanged emitted source relations are deduplicated per run; no AST/log buffers persist, optional-parser failure adds no tool error, and no model request, turn cap, required Skill or original tool result changes
+
 #### Scenario: A bounded header preview starts inside an enum body
 - **WHEN** the normal verified C/H search-context start falls inside an error-free parsed enum body
 - **THEN** the same default-off hook may start at the enum beginning only when the entire enum body and original match fit the existing 160-line and shared byte limits
