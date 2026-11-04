@@ -361,6 +361,11 @@ An enabled candidate with the separate final-review switch enabled MAY request o
 - **THEN** its instruction confines the edit to already collected evidence, checks all affected assertions and preserves supported independent findings, citations, coverage counts and unresolved conditions
 - **AND** unsupported execution/persistence/receipt certainty is qualified without inventing missing facts or deleting evidence; the original schema and turn budget remain unchanged
 
+#### Scenario: A local evidence gap becomes an unsupported global exclusion
+- **WHEN** the optional review sees an assertion about all attachments, time coverage, deployed binary identity or a specific failure branch
+- **THEN** it distinguishes uninspected/unknown evidence from established absence or exclusion and current-source possibilities from observed runtime identity
+- **AND** it qualifies unsupported scope/node/version claims while preserving supported independent findings and without another review continuation
+
 #### Scenario: Repeated stop or near turn cap
 - **WHEN** review has already been requested, stop_hook_active is true, or observed responses are near the unchanged turn cap
 - **THEN** the hook does not request another review or force early termination

@@ -20,6 +20,11 @@ _REVIEW = {
         "Apart from correcting contradictions or unsupported certainty, preserve every supported independent "
         "finding, record, citation, coverage count, blocker and unresolved anomaly. Do not drop evidence "
         "to make the answer consistent, invent missing facts, or turn a partial sample into an exhaustive claim. "
+        "Uninspected, unknown, and absent from one file are not evidence that something is absent from all "
+        "attachments or outside their time coverage. Check the claimed scope against the files actually inspected; "
+        "otherwise state what remains unverified. Current source describes possible behavior, not the deployed "
+        "binary identity. A generic failure return or a missing log does not identify a specific device node, "
+        "failure branch or deployed version. Qualify such inferences where they appear. "
         "If the evidence cannot resolve a statement, qualify it where it appears. "
         "Return the complete original JSON schema in a fenced block, without editing commentary. "
         "This is one edit only; no further review is required."
@@ -31,6 +36,8 @@ _REVIEW = {
         "操作尝试、调试打印或源码可能分支，本身不证明执行成功、持久化完成或远端收到；每项判断的确定程度须与已有证据相符。"
         "除纠正矛盾和无依据的确定判断外，保留所有有依据的独立发现、记录、引用、覆盖数量、阻塞条件和未决异常。"
         "不能为消除矛盾而删除证据、补造缺失事实，或把局部样本说成完整范围；证据不能判定时就在该判断处说明不确定性。"
+        "未检查、未知、某份文件没查到，均不能证明所有附件都没有或时间在附件覆盖之外；核对所声称的范围与实际检查的文件，不足时写明尚未核验。"
+        "当前源码描述可能行为，不等于现场二进制身份；通用失败返回或缺少某条日志不能确定具体设备节点、失败分支或部署版本，这类推断须就地说明依据和限制。"
         "按原有全部字段返回完整JSON围栏结果，不输出校对过程。只校对这一次，无须继续复核。"
     ),
 }
