@@ -376,3 +376,30 @@ def test_component_file_mutation_is_not_an_accepted_observation(tmp_path, monkey
     monkeypatch.setattr(component_packet, "collect", changed)
     with pytest.raises(p.PacketChanged):
         p.build(tmp_path, draft)
+
+
+def test_named_attachment_scan_reports_uninspected_files_after_fixed_limit(tmp_path):
+    (tmp_path / "logs").mkdir()
+    names = [f"part{i}.log" for i in range(5)]
+    for name in names:
+        (tmp_path / "logs" / name).write_text(
+            "2026-10-01T00:00:00.000,Tick=1 INFO Tid:2 link.c receive 20 bytes=1\n"
+        )
+    packet = p.build(tmp_path, {"status": "ok", "answer": "link: " + " ".join(names)})
+    observation = packet["named_component_observations"]
+    assert len(observation["files"]) == 4 and observation["omitted_named_files"] == 1
+    assert len(packet["cited_files"]) == 4
+
+
+def test_named_attachment_reads_share_packet_budget_even_without_citations(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "logs").mkdir()
+    text = "2026-10-01T00:00:00.000,Tick=1 INFO Tid:2 link.c receive 20 bytes=1\n"
+    for name in ["a.log", "b.log"]:
+        (tmp_path / "logs" / name).write_text(text)
+    monkeypatch.setattr(p, "MAX_BYTES", len(text.encode()))
+    packet = p.build(tmp_path, {"status": "ok", "answer": "link in a.log and b.log"})
+    assert packet["named_component_observations"] is None
+    assert "read byte bound" in packet["named_components_unavailable_reason"]
+    assert len(packet["cited_files"]) == 1
