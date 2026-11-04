@@ -322,3 +322,57 @@ def test_typed_relation_extra_files_keep_fixed_snapshot_bound(tmp_path, monkeypa
     assert len(packet["cited_files"]) == 2
     assert packet["source_field_relations"] is None
     assert "file bound" in packet["source_relations_unavailable_reason"]
+
+
+def test_named_log_without_line_references_supplies_bounded_native_components(tmp_path):
+    (tmp_path / "logs").mkdir()
+    rows = [
+        f"2026-10-01T00:00:00.000,Tick={i} INFO Tid:2 link.c receive 20 bytes={i * 1000}"
+        for i in range(1, 10)
+    ]
+    (tmp_path / "logs/second.log").write_text("\n".join(rows) + "\n")
+    packet = p.build(
+        tmp_path,
+        {
+            "status": "ok",
+            "answer": "link in second.log had data",
+            "summary": "Observation",
+        },
+    )
+    assert not packet["cited_windows"]
+    observation = packet["named_component_observations"]
+    assert observation["selected_source_labels"] == ["link.c"]
+    group = observation["producer_thread_groups"][0]
+    assert group["physical_records"] == 9 and "bytes=9000" in group["last"][2]
+    assert (
+        packet["evidence_limits"]["attachment_semantic_coverage"] == "not_established"
+    )
+
+
+def test_duplicate_named_log_never_selects_one_file_implicitly(tmp_path):
+    (tmp_path / "logs/a").mkdir(parents=True)
+    (tmp_path / "logs/b").mkdir()
+    for name in ["a", "b"]:
+        (tmp_path / "logs" / name / "same.log").write_text("data\n")
+    packet = p.build(tmp_path, {"status": "ok", "answer": "Inspect same.log"})
+    observation = packet["named_component_observations"]
+    assert observation["files"] == [] and observation[
+        "ambiguous_named_attachments"
+    ] == ["same.log"]
+
+
+def test_component_file_mutation_is_not_an_accepted_observation(tmp_path, monkeypatch):
+    from app.agents import component_packet
+
+    draft = typed_fixture(tmp_path)
+    original = component_packet.collect
+
+    def changed(*args, **kwargs):
+        result = original(*args, **kwargs)
+        with (tmp_path / "logs/input.log").open("a") as stream:
+            stream.write("new row\n")
+        return result
+
+    monkeypatch.setattr(component_packet, "collect", changed)
+    with pytest.raises(p.PacketChanged):
+        p.build(tmp_path, draft)

@@ -323,6 +323,55 @@ def build(workspace, raw_draft):
         relations = None
         relations_error = type(exc).__name__ + ": " + str(exc)
     try:
+        from app.agents.component_packet import collect as component_collect
+
+        text = "\n".join(strings(draft))
+        by_name = {}
+        for entry in available:
+            name = Path(entry["path"]).name
+            if (
+                ".log" in Path(name).suffixes or Path(name).suffix == ".txt"
+            ) and re.search(
+                r"(?<![A-Za-z0-9_.-])" + re.escape(name) + r"(?![A-Za-z0-9_.-])", text
+            ):
+                by_name.setdefault(name, []).append(entry["path"])
+        named = sorted(
+            (paths[0] for paths in by_name.values() if len(paths) == 1),
+            key=lambda path: (path in files, path),
+        )
+        component_snapshots = [load(path) for path in named[:4]]
+        component_snapshots = [
+            snap
+            for snap in component_snapshots
+            if not snap["metadata"]["binary_or_non_utf8"]
+        ]
+        component_started = time.monotonic()
+
+        def component_check():
+            deadline()
+            if time.monotonic() - component_started > 0.75:
+                raise ValueError("component time bound")
+
+        components = (
+            component_collect(
+                text,
+                component_snapshots,
+                component_check,
+                omitted_named_files=max(0, len(named) - 4),
+                ambiguous_names=sorted(
+                    name for name, paths in by_name.items() if len(paths) != 1
+                ),
+            )
+            if by_name
+            else None
+        )
+        component_error = None
+    except PacketChanged:
+        raise
+    except (OSError, ValueError) as exc:
+        components = None
+        component_error = type(exc).__name__ + ": " + str(exc)
+    try:
         observations = producer.collect(root, seeds, budget=budget) if seeds else None
         producer_error = None
     except (OSError, ValueError) as exc:
@@ -378,6 +427,8 @@ def build(workspace, raw_draft):
         "resolved_short_citations": [
             {"reference": "log:" + str(n), "path": p, "line": n} for p, n in short_refs
         ],
+        "named_component_observations": components,
+        "named_components_unavailable_reason": component_error,
         "source_field_relations": relations,
         "source_relations_unavailable_reason": relations_error,
         "producer_observations": observations,
@@ -416,6 +467,9 @@ def build(workspace, raw_draft):
         }
 
     refresh_omissions()
+    if size() > MAX_PACKET and packet["named_component_observations"] is not None:
+        packet["named_component_observations"] = None
+        packet["named_components_unavailable_reason"] = "packet budget"
     if size() > MAX_PACKET and packet["producer_observations"] is not None:
         packet["producer_observations"] = None
         packet["producer_unavailable_reason"] = "packet budget"

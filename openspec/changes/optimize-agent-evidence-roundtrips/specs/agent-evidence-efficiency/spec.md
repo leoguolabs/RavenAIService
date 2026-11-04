@@ -479,3 +479,11 @@ Under a default-off Log Analysis gate and complete evidence snapshot, a run MAY 
 - **WHEN** a checkpoint is reached before decisive attachment/source evidence is verified
 - **THEN** the Agent retains tool access and must not drop that evidence or claim uninspected coverage to finish
 - **AND** native evidence and independent quality review, rather than a checkpoint or a faster failure, determine acceptance
+
+### Requirement: Bounded named native attachment discovery
+An isolated verifier MAY inspect uniquely named contained native text logs without line citations under the shared packet identity/read/time limits and explicit semantic coverage uncertainty. It SHALL NOT decode record counts as events or infer operations or actors.
+
+#### Scenario: A draft names a companion log without a line citation
+- **WHEN** an isolated packet can uniquely resolve an explicitly named contained native text attachment
+- **THEN** it may expose bounded literal source-label/thread physical counts and first/last rows selected through draft identifier overlap, including source groups absent from cited windows
+- **AND** shared read/time/snapshot budgets, a separate bounded payload, exact identity validation and explicit omitted/ambiguous coverage remain; record counts are not decoded frames/events or causal conclusions

@@ -359,3 +359,5 @@ For optional isolated evidence verification, Log Analysis duration includes pack
 The private timing harness keeps `observed_model_response_ids` as primary-only for historical comparability. It additionally records `verification_observed_model_response_ids` and `total_observed_model_response_ids`, and archives verifier transcripts separately. Totals count distinct assistant IDs within each stage; auxiliary title requests and requests without assistant responses are excluded, so these are not HTTP request counts. Existing pilot metadata corrected after completion uses separate hash-bound addenda and preserves the original results/timing.
 
 Evidence-progress notices count distinct observed PostToolUse callbacks, not model turns or HTTP requests. At most two notices occur; they request no separate model call. Timing acceptance must still count all primary/verifier work and retain max-turn failures.
+
+Named-log component scans are included in packet/verification duration and byte counts; the optional scan adds no model call. Omitted groups/files and unavailable-budget metadata do not imply semantic coverage or record absence.
