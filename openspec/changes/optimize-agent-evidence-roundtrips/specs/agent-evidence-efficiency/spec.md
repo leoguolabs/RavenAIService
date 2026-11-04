@@ -503,3 +503,12 @@ A default-off Log Analysis prompt flag MAY append generic confidence and provena
 - **WHEN** the independent flag is enabled with or without an evidence snapshot
 - **THEN** the locale-appropriate addendum distinguishes observations, operations, actors, current-source identity, runtime references and completion, requiring consistent qualifications and supported recommendation direction
 - **AND** disabled runs retain their original prompt; mechanism tests do not establish quality or timing acceptance
+
+### Requirement: Original-prompt dependency-aware request grouping
+A separate default-off Log Analysis flag MAY append request-grouping guidance without compacting the original prompt or enabling retrieval/reviewer experiments. It SHALL preserve model configuration, complete required Skills, native tools, schema and turn cap, adding no model call itself.
+
+#### Scenario: Several independent evidence checks are already known
+- **WHEN** the grouping guidance is enabled
+- **THEN** it encourages one native tool-use round for independent checks, while unknown paths or unfinished clones remain dependencies for later requests
+- **AND** a single known request need not wait, batches must retain per-item references and decisive later/companion/failure-branch evidence, and further investigation requires concrete material gaps
+- **AND** actual assembled prompt-prefix and SDK delivery proof precede fresh independent quality and paired timing validation

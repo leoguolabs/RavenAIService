@@ -1386,6 +1386,11 @@ class LogAnalysisAgent:
 
             system_prompt += confidence_bounds(ctx.locale)
 
+        if getattr(settings, "agent_analysis_batch_prompt_enabled", False) is True:
+            from app.agents.batch_prompt import dependency_batching
+
+            system_prompt += dependency_batching(ctx.locale)
+
         def _make_options(endpoint: Optional[Any]) -> Any:
             options = build_options(
                 system_prompt=system_prompt,
