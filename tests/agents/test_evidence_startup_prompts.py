@@ -77,8 +77,8 @@ def test_batch_plan_v3_is_opt_in_and_preserves_uncertainty(locale, required_term
 
 
 @pytest.mark.parametrize("locale, required_terms", [
-    ("zh", ("前置合并证据检索", "全部放进同一次", "limit 8", "追查其产生路径和新鲜度", "缓存上报不能证明执行成功", "不能证明事件从未发生", "总调用数不设上限", "150 轮上限")),
-    ("en", ("Front-loaded evidence batches", "ONE initial", "limit 8 matches", "trace its producer and freshness", "cached report cannot prove execution", "do not prove that an event never happened", "no total-call cap", "150-turn cap")),
+    ("zh", ("前置合并证据检索", "最多 8 项", "不固定为少量样本", "产生路径和新鲜度", "枚举", "当前状态保留未知", "不能证明事件从未发生", "总调用数不设上限", "150 轮上限")),
+    ("en", ("Front-loaded evidence batches", "up to 8 requests", "not a fixed small sample", "producer", "enums", "current state unknown", "an event never happened", "no total-call cap", "150-turn cap")),
 ])
 def test_batch_plan_v4_is_opt_in_and_front_loads_known_checks(locale, required_terms):
     snapshot = {"task": {"question": "unchanged"}, "project_catalog": {"projects": [], "count": 0}}
