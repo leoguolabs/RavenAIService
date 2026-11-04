@@ -162,6 +162,26 @@ def test_repeated_field_names_inside_answer_text_are_not_duplicate_keys():
     assert _extract_fenced_json(f"```json\n{json.dumps(expected)}\n```") == expected
 
 
+@pytest.mark.parametrize("field", ["answer", "summary"])
+def test_mismatched_quote_cannot_swallow_later_result_fields(field):
+    from app.agents.log_analysis.agent import _extract_fenced_json, extract_recoverable_result_fields
+
+    prefix = '{"status":"ok","severity":"warn",'
+    if field == "summary":
+        prefix += '"answer":"A complete answer",'
+    broken = prefix + f'"{field}":"First line\nSecond line\', "related_keywords":[],"recommended_actions":[]}}'
+    text = f"```json\n{broken}\n```"
+    assert _extract_fenced_json(text) is None
+    assert extract_recoverable_result_fields(text) == {}
+
+
+def test_valid_json_can_quote_apostrophes_and_result_field_examples():
+    from app.agents.log_analysis.agent import _extract_fenced_json
+
+    expected = {"status":"ok","severity":"info","answer":'Example: \' , "summary": "source text"'}
+    assert _extract_fenced_json(f"```json\n{json.dumps(expected)}\n```") == expected
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("enabled,snapshot_available,scan_fails", [(False, True, False), (True, False, False), (True, True, False), (True, True, True)])
 async def test_log_overview_is_independent_opt_in_with_native_fallback(workspace_ctx, enabled, snapshot_available, scan_fails):
@@ -186,10 +206,13 @@ async def test_log_overview_is_independent_opt_in_with_native_fallback(workspace
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fenced", [False, True])
-async def test_corrupt_result_cannot_fall_back_to_plain_skill_answer(workspace_ctx, fenced):
+@pytest.mark.parametrize("body", [
+    '{"status":"ok","severity":"info","answer":"original","summary":"first","summary":"retry fragment"}',
+    '{"status":"ok","severity":"info","answer":"First line\nSecond line\', "summary":"Retry fragment"}',
+])
+async def test_corrupt_result_cannot_fall_back_to_plain_skill_answer(workspace_ctx, fenced, body):
     from app.agents.log_analysis.agent import LogAnalysisAgent
 
-    body = '{"status":"ok","severity":"info","answer":"original","summary":"first","summary":"retry fragment"}'
     terminal = f"```json\n{body}\n```" if fenced else body
     calls = []
 

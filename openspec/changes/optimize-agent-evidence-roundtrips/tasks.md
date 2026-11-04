@@ -63,6 +63,8 @@
 
 - [ ] 2.39 Candidate-only quality screen final-position v4 fact-reuse guidance before another paired baseline. Combinedv1 failed254.99s/150turns,141distinctBashcommands,lateinventory delivered but noanswer. Actual policy at25996/31263chars precedes~5k snapshotdata. Place v4after snapshot data; reuse proved counts/membership/source facts unless counterevidence/coverage changes. Missing peer runtime remains unknown. No hard lower turn limit, case-specific hints, lost tools/Skills or unpaired latency claims.
 
+- [ ] 2.40 Preserve/replay yinhe terminal corruption and reject mismatched quote field swallowing before further quality probes. SDKlasttext matchesAPIraw; nativeJSONinvalid; oldparserreturnedok withsummaryfragmentinsideanswer/emptysummary. Validate malformed answer/summary refusal, optionalSkill nofallback/retry, valid quotedexamples and existinglenientrecovery. This repairs statusintegrity only; noquality/speedacceptance. FrozenSDK image overlay must include only parserchanges, not currentproviderbridge.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.

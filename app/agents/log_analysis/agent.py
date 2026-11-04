@@ -71,6 +71,10 @@ class AgentCancelled(Exception):
     """Raised inside the agent loop when an external cancel signal fires."""
 
 
+class _MalformedResultField(ValueError):
+    """A broken field boundary cannot be repaired by swallowing later fields."""
+
+
 PROJECT_REPO_MCP_TOOL = PROJECT_REPO_LOOKUP_MCP_TOOL
 
 ALLOWED_TOOLS = [
@@ -133,6 +137,9 @@ _RESULT_FIELD_NAMES = (
 )
 _RESULT_FIELD_DELIMITER_RE = re.compile(
     r'(?<!\\)"\s*,\s*"(?P<field>' + "|".join(_RESULT_FIELD_NAMES) + r')"\s*:'
+)
+_WRONG_QUOTE_FIELD_DELIMITER_RE = re.compile(
+    r"(?<!\\)'\s*,\s*\"(?:" + "|".join(_RESULT_FIELD_NAMES) + r')"\s*:'
 )
 
 
@@ -213,6 +220,14 @@ def _parse_string_value_prefix(
     except json.JSONDecodeError:
         pass
 
+    # A mismatched apostrophe at a field boundary is structural corruption,
+    # unlike a bare quote around a source term. Do not absorb another field
+    # into the answer while looking for a later double-quote delimiter.
+    boundary = _RESULT_FIELD_DELIMITER_RE.search(text, start + 1)
+    wrong_boundary = _WRONG_QUOTE_FIELD_DELIMITER_RE.search(text, start + 1)
+    if wrong_boundary and (boundary is None or wrong_boundary.start() < boundary.start()):
+        raise _MalformedResultField("mismatched result string delimiter")
+
     # If a quoted answer contains an unescaped quote, find the closing quote by
     # looking for the next known top-level result field (", "summary":, etc.).
     for match in _RESULT_FIELD_DELIMITER_RE.finditer(text, start + 1):
@@ -224,7 +239,7 @@ def _parse_string_value_prefix(
 def _parse_json_object_prefix(text: str) -> Optional[Dict[str, Any]]:
     try:
         return _parse_unique_json_object_prefix(text)
-    except _DuplicateResultField:
+    except (_DuplicateResultField, _MalformedResultField):
         # Retain the raw terminal response for diagnosis, but never pick an
         # earlier/later answer from a corrupt response and report success.
         return None

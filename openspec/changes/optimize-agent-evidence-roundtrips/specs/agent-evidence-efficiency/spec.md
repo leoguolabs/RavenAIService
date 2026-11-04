@@ -390,3 +390,11 @@ The parameter descriptions SHALL distinguish captured group values from capture 
 - **AND** comparison completeness is false and all difference fields are unavailable, even if the physical regex scan is complete; feedback asks for source verification or original-tool fallback
 - **WHEN** processing or value limits prevent a complete comparison
 - **THEN** difference fields are unavailable and limits remain visible; original evidence tools remain available
+
+### Requirement: Unambiguous recovered result fields
+Lenient terminal recovery SHALL NOT absorb known result fields across a mismatched apostrophe closing a JSON string. A structurally ambiguous object SHALL remain raw diagnostic evidence and SHALL NOT become a successful or plain-Skill result. Complete valid JSON string examples SHALL remain unchanged. This validation SHALL NOT dispatch a model retry.
+
+#### Scenario: Malformed result field boundary
+- **WHEN** standard string decoding fails and a mismatched apostrophe boundary precedes another known result field before any valid closing delimiter
+- **THEN** the entire result is rejected rather than swallowing later fields into answer or returning an earlier answer with corrupted summary
+- **AND** raw terminal text remains available without an additional model call
