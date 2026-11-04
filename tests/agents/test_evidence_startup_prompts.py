@@ -55,6 +55,45 @@ def test_batch_plan_guidance_is_opt_in_and_preserves_snapshot(locale, required_t
     assert "JSON" in enabled
 
 
+@pytest.mark.parametrize("locale, required_terms", [
+    ("zh", ("聚焦式证据批次", "最多 4 项", "limit 8–12", "未观察到", "不限制总调用数", "150 轮上限")),
+    ("en", ("Focused evidence batches", "at most 4 requests", "limit 8-12", "not observed in the inspected scope", "no total-call", "150-turn limit")),
+])
+def test_batch_plan_v3_is_opt_in_and_preserves_uncertainty(locale, required_terms):
+    snapshot = {"task": {"question": "unchanged"}, "project_catalog": {"projects": [], "count": 0}}
+    disabled = snapshot_prompt(snapshot, locale)
+    enabled = snapshot_prompt(snapshot, locale, batch_plan_v3=True)
+    legacy = snapshot_prompt(snapshot, locale, batch_plan=True)
+
+    assert all(term in enabled for term in required_terms)
+    assert "Focused evidence batches" not in disabled
+    assert "聚焦式证据批次" not in disabled
+    assert "Batch-first evidence dispatch" in legacy or "先批量取证" in legacy
+    assert "Batch-first evidence dispatch" not in enabled
+    assert "先批量取证" not in enabled
+    assert '"question": "unchanged"' in enabled
+    assert "JSON" in enabled
+
+
+@pytest.mark.parametrize("locale, required_terms", [
+    ("zh", ("前置合并证据检索", "全部放进同一次", "limit 8", "追查其产生路径和新鲜度", "缓存上报不能证明执行成功", "不能证明事件从未发生", "总调用数不设上限", "150 轮上限")),
+    ("en", ("Front-loaded evidence batches", "ONE initial", "limit 8 matches", "trace its producer and freshness", "cached report cannot prove execution", "do not prove that an event never happened", "no total-call cap", "150-turn cap")),
+])
+def test_batch_plan_v4_is_opt_in_and_front_loads_known_checks(locale, required_terms):
+    snapshot = {"task": {"question": "unchanged"}, "project_catalog": {"projects": [], "count": 0}}
+    disabled = snapshot_prompt(snapshot, locale)
+    enabled = snapshot_prompt(snapshot, locale, batch_plan_v4=True)
+    legacy = snapshot_prompt(snapshot, locale, batch_plan=True)
+
+    assert all(term in enabled for term in required_terms)
+    assert "Front-loaded evidence batches" not in disabled
+    assert "前置合并证据检索" not in disabled
+    assert "Batch-first evidence dispatch" in legacy or "先批量取证" in legacy
+    assert "聚焦式证据批次" not in enabled and "先批量取证" not in enabled
+    assert '"question": "unchanged"' in enabled
+    assert "JSON" in enabled
+
+
 @pytest.mark.parametrize("startup, fallback, replacement", [
     (
         "读取当前工作目录的 task.json。",

@@ -1328,6 +1328,8 @@ class LogAnalysisAgent:
             system_prompt += snapshot_prompt(
                 evidence_snapshot, ctx.locale,
                 batch_plan=settings.agent_evidence_batch_plan_enabled is True,
+                batch_plan_v3=settings.agent_evidence_batch_plan_v3_enabled is True,
+                batch_plan_v4=settings.agent_evidence_batch_plan_v4_enabled is True,
             )
             if settings.agent_evidence_log_overview_enabled is True:
                 from app.agents.log_overview import collect_log_overview, log_overview_prompt

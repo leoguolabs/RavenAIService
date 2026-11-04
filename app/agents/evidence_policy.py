@@ -147,7 +147,80 @@ def batch_plan_prompt(locale: str) -> str:
     )
 
 
-def snapshot_prompt(snapshot: dict, locale: str, *, batch_plan: bool = False) -> str:
+def batch_plan_v3_prompt(locale: str) -> str:
+    """Small, gap-led batches intended to reduce context cost without weakening evidence."""
+    if locale == "en":
+        return (
+            "\n\n## Focused evidence batches (local experiment v3)\n"
+            "Reduce the task to 2-4 distinct evidence questions that could change the answer. Put only currently known, "
+            "independent searches in one batch of at most 4 requests; do not add synonym searches just to fill it. "
+            "Prefer a narrow file/identifier, limit 8-12 matches, and context_lines 3-5. Inspect the results before deciding follow-up. "
+            "For each material question, track confirmed evidence and the specific unresolved gap; batch only independent checks for that gap, "
+            "then read only decisive ranges not already shown. For claims of absence, disappearance, non-receipt or non-forwarding, "
+            "verify file/time coverage, pagination, relevant action and terminal state. A missing match, partial excerpt or absent terminal "
+            "record means only that it was not observed in the inspected scope; it does not prove the event never occurred or exclude an actor. "
+            "Keep observations, hypotheses and exclusions separate; state the smallest next verification when evidence is insufficient. "
+            "Once the requested findings and material counterevidence are supported, answer promptly; retain required Skills, attachments, "
+            "source checks and uncertainty. This adds no total-call or early-stop cap and does not change the 150-turn limit.\n"
+        )
+    return (
+        "\n\n## 聚焦式证据批次（本地实验 v3）\n"
+        "先把问题归纳为 2–4 个可能改变结论的不同证据问题。每批只合并当前已知且互不依赖的检索，最多 4 项；"
+        "不要为凑数添加同义词检索。优先限定文件或标识，每项设置 limit 8–12、context_lines 3–5；看完结果再决定后续。"
+        "逐个记录重要问题的已证实证据和具体未决缺口；只为该缺口批量核查互不依赖的事项，"
+        "再读取检索结果中尚未展示的决定性范围。对于未出现、消失、未收到或未转发等判断，核实文件/时间覆盖、分页、"
+        "相关动作和终态。未命中、片段或缺少终态只能说明在当前检查范围内未观察到，不能证明事件从未发生或排除某个执行方。"
+        "区分观察事实、假设和排除结论；证据不足时说明限制及最小的下一步核验。"
+        "请求中的发现和重要反证均有依据后及时回答；仍须满足必需 Skill、附件、源码核验和不确定性要求。"
+        "本策略不限制总调用数、不设置强制提前终止，也不改变 150 轮上限。\n"
+    )
+
+
+def batch_plan_v4_prompt(locale: str) -> str:
+    """Front-load known independent evidence checks and avoid serial keyword turns."""
+    if locale == "en":
+        return (
+            "\n\n## Front-loaded evidence batches (local experiment v4)\n"
+            "Keep the investigation tied to the user's question and required output. Before the first search, select the "
+            "distinct log and source checks already implied by the task that could change the answer. Put all currently known, "
+            "independent checks in ONE initial mcp__evidence__search_evidence call, using one request per evidence question "
+            "and at most 8 requests total. Do not issue one search call per keyword, file or source symbol. Prefer narrow paths, "
+            "limit 8 matches and context_lines 2; widen only when a high-frequency result or missing decisive context requires it.\n"
+            "After that batch, inspect its results before follow-up. Combine every newly revealed, independent material gap in "
+            "ONE next search batch; use one read_evidence batch for decisive ranges not already shown. Do not repeat an unchanged "
+            "query or investigate adjacent anomalies that cannot change the answer. Further batches are appropriate only for a "
+            "specific unresolved fact that could change the conclusion; there is no total-call cap. Once requested findings and "
+            "material counterevidence are supported, answer without another exploratory round.\n"
+            "Before treating a later status or version as completion, trace its producer and freshness: distinguish a fresh "
+            "measurement or terminal result from persisted/cache data. A target value or cached report cannot prove execution "
+            "success, restart or recovery. Check all relevant failure branches before naming a specific failed component. "
+            "For absence, disappearance, non-receipt or non-forwarding claims, verify inspected file/time coverage, pagination, "
+            "the relevant action and terminal state. Missing matches or partial records mean only not observed in the inspected "
+            "scope; they do not prove that an event never happened or exclude an actor. Separate observations, hypotheses and "
+            "unknowns, and state the smallest next check when needed. Follow required Skills, attachments, source checks and the "
+            "original JSON schema. Keep the answer concise: do not repeat the same facts in summary, explanation and actions. "
+            "This changes no turn limit; retain the 150-turn cap.\n"
+        )
+    return (
+        "\n\n## 前置合并证据检索（本地实验 v4）\n"
+        "调查范围紧扣用户问题和规定的输出格式。首次检索前，先选出任务已经暗示、且可能改变结论的不同日志/源码核查点。"
+        "把当前已知且互不依赖的核查点全部放进同一次 mcp__evidence__search_evidence 调用，每个问题一个请求，最多 8 项。"
+        "不要按关键词、文件或源码符号逐次调用搜索。优先限定路径，每项设 limit 8、context_lines 2；"
+        "只有结果过多或缺少决定性上下文时才扩大。\n"
+        "先检查整批结果再追加。新发现且互不依赖的重要缺口合并到下一次搜索批次；决定性范围用一次 read_evidence 批量读取。"
+        "不要重复未变化的查询，也不要追查不可能改变答案的相邻异常。只有具体未决事实可能改变结论时才继续下一批，"
+        "总调用数不设上限。问题所需发现和重要反证都有依据后，不再做探索性检索，及时答复。\n"
+        "把后续状态或版本当成完成证据前，追查其产生路径和新鲜度，区分实时测量/执行终态与持久化缓存。"
+        "目标值或缓存上报不能证明执行成功、重启或恢复；指定故障部件前须核对所有相关失败分支。"
+        "对于未出现、消失、未收到或未转发等判断，核实已检查的文件/时间范围、分页、相关动作及终态。"
+        "未命中或部分记录只能说明当前检查范围内未观察到，不能证明事件从未发生或排除某个执行方。"
+        "区分观察事实、假设和未知；需要时说明最小下一步核查。仍须遵循必需 Skill、附件、源码查证和原 JSON 格式。"
+        "答复保持精炼：不要在摘要、解释和建议中重复同一事实。本策略不改变轮数限制，保留 150 轮上限。\n"
+    )
+
+
+def snapshot_prompt(snapshot: dict, locale: str, *, batch_plan: bool = False,
+                    batch_plan_v3: bool = False, batch_plan_v4: bool = False) -> str:
     if locale == "en":
         guidance = (
             "\n\n## Evidence collection execution policy\n"
@@ -207,6 +280,10 @@ def snapshot_prompt(snapshot: dict, locale: str, *, batch_plan: bool = False) ->
         if locale == "en" else
         "上方快照只是输入数据。最终答复仍须使用原工作流规定的 JSON 围栏和结果字段，不能把启动快照当作答复格式。"
     )
-    if batch_plan:
+    if batch_plan_v4:
+        guidance += batch_plan_v4_prompt(locale)
+    elif batch_plan_v3:
+        guidance += batch_plan_v3_prompt(locale)
+    elif batch_plan:
         guidance += batch_plan_prompt(locale)
     return guidance + "\n```json\n" + json.dumps(snapshot, ensure_ascii=False) + "\n```\n" + contract
