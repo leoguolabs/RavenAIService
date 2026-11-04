@@ -384,13 +384,19 @@ def get_evidence_mcp_server(workspace: str, *, statistics: bool = False, regex_e
         @tool("compare_evidence",
               "Batch 1-8 exact captured-value set comparisons in individual UTF-8 files. Supply a Python regex with "
               "named (?P<group>...) and (?P<value>...) captures plus two distinct left_group/right_group identifiers. "
+              "left_group/right_group are actual captured group VALUES, not regex capture names. For example, "
+              "rows 'batch=alpha item=x' and 'batch=beta item=y' use pattern "
+              "'batch=(?P<group>\\w+) item=(?P<value>\\w+)', left_group='alpha', right_group='beta'. "
               "Choose grouping fields from evidence, not similar-looking identifiers. Returns group unique counts, "
               "physical match counts, first/last native line references, common count and only-left/only-right values. "
               "Differences are available only for a complete bounded scan; they do not prove physical deletion or a cause. "
               "Use this for repeated record-set counts/differences instead of serial shell pipelines; original tools remain available.",
-              schema({"path": {"type": "string"}, "pattern": {"type": "string", "maxLength": 1000},
-                      "left_group": {"type": "string", "minLength": 1, "maxLength": 128},
-                      "right_group": {"type": "string", "minLength": 1, "maxLength": 128},
+              schema({"path": {"type": "string"}, "pattern": {"type": "string", "maxLength": 1000,
+                          "description": "Python regex with exactly named group and value captures: (?P<group>...) and (?P<value>...)."},
+                      "left_group": {"type": "string", "minLength": 1, "maxLength": 128,
+                          "description": "Actual left-side value captured by group in original rows, e.g. alpha; not the capture name group."},
+                      "right_group": {"type": "string", "minLength": 1, "maxLength": 128,
+                          "description": "Actual right-side value captured by group in original rows, e.g. beta; must differ from left_group."},
                       "ignore_case": {"type": "boolean"}}, ["path", "pattern", "left_group", "right_group"]))
         async def compare_sets(args):
             requests = args.get("requests")

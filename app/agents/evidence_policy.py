@@ -297,7 +297,7 @@ def comparison_execution_prompt(locale: str) -> str:
             "When comparing repeated record groups or value sets, first verify the grouping field from original rows. "
             "Prefer ONE mcp__evidence__compare_evidence call with group/value captures and the two observed identifiers "
             "before iterating shell count/diff pipelines. Batch independent comparisons together. If the format is unsupported, "
-            "the tool errors or coverage is incomplete, continue with original tools; do not force a comparison for other tasks. "
+            "the tool errors or coverage is incomplete, continue with original tools; after one failed correction, stop retrying that comparison and use original tools; do not force a comparison for other tasks. "
             "Inspect complete, observed and original line references. An unobserved group is not an observed empty snapshot; "
             "set differences do not establish physical deletion, chronology or a cause. Agent-authored echo/print labels "
             "are notes, not source evidence. Preserve required Skills, source checks, uncertainty and the 150-turn limit.\n"
@@ -306,7 +306,7 @@ def comparison_execution_prompt(locale: str) -> str:
         "\n\n## 确定性分组比较\n"
         "需要比较重复记录分组或值集合时，先从原始行确认分组字段；在反复拼接 shell 计数/差异流水线前，"
         "优先调用一次 mcp__evidence__compare_evidence，使用 group/value 命名捕获和两个已观察到的分组标识。"
-        "独立比较合并一批。格式不支持、工具报错或覆盖不完整时，继续用原工具核查；其他任务不强制比较。"
+        "独立比较合并一批。格式不支持、工具报错或覆盖不完整时，继续用原工具核查；修正一次仍失败就停止重试该比较并用原工具核查；其他任务不强制比较。"
         "核对 complete、observed 和原始行号；未观察到的分组不等于已观察到的空快照，集合差异不能证明物理删除、时间界限或原因。"
         "Agent 自己的 echo/print 标签只是笔记，不能作为源证据。必需 Skill、源码查证、不确定性和 150 轮上限均保留。\n"
     )

@@ -57,6 +57,8 @@
 
 - [ ] 2.36 Screen final-position comparison guidance after the first compare-only yinhe run did not call the tool. Pinned SDK delivery passed; real Agent.run assembly with initialized DB confirms registered/autoapproved compare_evidence and guidance. Preserve the initial no-DB diagnostic as invalid for runtime exposure. Baseline failed at150turns/202.12s; candidate101responses/228.89s,zero compare calls and unsupported runtime file-location certainty. Keep the failed cohort; move concise task-conditional comparison guidance after all snapshot/Skill rules, retaining unsupported/error fallback, uncertainty and150turns. Fresh adoption/quality evidence is required.
 
+- [ ] 2.37 Screen clarified comparison parameters and unobserved-group refusal after final-position guidance failed219.70→231.74s,83→107response IDs,36compare calls (15invalid captures,21unobserved selections). Keep scan completeness separate from comparison completeness; withhold diffs for any unobserved group, explain actual captured group values with generic examples, and retain original-tool fallback after one failed correction. Candidate omitted existing Feedlink cleanup; no acceptance or formal expansion.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.

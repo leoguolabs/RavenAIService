@@ -26,8 +26,26 @@ def test_exact_set_diff_counts_duplicates_without_treating_them_as_new_values(tm
 def test_missing_group_is_explicit_not_an_observed_empty_snapshot(tmp_path):
     (tmp_path/'log').write_text('g=before v=a\n')
     c=stats.scan_statistics(str(tmp_path),query())['comparison']
-    assert c['complete'] and not c['right']['observed']
-    assert c['right']['indexed_matches']==0 and c['only_left'][0]['value']=='a'
+    assert not c['complete'] and not c['right']['observed']
+    assert c['right']['indexed_matches']==0 and c['only_left'] is None
+    assert c['only_right'] is None and c['common_unique_values'] is None
+    assert 'captured values, not capture names' in c['warning']
+
+
+def test_capture_names_used_as_identifiers_do_not_produce_an_empty_comparison(tmp_path):
+    (tmp_path/'log').write_text('g=before v=a\ng=after v=b\n')
+    q=query();q.update(left_group='group',right_group='value')
+    r=stats.scan_statistics(str(tmp_path),q);c=r['comparison']
+    assert r['scan_complete'] and r['complete']
+    assert not c['complete'] and not c['left']['observed'] and not c['right']['observed']
+    assert c['only_left'] is None and c['only_right'] is None
+
+
+def test_missing_group_capture_error_explains_capture_names_and_selected_values(tmp_path):
+    (tmp_path/'log').write_text('g=before v=a\n')
+    q=query();q['pattern']=r'g=(?P<cycle>\w+) v=(?P<value>\w+)'
+    with pytest.raises(ValueError,match='captured VALUES'):
+        stats.scan_statistics(str(tmp_path),q)
 
 
 @pytest.mark.parametrize('budget', ['values','bytes','bad_utf8'])

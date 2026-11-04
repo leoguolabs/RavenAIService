@@ -62,14 +62,16 @@ def scan_statistics(workspace: str, request: dict) -> dict:
         raise ValueError("ignore_case must be boolean")
     regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
     if mode != "count" and "value" not in regex.groupindex:
-        raise ValueError("numeric/values mode requires a named (?P<value>...) capture")
+        raise ValueError(f"{mode} mode requires a named (?P<value>...) capture")
 
     selected_groups = None
     if mode == "compare":
         selected_groups = (request.get("left_group"), request.get("right_group"))
         if ("group" not in regex.groupindex or any(not isinstance(g, str) or not 1 <= len(g) <= 128 for g in selected_groups)
                 or selected_groups[0] == selected_groups[1]):
-            raise ValueError("compare requires named group/value captures and two distinct group identifiers")
+            raise ValueError("compare requires literal capture names (?P<group>...) and (?P<value>...). "
+                             "left_group/right_group must be two distinct captured VALUES from original rows, "
+                             "not capture names. Correct the request or use original tools.")
     grouped = {g: {} for g in selected_groups or ()}
     group_refs = {}
 
@@ -209,16 +211,22 @@ def scan_statistics(workspace: str, request: dict) -> dict:
     if mode == "compare":
         left_id, right_id = selected_groups
         left, right = grouped[left_id], grouped[right_id]
+        comparison_complete = result["complete"] and all(g in group_refs for g in selected_groups)
         def group_summary(identifier, bucket):
             return dict(group=identifier, unique_values=len(bucket),
                         indexed_matches=sum(v["count"] for v in bucket.values()),
                         observed=identifier in group_refs, **group_refs.get(identifier, {}))
         result["comparison"] = dict(
-            left=group_summary(left_id, left), right=group_summary(right_id, right), complete=result["complete"],
-            common_unique_values=len(left.keys() & right.keys()) if result["complete"] else None,
-            only_left=[left[k] for k in sorted(left.keys() - right.keys())] if result["complete"] else None,
-            only_right=[right[k] for k in sorted(right.keys() - left.keys())] if result["complete"] else None,
+            left=group_summary(left_id, left), right=group_summary(right_id, right), complete=comparison_complete,
+            common_unique_values=len(left.keys() & right.keys()) if comparison_complete else None,
+            only_left=[left[k] for k in sorted(left.keys() - right.keys())] if comparison_complete else None,
+            only_right=[right[k] for k in sorted(right.keys() - left.keys())] if comparison_complete else None,
             scope="Captured literal value sets in the two selected regex groups only; not physical deletion, chronology or causal proof.")
+        if not all(g in group_refs for g in selected_groups):
+            result["comparison"]["warning"] = (
+                "Selected group value not observed; differences withheld. left_group/right_group are captured "
+                "values, not capture names. Verify both identifiers in original rows or use original tools; "
+                "do not repeat the same unobserved selection.")
     if len(json.dumps(result, ensure_ascii=False).encode()) > MAX_OUTPUT_BYTES:
         raise ValueError("statistics output budget exceeded; narrow the capture")
     return result

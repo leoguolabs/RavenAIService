@@ -377,6 +377,7 @@ Log Analysis MAY enable an independent default-off replay for supported task-log
 
 ### Requirement: Independently gated captured-set comparison
 Log Analysis MAY expose a default-off batched comparison tool under a complete efficiency snapshot. Each request SHALL name one contained file, a bounded regex with group/value captures, and two distinct group identifiers. The isolated worker SHALL preserve native LF references, physical occurrence counts, unique values, and stable-source identity. It SHALL bound files, lines, regex runtime, selected-group values and output.
+The parameter descriptions SHALL distinguish captured group values from capture names, with a generic example independent of validation cases. Invalid capture feedback SHALL explain the required names and selected-value semantics.
 
 #### Scenario: Complete selected groups
 - **WHEN** a stable complete scan indexes both selected captured-value sets
@@ -386,5 +387,6 @@ Log Analysis MAY expose a default-off batched comparison tool under a complete e
 #### Scenario: Unobserved group or incomplete scan
 - **WHEN** no matching record belongs to a selected group
 - **THEN** that group is explicitly unobserved, distinct from a confirmed empty snapshot
+- **AND** comparison completeness is false and all difference fields are unavailable, even if the physical regex scan is complete; feedback asks for source verification or original-tool fallback
 - **WHEN** processing or value limits prevent a complete comparison
 - **THEN** difference fields are unavailable and limits remain visible; original evidence tools remain available
