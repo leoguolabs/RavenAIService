@@ -306,3 +306,5 @@ Optional isolated evidence verification emits `system_notice` with `kind=evidenc
 Optional evidence-progress checkpoints travel as SDK PostToolUse.additionalContext; they do not create fabricated answer deltas, completion events or tool evidence. Existing native tool results, original finalization/error/cancel contracts and the configured turn limit remain unchanged.
 
 Named-attachment component observations remain internal verification evidence. They do not fabricate tool steps, observed frames/events, answer deltas or completion events. The authoritative final result remains the atomically edited public answer.
+
+Suppressing unused SDK nonessential traffic does not suppress Raven application title events or primary tool/thinking/answer traces. Only unused SDK session metadata/background traffic is targeted; normal completion, error and cancellation contracts remain.

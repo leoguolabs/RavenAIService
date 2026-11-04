@@ -634,6 +634,14 @@ def build_options(
         },
     }
 
+    if (
+        getattr(settings, "agent_sdk_disable_nonessential_traffic", False) is True
+        and profile.api_protocol != "openai_responses"
+    ):
+        # SDK-generated session titles are unused by Raven's own title service.
+        # Set per-run only; preserve the primary prompt/model/tools/turn budget.
+        options_kwargs["env"]["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+
     if profile.api_protocol == "openai_responses":
         options_kwargs["env"].update({
             "RAVEN_API_PROTOCOL": "openai_responses",

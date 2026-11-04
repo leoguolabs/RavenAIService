@@ -160,6 +160,8 @@ class Settings(BaseSettings):
     code_repo_git_token: Optional[str] = (
         None  # 全局 Git Token（私有仓库认证，可被 project_repo 单独 token 覆盖）
     )
+    # Local experiment: omit unused SDK session titles/nonessential traffic.
+    agent_sdk_disable_nonessential_traffic: bool = False
     agent_related_repo_max_count: int = 4
     agent_repo_clone_timeout_seconds: int = 300
     # Opt-in until paired latency and evidence-equivalence validation passes.

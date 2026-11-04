@@ -169,6 +169,34 @@ class TestBuildOptions:
         assert opts.env["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
         assert opts.env["ANTHROPIC_API_KEY"] == "sk-test"
 
+    def test_nonessential_flag_only_changes_per_run_sdk_environment(self, base_settings, monkeypatch):
+        import copy
+        import os
+        base_settings.anthropic_provider = "yinhe"
+        base_settings.anthropic_model = "yinhe-thinking"
+        base_settings.anthropic_small_fast_model = "yinhe-thinking"
+        base_settings.anthropic_max_turns = 150
+        base_settings.agent_sdk_disable_nonessential_traffic = False
+        monkeypatch.setenv("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "0")
+        original = self._build(base_settings)
+        base_settings.agent_sdk_disable_nonessential_traffic = True
+        candidate = self._build(base_settings)
+        before = copy.deepcopy(original.__dict__)
+        after = copy.deepcopy(candidate.__dict__)
+        assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" not in before["env"]
+        assert after["env"].pop("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC") == "1"
+        assert before == after
+        assert candidate.max_turns == 150 and candidate.model == "yinhe-thinking"
+        assert os.environ["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "0"
+
+    def test_nonessential_sdk_flag_does_not_change_openai_protocol(self, base_settings):
+        base_settings.anthropic_provider = "openai"
+        base_settings.anthropic_model = "gpt-6.1-terra"
+        base_settings.agent_sdk_disable_nonessential_traffic = True
+        opts = self._build(base_settings)
+        assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" not in opts.env
+        assert opts.env["RAVEN_API_PROTOCOL"] == "openai_responses"
+
     def test_openai_protocol_and_auxiliary_models_follow_main(self, base_settings):
         base_settings.anthropic_provider = "openai"
         base_settings.anthropic_model = "gpt-6.1-terra"

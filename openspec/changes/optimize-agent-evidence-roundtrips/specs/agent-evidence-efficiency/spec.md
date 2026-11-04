@@ -487,3 +487,11 @@ An isolated verifier MAY inspect uniquely named contained native text logs witho
 - **WHEN** an isolated packet can uniquely resolve an explicitly named contained native text attachment
 - **THEN** it may expose bounded literal source-label/thread physical counts and first/last rows selected through draft identifier overlap, including source groups absent from cited windows
 - **AND** shared read/time/snapshot budgets, a separate bounded payload, exact identity validation and explicit omitted/ambiguous coverage remain; record counts are not decoded frames/events or causal conclusions
+
+### Requirement: Optional suppression of unused SDK background traffic
+A default-off native-SDK execution flag MAY disable SDK nonessential traffic including unused coding-session title generation. It SHALL preserve Raven application titles, original primary model/prompt/tools/required Skills/output settings/turn budget, and SHALL NOT mutate process-global environment or non-SDK provider routing.
+
+#### Scenario: SDK titles are not used by Raven
+- **WHEN** the independent flag is enabled for a native SDK run
+- **THEN** only its per-run environment sets CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+- **AND** actual pinned-SDK protocol verification must show the unused auxiliary request is omitted while normalized primary input and replayed result remain unchanged, with no implied real latency or semantic acceptance from synthetic testing

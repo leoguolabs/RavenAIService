@@ -361,3 +361,5 @@ The private timing harness keeps `observed_model_response_ids` as primary-only f
 Evidence-progress notices count distinct observed PostToolUse callbacks, not model turns or HTTP requests. At most two notices occur; they request no separate model call. Timing acceptance must still count all primary/verifier work and retain max-turn failures.
 
 Named-log component scans are included in packet/verification duration and byte counts; the optional scan adds no model call. Omitted groups/files and unavailable-budget metadata do not imply semantic coverage or record absence.
+
+SDK auxiliary session-title requests are not persisted as normal primary/verifier assistant transcript responses. Count HTTP calls by request kind when auditing this experiment; do not equate transcript response IDs with all requests. Synthetic protocol replay observed one primary plus one concurrent SDK-title request versus one primary only, with equal normalized primary inputs. Its injected delay is not a real latency result.
