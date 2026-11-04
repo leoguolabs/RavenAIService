@@ -21,7 +21,7 @@ PUBLIC_FIELDS = (
     "proposed_fixes",
 )
 MAX_REFS = 64
-MAX_FILES = 8
+MAX_FILES = 16  # Citation files plus bounded typed-relation includes.
 MAX_ENTRIES = 256
 MAX_BYTES = 32 * 1024 * 1024
 MAX_PACKET = 32768
@@ -178,49 +178,60 @@ def build(workspace, raw_draft):
     omitted = []
     seeds = []
     budget = {"started": started, "bytes": 0, "identities": {}}
+
+    def load(relative):
+        deadline()
+        path = safe_file(root, relative)
+        if relative not in files:
+            if len(files) >= MAX_FILES:
+                raise ValueError("file bound")
+            before = producer.identity(path)
+            if not relative.startswith("logs/") and before[2] > 2 * 1024 * 1024:
+                raise ValueError("source byte bound")
+            if budget["bytes"] + before[2] > MAX_BYTES:
+                raise ValueError("read byte bound")
+            if (
+                str(path) in budget["identities"]
+                and budget["identities"][str(path)] != before
+            ):
+                raise PacketChanged("changed between packet reads")
+            raw = producer.read_regular(path)
+            if len(raw) != before[2] or producer.identity(path) != before:
+                raise PacketChanged("changed file")
+            producer.track(budget, path, before, len(raw))
+            binary = b"\0" in raw
+            try:
+                lines = [] if binary else producer.lf_lines(raw.decode("utf-8"))
+            except UnicodeDecodeError:
+                binary = True
+                lines = []
+            files[relative] = {
+                "raw": raw,
+                "path": path,
+                "identity": before,
+                "lines": lines,
+                "source_snapshot": ((*before, hashlib.sha256(raw).digest()), raw)
+                if not relative.startswith("logs/")
+                else None,
+                "metadata": {
+                    "path": relative,
+                    "bytes": len(raw),
+                    "sha256": hashlib.sha256(raw).hexdigest(),
+                    "binary_or_non_utf8": binary,
+                    "total_lf_lines": None if binary else len(lines),
+                    "semantic_whole_file_review": False,
+                },
+            }
+        snapshot = files[relative]
+        if producer.identity(path) != snapshot["identity"]:
+            raise PacketChanged("changed cached file")
+        return snapshot
+
     for relative, number in refs:
         deadline()
         try:
             path = safe_file(root, relative)
-            if relative not in files:
-                if len(files) >= MAX_FILES:
-                    raise ValueError("file bound")
-                before = producer.identity(path)
-                if not relative.startswith("logs/") and before[2] > 2 * 1024 * 1024:
-                    raise ValueError("source byte bound")
-                if budget["bytes"] + before[2] > MAX_BYTES:
-                    raise ValueError("read byte bound")
-                if (
-                    str(path) in budget["identities"]
-                    and budget["identities"][str(path)] != before
-                ):
-                    raise PacketChanged("changed between packet reads")
-                raw = producer.read_regular(path)
-                if len(raw) != before[2] or producer.identity(path) != before:
-                    raise PacketChanged("changed file")
-                producer.track(budget, path, before, len(raw))
-                binary = b"\0" in raw
-                try:
-                    lines = [] if binary else producer.lf_lines(raw.decode("utf-8"))
-                except UnicodeDecodeError:
-                    binary = True
-                    lines = []
-                files[relative] = {
-                    "path": path,
-                    "identity": before,
-                    "lines": lines,
-                    "source_snapshot": ((*before, hashlib.sha256(raw).digest()), raw)
-                    if not relative.startswith("logs/")
-                    else None,
-                    "metadata": {
-                        "path": relative,
-                        "bytes": len(raw),
-                        "sha256": hashlib.sha256(raw).hexdigest(),
-                        "binary_or_non_utf8": binary,
-                        "total_lf_lines": None if binary else len(lines),
-                        "semantic_whole_file_review": False,
-                    },
-                }
+            load(relative)
             snapshot = files[relative]
             lines = snapshot["lines"]
             if snapshot["metadata"]["binary_or_non_utf8"]:
@@ -289,6 +300,29 @@ def build(workspace, raw_draft):
                 }
             )
     try:
+        from app.agents.source_field_relations import SourceFieldRelations
+
+        def source_reader(path):
+            snapshot = load(Path(path).relative_to(root).as_posix())
+            return snapshot["source_snapshot"]
+
+        def log_reader(path):
+            return load(Path(path).relative_to(root).as_posix())["raw"]
+
+        scanner = SourceFieldRelations(
+            root, source_reader=source_reader, log_reader=log_reader
+        )
+        scanner.started = started
+        relations = scanner.collect(seeds) if seeds else None
+        relations_error = None
+    except PacketChanged:
+        raise
+    except (ImportError, OSError, ValueError) as exc:
+        if "mutation" in str(exc):
+            raise PacketChanged("changed during source relations") from exc
+        relations = None
+        relations_error = type(exc).__name__ + ": " + str(exc)
+    try:
         observations = producer.collect(root, seeds, budget=budget) if seeds else None
         producer_error = None
     except (OSError, ValueError) as exc:
@@ -344,6 +378,8 @@ def build(workspace, raw_draft):
         "resolved_short_citations": [
             {"reference": "log:" + str(n), "path": p, "line": n} for p, n in short_refs
         ],
+        "source_field_relations": relations,
+        "source_relations_unavailable_reason": relations_error,
         "producer_observations": observations,
         "producer_unavailable_reason": producer_error,
     }
@@ -383,6 +419,9 @@ def build(workspace, raw_draft):
     if size() > MAX_PACKET and packet["producer_observations"] is not None:
         packet["producer_observations"] = None
         packet["producer_unavailable_reason"] = "packet budget"
+    if size() > MAX_PACKET and packet["source_field_relations"] is not None:
+        packet["source_field_relations"] = None
+        packet["source_relations_unavailable_reason"] = "packet budget"
     if size() > MAX_PACKET:
         raise ValueError("packet metadata/draft bound")
     for w in priority:

@@ -27,10 +27,12 @@ class SourceFieldRelations:
     Unsupported syntax, aliases or format bindings produce no extra evidence.
     """
 
-    def __init__(self, root):
+    def __init__(self, root, *, source_reader=None, log_reader=None):
         from tree_sitter import Language, Parser
         import tree_sitter_c
 
+        self.source_reader = source_reader or source_snapshot
+        self.log_reader = log_reader
         self.root = Path(root).resolve()
         self.repo = (self.root / "repo").resolve()
         self.repo.relative_to(self.root)
@@ -75,7 +77,7 @@ class SourceFieldRelations:
         path.relative_to(self.repo)
         self.limit()
         if path not in self.cache:
-            (identity, raw) = source_snapshot(path)
+            (identity, raw) = self.source_reader(path)
             if self.bytes + len(raw) > MAX_BYTES:
                 raise ValueError("source byte bound")
             raw.decode("utf-8")
@@ -564,8 +566,11 @@ class SourceFieldRelations:
                 or self.logbytes + identity[2] > 32 * 1024 * 1024
             ):
                 raise ValueError("log bound")
-            with lp.open("rb") as stream:
-                lograw = stream.read(16 * 1024 * 1024 + 1)
+            if self.log_reader is None:
+                with lp.open("rb") as stream:
+                    lograw = stream.read(16 * 1024 * 1024 + 1)
+            else:
+                lograw = self.log_reader(lp)
             if len(lograw) != identity[2] or source_identity(lp) != identity:
                 raise ValueError("log mutation")
             self.logbytes += len(lograw)
@@ -638,8 +643,11 @@ class SourceFieldRelations:
                 )
             )
         for lp, (identity, digest, _) in self.logs.items():
-            with lp.open("rb") as stream:
-                raw = stream.read(16 * 1024 * 1024 + 1)
+            if self.log_reader is None:
+                with lp.open("rb") as stream:
+                    raw = stream.read(16 * 1024 * 1024 + 1)
+            else:
+                raw = self.log_reader(lp)
             if (
                 source_identity(lp) != identity
                 or len(raw) != identity[2]
@@ -647,7 +655,7 @@ class SourceFieldRelations:
             ):
                 raise ValueError("log mutation")
         for p, identity in self.snapshots.items():
-            if source_snapshot(p)[0] != identity:
+            if self.source_reader(p)[0] != identity:
                 raise ValueError("source mutation")
         payload = {
             "source_relations": out,

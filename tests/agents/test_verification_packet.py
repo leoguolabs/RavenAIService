@@ -240,3 +240,85 @@ def test_explicit_paths_are_never_misread_as_short_references(tmp_path):
         not packet["resolved_short_citations"]
         and not packet["unresolved_short_citations"]
     )
+
+
+def typed_fixture(root):
+    (root / "logs").mkdir()
+    (root / "repo").mkdir()
+    (root / "repo/state.h").write_text(
+        "typedef struct { int mode; } MSG, *PMSG;\ntypedef enum { BAD=17, GOOD, UNKNOWN } Phase;\n"
+    )
+    (root / "repo/worker.c").write_text(
+        '#include "state.h"\nvoid log_event(MSG *r) { log_info("mode=%d", r->mode); }\nvoid compare(PMSG r) { if (r->mode == BAD) return; }\n'
+    )
+    (root / "logs/input.log").write_text(
+        "2026-10-01T00:00:00.000,Tick=1 INFO Tid:2 worker.c log_event 2 mode=18\n"
+    )
+    return {"status": "ok", "answer": "input.log (log:1)", "summary": "Mode observed"}
+
+
+def test_verified_short_citation_links_typed_source_with_shared_read_cache(
+    tmp_path, monkeypatch
+):
+    from collections import Counter
+
+    draft = typed_fixture(tmp_path)
+    reads = Counter()
+    read = p.producer.read_regular
+
+    def counted(path):
+        reads[path.name] += 1
+        return read(path)
+
+    monkeypatch.setattr(p.producer, "read_regular", counted)
+    monkeypatch.setattr(p.producer, "collect", lambda *a, **kw: None)
+    packet = p.build(tmp_path, draft)
+    relations = packet["source_field_relations"]["source_relations"]
+    assert len(relations) == 1 and relations[0]["field"] == "mode"
+    assert "BAD=17" in json.dumps(relations[0]["enum_body"])
+    assert reads == {"input.log": 1, "worker.c": 1, "state.h": 1}
+    assert packet["evidence_limits"]["source_runtime_identity"] == "not_established"
+
+
+def test_typed_relations_honor_packet_shared_byte_budget(tmp_path, monkeypatch):
+    draft = typed_fixture(tmp_path)
+    monkeypatch.setattr(p, "MAX_BYTES", (tmp_path / "logs/input.log").stat().st_size)
+    packet = p.build(tmp_path, draft)
+    assert packet["source_field_relations"] is None
+    assert "byte bound" in packet["source_relations_unavailable_reason"]
+
+
+def test_source_mutation_during_typed_relation_never_passes(tmp_path, monkeypatch):
+    from app.agents.source_field_relations import SourceFieldRelations
+
+    draft = typed_fixture(tmp_path)
+    original = SourceFieldRelations.collect
+
+    def changed(self, rows):
+        result = original(self, rows)
+        with (tmp_path / "repo/worker.c").open("a") as stream:
+            stream.write("// concurrent change\n")
+        return result
+
+    monkeypatch.setattr(SourceFieldRelations, "collect", changed)
+    with pytest.raises(p.PacketChanged):
+        p.build(tmp_path, draft)
+
+
+def test_missing_optional_relation_parser_keeps_native_windows(tmp_path, monkeypatch):
+    import sys
+
+    draft = typed_fixture(tmp_path)
+    monkeypatch.setitem(sys.modules, "tree_sitter", None)
+    packet = p.build(tmp_path, draft)
+    assert packet["cited_windows"] and packet["source_field_relations"] is None
+    assert "ModuleNotFoundError" in packet["source_relations_unavailable_reason"]
+
+
+def test_typed_relation_extra_files_keep_fixed_snapshot_bound(tmp_path, monkeypatch):
+    draft = typed_fixture(tmp_path)
+    monkeypatch.setattr(p, "MAX_FILES", 2)
+    packet = p.build(tmp_path, draft)
+    assert len(packet["cited_files"]) == 2
+    assert packet["source_field_relations"] is None
+    assert "file bound" in packet["source_relations_unavailable_reason"]
