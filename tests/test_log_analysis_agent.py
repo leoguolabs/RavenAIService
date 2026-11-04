@@ -1173,4 +1173,3 @@ async def test_compare_server_flag_requires_complete_snapshot(
         prompt = options.call_args.kwargs["system_prompt"]
         assert prompt.rfind("确定性分组比较") > prompt.rfind("证据收集执行策略")
         assert "优先调用一次" in prompt and "工具报错" in prompt
-
