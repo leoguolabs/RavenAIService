@@ -47,6 +47,10 @@
 
 - [ ] 2.31 Under the user-authorized current local yinhe-thinking model, screen a revised default-off v4 prompt that traces reported state to its producer/freshness before inferring terminal success, restart or recovery, and checks relevant failure branches before specific attribution. Keep prior Flash cohorts separate. The first yinhe v4 pair completed at 65.90→59.49s, 19→22 response IDs and 19→21 tools; reject its quality because cached version reporting was misread as flash completion. Preserve the original pair and use a fresh image/trial for the generic revision, without case-specific answers or paths. Continue to full 20-pair plus 10-distinct-log acceptance only after screening. Stop Goal at local 09:00 as requested; do not deploy to nr-test.
 
+- [x] 2.32 Add an independent default-off exact-ripgrep endpoint replay for bounded task-log batches; preserve every original page/continuation and fall back on source changes, limits and scan failures. Share source/time/output budgets and verify cancellation reaps the child. The rejected yinhe v4r2 case22 was 237.11→271.08s with missing cleanup evidence and unsupported actor exclusions; retain it. Three exact retained queries replayed in isolated network-disabled Docker with identical original pages and 1/4/1 added endpoint rows. This is mechanism evidence only.
+
+- [ ] 2.33 Verify the regex endpoint supplement reaches the next request through the pinned SDK, then run new frozen yinhe-thinking paired quality screens. Only proceed to the full 20-pair/10-distinct-log cohort if material findings and confidence are preserved. Keep old failures, default-off flags, nr-test read-only and local 09:00 pause.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.

@@ -170,6 +170,7 @@ class Settings(BaseSettings):
     agent_evidence_batch_plan_v3_enabled: bool = False
     # Separate local prompt experiment: front-load independent checks per search turn.
     agent_evidence_batch_plan_v4_enabled: bool = False
+    agent_evidence_regex_endpoints_enabled: bool = False
     # Independently opt in: added context/review failed the combined trial.
     agent_evidence_source_context_enabled: bool = False
     agent_evidence_final_review_enabled: bool = False

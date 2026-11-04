@@ -137,14 +137,10 @@ def _search_context(root: Path, matches: list[dict], radius: int) -> dict:
             "context_matches_not_expanded": max(0, len(matches) - MAX_CONTEXT_MATCHES)}
 
 
-async def search_page(root: Path, request: dict) -> dict:
-    pattern = request.get("pattern")
-    if not isinstance(pattern, str) or not pattern or len(pattern) > 4096:
-        raise ValueError("pattern must contain 1..4096 characters")
+def search_arguments(root: Path, request: dict) -> list[str]:
+    """One regex engine/options contract for pages and optional endpoint replay."""
+    pattern = request["pattern"]
     path = _path(root, request.get("path", "."))
-    offset = _integer(request.get("offset", 0), "offset", 0, 10**9)
-    limit = _integer(request.get("limit", 20), "limit", 1, MAX_SEARCH_MATCHES)
-    context_lines = _integer(request.get("context_lines", 0), "context_lines", 0, 40)
     executable = shutil.which("rg")
     if not executable:
         raise ValueError("ripgrep is unavailable; use native search tools")
@@ -160,6 +156,18 @@ async def search_page(root: Path, request: dict) -> dict:
             raise ValueError("glob must be a string of at most 512 characters")
         args.extend(["--glob", glob])
     args.extend(["--regexp", pattern, "--", path.relative_to(root).as_posix()])
+    return args
+
+
+async def search_page(root: Path, request: dict) -> dict:
+    pattern = request.get("pattern")
+    if not isinstance(pattern, str) or not pattern or len(pattern) > 4096:
+        raise ValueError("pattern must contain 1..4096 characters")
+    path = _path(root, request.get("path", "."))
+    offset = _integer(request.get("offset", 0), "offset", 0, 10**9)
+    limit = _integer(request.get("limit", 20), "limit", 1, MAX_SEARCH_MATCHES)
+    context_lines = _integer(request.get("context_lines", 0), "context_lines", 0, 40)
+    args = search_arguments(root, request)
     process = await asyncio.create_subprocess_exec(
         *args, cwd=root, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         limit=2 * 1024 * 1024,
@@ -235,18 +243,23 @@ async def search_page(root: Path, request: dict) -> dict:
     return result
 
 
-async def run_batch(workspace: str, requests: list, *, search: bool) -> dict:
+async def run_batch(workspace: str, requests: list, *, search: bool, regex_endpoints: bool = False) -> dict:
     if not isinstance(requests, list) or not 1 <= len(requests) <= MAX_BATCH:
         return {"error": f"requests must contain 1..{MAX_BATCH} entries"}
     root = Path(workspace).resolve(strict=True)
     semaphore = asyncio.Semaphore(4)
+    endpoint_scan = None
+    if search and regex_endpoints:
+        from app.agents.regex_endpoints import RegexEndpointBatch
+        endpoint_scan = RegexEndpointBatch(root)
 
     async def one(index: int, request: Any) -> dict:
         async with semaphore:
             try:
                 if not isinstance(request, dict):
                     raise ValueError("request must be an object")
-                result = (await search_page(root, request) if search else
+                result = (await endpoint_scan.search(request) if endpoint_scan else
+                          await search_page(root, request) if search else
                           await asyncio.to_thread(read_page, root, request))
                 return {"index": index, **result}
             except (OSError, ValueError, asyncio.TimeoutError) as exc:
@@ -298,7 +311,7 @@ def encode_evidence(payload: dict) -> str:
     return json.dumps(encoded, ensure_ascii=False, separators=(",", ":"))
 
 
-def get_evidence_mcp_server(workspace: str, *, statistics: bool = False):
+def get_evidence_mcp_server(workspace: str, *, statistics: bool = False, regex_endpoints: bool = False):
     from claude_agent_sdk import create_sdk_mcp_server, tool
 
     def schema(properties: dict, required: list[str]) -> dict:
@@ -309,7 +322,7 @@ def get_evidence_mcp_server(workspace: str, *, statistics: bool = False):
         }}, "required": ["requests"], "additionalProperties": False}
 
     async def invoke(args, search):
-        payload = await run_batch(workspace, args.get("requests"), search=search)
+        payload = await run_batch(workspace, args.get("requests"), search=search, regex_endpoints=regex_endpoints)
         return {"content": [{"type": "text", "text": encode_evidence(payload)}]}
 
     @tool("search_evidence",
@@ -320,7 +333,9 @@ def get_evidence_mcp_server(workspace: str, *, statistics: bool = False):
           "Group known independent questions in one call. Set context_lines (0-40 lines each side) to retrieve "
           "nearby evidence in this same call: first 3 matches per request, overlapping ranges merged, total 4000 "
           "context characters per request. Unexpanded matches and range continuations are explicit. "
-          "Use read_evidence only for missing decisive context; range_complete never means whole-file coverage.",
+          "Use read_evidence only for missing decisive context; range_complete never means whole-file coverage."
+          + (" Optional regex_endpoints contains verified omitted first/last matching LF rows and counts; "
+             "these are file-order samples, not a complete event history or causal proof." if regex_endpoints else ""),
           schema({"pattern": {"type": "string"}, "path": {"type": "string"},
                   "glob": {"type": "string"}, "literal": {"type": "boolean"},
                   "ignore_case": {"type": "boolean"}, "offset": {"type": "integer", "minimum": 0},

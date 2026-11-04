@@ -1138,7 +1138,10 @@ class LogAnalysisAgent:
             evidence_snapshot = await prepare_snapshot(task_data)
             if evidence_snapshot is not None:
                 statistics = settings.agent_evidence_statistics_enabled is True
-                mcp_servers["evidence"] = get_evidence_mcp_server(ctx.temp_dir, statistics=statistics)
+                mcp_servers["evidence"] = get_evidence_mcp_server(
+                    ctx.temp_dir, statistics=statistics,
+                    **({"regex_endpoints": True} if settings.agent_evidence_regex_endpoints_enabled is True else {}),
+                )
                 allowed_tools.extend(TOOL_NAMES)
                 if statistics:
                     from app.agents.evidence_statistics import TOOL_NAME

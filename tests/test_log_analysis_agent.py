@@ -1114,3 +1114,29 @@ class TestCodeFixSignal:
 
         assert result["requires_code_fix"] is False
         assert result["proposed_fixes"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('efficiency,snapshot_available,flag,expected', [
+    (True, True, True, True), (True, True, False, False),
+    (True, False, True, False), (False, True, True, False),
+])
+async def test_regex_endpoint_server_flag_requires_complete_snapshot(
+    workspace_ctx, efficiency, snapshot_available, flag, expected,
+):
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+    sdk = MagicMock()
+    sdk.query = _fake_query_ok
+    snapshot = {'task': {}, 'project_catalog': {'projects': [], 'count': 0}}
+    with _patch_build_options(), _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch.dict('sys.modules', {'claude_agent_sdk': sdk}), \
+         patch('app.config.settings', MagicMock(
+             anthropic_provider='yinhe', anthropic_model='test-model', anthropic_max_turns=150,
+             anthropic_request_timeout_seconds=600, agent_evidence_efficiency_enabled=efficiency,
+             agent_evidence_regex_endpoints_enabled=flag,
+         )), \
+         patch('app.agents.evidence_policy.prepare_snapshot', AsyncMock(return_value=snapshot if snapshot_available else None)), \
+         patch('app.agents.evidence_tools.get_evidence_mcp_server', return_value={}) as server:
+        await LogAnalysisAgent().run(workspace_ctx)
+    actual = server.call_args.kwargs.get('regex_endpoints', False) if server.called else False
+    assert actual is expected

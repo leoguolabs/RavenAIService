@@ -362,3 +362,15 @@ The session-list API SHALL read only run identity, status and timestamp metadata
 #### Scenario: Visible sessions have large historical traces
 - **WHEN** the workbench requests its session list while an Agent is running
 - **THEN** the same latest-run metadata and owner-scoped active state are returned without loading historical trace or answer payloads
+
+### Requirement: Independently gated exact regex endpoint replay
+Log Analysis MAY enable an independent default-off replay for supported task-log regex searches. It SHALL use the original ripgrep argument builder, verify the original match page and continuation, and validate source identities/content before appending omitted first/last LF matches. A batch SHALL bound source files, directory entries, unique source bytes, elapsed scan time and total added output. Supplement failures SHALL retain the original page; cancellation SHALL propagate and reap scan subprocesses.
+
+#### Scenario: Later matching state is outside the page
+- **WHEN** the complete bounded regex replay agrees with the original page and sources remain stable
+- **THEN** missing first/last matches may be appended with source hashes, exact physical counts and explicit file-order sampling limits, without changing original evidence or paging
+
+#### Scenario: Replay fails or the Agent is cancelled
+- **WHEN** source, encoding, scope, time or output limits prevent a verified supplement
+- **THEN** the original page remains available, without claiming complete event history or causal certainty
+- **AND** cancellation propagates and terminates/reaps any active replay process
