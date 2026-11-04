@@ -9,26 +9,29 @@ _REVIEW_RESERVE = 5
 
 _REVIEW = {
     "en": (
-        "Review the final result you just drafted against the evidence already collected. "
-        "Preserve supported findings and citations. Check that every causal, completion, and exclusion claim "
-        "is justified; distinguish observations from hypotheses and different times/objects from one operation. "
-        "Retain relevant independent blockers and unresolved anomalies, including counterevidence. "
-        "Missing messages, default values, possible source branches, or a computed hash alone do not establish "
-        "a root cause or successful completion. Keep the certainty of the answer, summary, hypotheses, and "
-        "recommendations consistent. Do not promise recovery while an independent blocker remains. "
-        "Only investigate an actual evidence gap, batching independent checks; do not restart the investigation. "
-        "If evidence is unavailable, state the uncertainty where the claim appears. "
-        "Return the complete final result in the original fenced JSON schema, without review commentary. "
-        "This is a single review; no further review is required."
+        "Use your complete final JSON just drafted as the editing base. Perform one consistency edit "
+        "using only evidence already collected; do not restart analysis or search again. "
+        "Compare every example, timeline, table row, summary, hypothesis and recommendation with the "
+        "definitions, enum meanings and state conditions you cited. Apply each field's meaning consistently "
+        "to its examples; different fields or objects are not interchangeable. Correct contradictions in "
+        "every affected place, including examples that conflict with a correct definition elsewhere. "
+        "An attempted operation, debug print or possible source branch does not by itself prove successful "
+        "execution, durable output or remote receipt. Match the certainty of each claim to its evidence. "
+        "Apart from correcting contradictions or unsupported certainty, preserve every supported independent "
+        "finding, record, citation, coverage count, blocker and unresolved anomaly. Do not drop evidence "
+        "to make the answer consistent, invent missing facts, or turn a partial sample into an exhaustive claim. "
+        "If the evidence cannot resolve a statement, qualify it where it appears. "
+        "Return the complete original JSON schema in a fenced block, without editing commentary. "
+        "This is one edit only; no further review is required."
     ),
     "zh": (
-        "请依据本轮已经收集的证据，复核刚才拟定的最终结果，保留有依据的结论和引用。"
-        "逐项检查原因、完成状态和排除判断是否有证据，区分观察与假设、不同时间或对象与同一次操作。"
-        "保留与问题有关的独立阻塞条件、尚未解释的异常和反证。"
-        "消息缺失、默认值、源码可能分支或仅计算出哈希值，都不能单独证明根因或执行成功。"
-        "正文、摘要、根因假设和建议的确定程度必须一致；仍有独立阻塞条件时不要承诺某一步即可恢复。"
-        "只针对实际证据缺口补查，独立检查合并执行，不重新开始整套调查；证据无法取得时就在相关判断处说明不确定性。"
-        "返回原格式的完整 JSON 围栏结果，保留所有要求的字段，不添加复核过程说明。这里只复核一次，无须继续复核。"
+        "以刚才完整的最终JSON为底稿，只依据已经收集的证据，做一次前后一致性校对，不重做分析或重新检索。"
+        "把每个实例、时间线、表格行、摘要、假设和建议，与文中引用的定义、枚举含义、状态条件逐项对照。"
+        "同一字段的含义应一致地用于所有实例，不同字段或对象不可混用；尤其检查定义写对、后面实例却用了相反含义的情况，修正所有受影响位置。"
+        "操作尝试、调试打印或源码可能分支，本身不证明执行成功、持久化完成或远端收到；每项判断的确定程度须与已有证据相符。"
+        "除纠正矛盾和无依据的确定判断外，保留所有有依据的独立发现、记录、引用、覆盖数量、阻塞条件和未决异常。"
+        "不能为消除矛盾而删除证据、补造缺失事实，或把局部样本说成完整范围；证据不能判定时就在该判断处说明不确定性。"
+        "按原有全部字段返回完整JSON围栏结果，不输出校对过程。只校对这一次，无须继续复核。"
     ),
 }
 

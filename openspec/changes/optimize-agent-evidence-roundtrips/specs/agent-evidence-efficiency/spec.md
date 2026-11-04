@@ -356,6 +356,11 @@ An enabled candidate with the separate final-review switch enabled MAY request o
 - **WHEN** the Agent first attempts to finish and observed parent responses leave review headroom
 - **THEN** it receives one evidence and uncertainty consistency check and the service parses the final terminal result
 
+#### Scenario: A definition and a worked example disagree
+- **WHEN** the optional once-only review runs after a draft cites a definition but applies a conflicting meaning in an example, table, summary or recommendation
+- **THEN** its instruction confines the edit to already collected evidence, checks all affected assertions and preserves supported independent findings, citations, coverage counts and unresolved conditions
+- **AND** unsupported execution/persistence/receipt certainty is qualified without inventing missing facts or deleting evidence; the original schema and turn budget remain unchanged
+
 #### Scenario: Repeated stop or near turn cap
 - **WHEN** review has already been requested, stop_hook_active is true, or observed responses are near the unchanged turn cap
 - **THEN** the hook does not request another review or force early termination
