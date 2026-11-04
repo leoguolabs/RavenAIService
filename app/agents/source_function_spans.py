@@ -5,6 +5,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
+from typing import Generic, TypeVar
 
 MAX_PARSE_BYTES = 2 * 1024 * 1024
 
@@ -39,22 +40,31 @@ class FunctionSpan:
     declaration_end_line: int
 
 
-class CFunctionSpans:
+@dataclass(frozen=True)
+class EnumSpan:
+    start_line: int
+    end_line: int
+
+
+_Span = TypeVar("_Span", FunctionSpan, EnumSpan)
+
+
+class _CSpans(Generic[_Span]):
     """Per-run, content-validated ranges; missing parsers retain native windows.
 
     No source text or syntax tree survives parsing. A syntactically complete
-    function does not establish a compiled branch or the deployed revision.
+    syntax range does not establish a compiled branch or the deployed revision.
     Callers must validate workspace containment before passing a path here.
     """
 
     def __init__(self):
-        self.cache: OrderedDict[Path, tuple[tuple, tuple[FunctionSpan, ...]]] = OrderedDict()
+        self.cache: OrderedDict[Path, tuple[tuple, tuple[_Span, ...]]] = OrderedDict()
         self._parser = None
         self._unavailable = False
 
-    def _parse(self, raw: bytes) -> tuple[FunctionSpan, ...]:
+    def _tree(self, raw: bytes):
         if self._unavailable:
-            return ()
+            return None
         if self._parser is None:
             try:
                 from tree_sitter import Language, Parser
@@ -63,33 +73,13 @@ class CFunctionSpans:
                 self._parser = Parser(Language(tree_sitter_c.language()))
             except (ImportError, TypeError, ValueError):
                 self._unavailable = True
-                return ()
-        tree = self._parser.parse(raw)
-        if tree is None:
-            return ()
-        spans = []
-        pending = [tree.root_node]
-        while pending:
-            node = pending.pop()
-            if node.type != "function_definition":
-                pending.extend(reversed(node.named_children))
-                continue
-            if node.has_error:
-                continue
-            body = node.child_by_field_name("body")
-            name = node.child_by_field_name("declarator")
-            while name is not None and name.type != "identifier":
-                name = name.child_by_field_name("declarator")
-            if body is None or body.type != "compound_statement" or name is None:
-                continue
-            spans.append(FunctionSpan(
-                raw[name.start_byte:name.end_byte].decode("utf-8"),
-                node.start_point.row + 1, node.end_point.row + 1,
-                body.start_point.row + 1,
-            ))
-        return tuple(spans)
+                return None
+        return self._parser.parse(raw)
 
-    def get(self, path: Path, snapshot: tuple[tuple, bytes] | None = None) -> tuple[FunctionSpan, ...]:
+    def _parse(self, raw: bytes) -> tuple[_Span, ...]:
+        raise NotImplementedError
+
+    def get(self, path: Path, snapshot: tuple[tuple, bytes] | None = None) -> tuple[_Span, ...]:
         if path.suffix.lower() not in (".c", ".h"):
             return ()
         try:
@@ -116,7 +106,57 @@ class CFunctionSpans:
         return spans
 
     def containing(self, path: Path, start: int, end: int | None = None,
-                   snapshot: tuple[tuple, bytes] | None = None) -> FunctionSpan | None:
+                   snapshot: tuple[tuple, bytes] | None = None) -> _Span | None:
         end = start if end is None else end
         return next((span for span in self.get(path, snapshot)
                      if span.start_line <= start <= end <= span.end_line), None)
+
+
+class CFunctionSpans(_CSpans[FunctionSpan]):
+    """Complete function ranges, excluding malformed definitions."""
+
+    def _parse(self, raw: bytes) -> tuple[FunctionSpan, ...]:
+        tree = self._tree(raw)
+        if tree is None:
+            return ()
+        spans = []
+        pending = [tree.root_node]
+        while pending:
+            node = pending.pop()
+            if node.type != "function_definition":
+                pending.extend(reversed(node.named_children))
+                continue
+            if node.has_error:
+                continue
+            body = node.child_by_field_name("body")
+            name = node.child_by_field_name("declarator")
+            while name is not None and name.type != "identifier":
+                name = name.child_by_field_name("declarator")
+            if body is None or body.type != "compound_statement" or name is None:
+                continue
+            spans.append(FunctionSpan(
+                raw[name.start_byte:name.end_byte].decode("utf-8"),
+                node.start_point.row + 1, node.end_point.row + 1,
+                body.start_point.row + 1,
+            ))
+        return tuple(spans)
+
+
+class CEnumSpans(_CSpans[EnumSpan]):
+    """Enum bodies only; no evaluation of implicit values or preprocessor state."""
+
+    def _parse(self, raw: bytes) -> tuple[EnumSpan, ...]:
+        tree = self._tree(raw)
+        if tree is None:
+            return ()
+        spans = []
+        pending = [tree.root_node]
+        while pending:
+            node = pending.pop()
+            if node.type != "enum_specifier":
+                pending.extend(reversed(node.named_children))
+                continue
+            body = node.child_by_field_name("body")
+            if not node.has_error and body is not None and body.type == "enumerator_list":
+                spans.append(EnumSpan(node.start_point.row + 1, node.end_point.row + 1))
+        return tuple(spans)

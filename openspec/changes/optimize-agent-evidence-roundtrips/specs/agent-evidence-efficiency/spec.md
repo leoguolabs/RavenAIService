@@ -283,6 +283,12 @@ When efficiency and the separate source-context switch are enabled, successful n
 - **WHEN** a native line-number search returns a verified repository source reference
 - **THEN** the SDK can add a bounded surrounding excerpt with exact lines and continuation while retaining the original search result
 
+#### Scenario: A bounded header preview starts inside an enum body
+- **WHEN** the normal verified C/H search-context start falls inside an error-free parsed enum body
+- **THEN** the same default-off hook may start at the enum beginning only when the entire enum body and original match fit the existing 160-line and shared byte limits
+- **AND** it preserves the original tool result, exact source rows, identity validation and native fallback, without evaluating implicit values, macros, preprocessing conditions or deployed state
+- **AND** missing parsers, incomplete syntax or over-budget enums retain the bounded original workflow and never gain a completeness claim
+
 #### Scenario: A literal short shell read ends inside a source function
 - **WHEN** a successful Bash literal `sed -n` range shorter than 80 lines matches a unique workspace source file and the full returned text, allowing only the SDK's removed final LF
 - **THEN** the same default-off hook may append complete parsed C/H functions within the existing two-window/8000-byte budget, marked with `source_read_line`, without rewriting or rerunning the command or replacing stdout
