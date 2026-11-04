@@ -59,6 +59,8 @@
 
 - [ ] 2.37 Screen clarified comparison parameters and unobserved-group refusal after final-position guidance failed219.70→231.74s,83→107response IDs,36compare calls (15invalid captures,21unobserved selections). Keep scan completeness separate from comparison completeness; withhold diffs for any unobserved group, explain actual captured group values with generic examples, and retain original-tool fallback after one failed correction. Candidate omitted existing Feedlink cleanup; no acceptance or formal expansion.
 
+- [ ] 2.38 Evaluate a separately labeled combined yinhe screen (v4 batching/provenance, verified regex endpoints, clarified compare) with generic latest-record/inventory counterevidence guidance. Preserve parameter-only73.95→197.06s/27→86responses/zero compare calls as failed: both arms miss final54inventory. Earlier positive samples cannot establish ongoing presence; no validation IDs, paths or diagnoses in generic runtime policy. Check complete SDK exposure and original-output preservation, then quality before formal20pairs/10logs.
+
 ## 3. Performance and quality acceptance
 
 - [x] 3.1 Complete at least 20 paired baseline/candidate rounds and audit timing against the 30% median target. The combined v9 candidate failed acceptance; completing the experiment does not satisfy the target.
