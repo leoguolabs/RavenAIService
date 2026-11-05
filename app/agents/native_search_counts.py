@@ -40,10 +40,33 @@ class NativeSearchCounts:
         ):
             return None
         tokens = shlex.split(command)
-        if len(tokens) != 4 or tokens[0] != "grep" or tokens[1] not in ("-n", "-nF", "-Fn"):
-            return None
+        if len(tokens) != 4 or tokens[0] != "grep" or tokens[1] not in ("-n", "-nF", "-Fn", "-c", "-cF", "-Fc"):
+            # Recognize only a count bracketed by explicit separators. Treat
+            # the other commands and their output as opaque; never run them.
+            parts = re.split(r";[ \t]*echo[ \t]+---[ \t]*;[ \t]*", command)
+            sections = stdout.split("\n---\n")
+            if len(parts) != 3 or len(sections) != 3 or "$(" in command:
+                return None
+            lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
+            lexer.whitespace_split = True
+            lexer.commenters = ""
+            shell_tokens = list(lexer)
+            separator = [";", "echo", "---", ";"]
+            positions = [
+                i for i in range(len(shell_tokens))
+                if shell_tokens[i:i + len(separator)] == separator
+            ]
+            if len(positions) != 2:
+                return None
+            tokens = shell_tokens[positions[0] + len(separator):positions[1]]
+            if tokens != shlex.split(parts[1]):
+                return None
+            if len(tokens) != 4 or tokens[0] != "grep" or tokens[1] not in ("-c", "-cF", "-Fc"):
+                return None
+            stdout = sections[1]
+        count_only = tokens[1] in ("-c", "-cF", "-Fc")
         pattern, target = tokens[2:]
-        if not re.fullmatch(r"[A-Za-z0-9_ :/-]{1,80}", pattern) or pattern.startswith("-") or not _path_token(target):
+        if not re.fullmatch(r"[A-Za-z0-9_ :/-]{1,80}", pattern) or pattern.startswith("-") or target.startswith("-") or not _path_token(target):
             return None
         directory = Path(cwd).resolve(strict=True)
         logs = self.root / "logs"
@@ -78,6 +101,8 @@ class NativeSearchCounts:
         if len(rows) < 2:
             return None
         expected = "\n".join(f"{n}:{row.decode('utf-8', errors='strict')}" for n, row in rows)
+        if count_only:
+            expected = str(len(rows))
         if stdout not in (expected, expected + "\n"):
             return None
 
@@ -100,6 +125,8 @@ class NativeSearchCounts:
         }
         return {
             "path": path.relative_to(self.root).as_posix(),
+            "literal_pattern": pattern,
+            "verification": "count" if count_only else "native_rows",
             "matched_physical_lines": len(rows),
             "distinct_literal_values_by_field": counts,
             "first_matching_line": rows[0][0],

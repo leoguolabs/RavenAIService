@@ -45,3 +45,20 @@ def test_unverified_or_out_of_scope_search_is_not_supplemented(tmp_path, command
         "tool_response": {"stdout": stdout},
     })
     assert result is None
+
+
+@pytest.mark.parametrize("count,expected", [("2", True), ("1", False), ("2\n---\n2", False)])
+def test_separated_compound_count_requires_exact_rescan(tmp_path, count, expected):
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "logs" / "run.log").write_text("row code=1\nrow code=1\nother\n")
+    hook = NativeSearchCounts(str(tmp_path), "en")
+    result = hook.collect({
+        "cwd": str(tmp_path),
+        "tool_input": {"command": 'grep other logs/run.log | head -1; echo ---; grep -c row logs/run.log; echo ---; echo tail'},
+        "tool_response": {"stdout": f"other\n---\n{count}\n---\ntail"},
+    })
+    assert (result is not None) == expected
+    if result:
+        assert result["matched_physical_lines"] == 2
+        assert result["verification"] == "count"
+        assert result["distinct_literal_values_by_field"] == {"code": 1}
