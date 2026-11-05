@@ -1373,3 +1373,32 @@ async def test_concise_confidence_prompt_is_independent_of_retrieval_and_keeps_n
     assert all(tool in actual['allowed_tools'] for tool in ['Bash', 'Read', 'Grep', 'Glob', 'Skill'])
     assert not actual.get('hooks')
     assert 'max_turns' not in actual
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["ok", "clone_failed"])
+async def test_prepared_primary_checkout_only_supplies_verified_identity(workspace_ctx, status):
+    from app.agents.log_analysis.prepared_repo import prepare_primary_repo
+
+    revision = "a" * 40
+    with patch(
+        "app.agents.log_analysis.prepared_repo.clone_project_repo_payload",
+        return_value={
+            "status": status,
+            "path": "repo",
+            "commit_sha": revision,
+            "clone_url": "private-url",
+        },
+    ) as clone:
+        prompt = await prepare_primary_repo(workspace_ctx, "primary")
+
+    clone.assert_awaited_once_with(
+        project_code="primary",
+        workspace_dir=workspace_ctx.temp_dir,
+        primary_project_code="primary",
+        agent_key="log_analysis",
+    )
+    assert (revision in prompt) == (status == "ok")
+    assert "private-url" not in prompt
+    if status != "ok":
+        assert prompt == ""

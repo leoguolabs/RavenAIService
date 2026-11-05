@@ -1506,6 +1506,18 @@ class LogAnalysisAgent:
             )
 
         try:
+            if (
+                settings.agent_analysis_prepare_primary_repo is True
+                and supports_mcp
+                and user_selected_repo
+                and isinstance(project_code, str)
+                and project_code.strip()
+            ):
+                from app.agents.log_analysis.prepared_repo import prepare_primary_repo
+
+                _check_cancel()
+                system_prompt += await prepare_primary_repo(ctx, project_code)
+                _check_cancel()
             async for message in routed_query(
                 prompt=user_prompt,
                 make_options=_make_options,

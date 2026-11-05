@@ -164,6 +164,7 @@ class Settings(BaseSettings):
     agent_sdk_disable_nonessential_traffic: bool = False
     agent_analysis_confidence_bounds_enabled: bool = False
     agent_analysis_batch_prompt_enabled: bool = False
+    agent_analysis_prepare_primary_repo: bool = False
     agent_analysis_stage_checkpoint_enabled: bool = False
     agent_related_repo_max_count: int = 4
     agent_repo_clone_timeout_seconds: int = 300
