@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import aclosing
 from dataclasses import replace
@@ -28,6 +29,34 @@ Bash resumes at the original workspace: use contained absolute paths or explicit
 """
 
 
+def _permissions_only(path):
+    """Allow inert permission lists, never hooks or other SDK configuration."""
+    if path.is_symlink():
+        return False
+    if not path.exists():
+        return True
+    try:
+        if path.stat().st_size > 65536:
+            return False
+        def unique(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate settings key")
+                result[key] = value
+            return result
+        value = json.loads(path.read_text(), object_pairs_hook=unique)
+        if not isinstance(value, dict) or set(value) != {"permissions"}:
+            return False
+        permissions = value["permissions"]
+        return (isinstance(permissions, dict) and bool(permissions)
+                and set(permissions) <= {"allow", "deny", "ask"}
+                and all(isinstance(items, list) and all(isinstance(x, str) for x in items)
+                        for items in permissions.values()))
+    except (OSError, ValueError, UnicodeError):
+        return False
+
+
 def supported(options, provider):
     """Unsupported profiles retain the original query, including its hooks."""
     if not (
@@ -42,8 +71,8 @@ def supported(options, provider):
     ):
         return False
     cwd = Path(options.cwd or ".").resolve()
-    return not any(
-        (parent / ".claude" / name).exists()
+    return all(
+        _permissions_only(parent / ".claude" / name)
         for parent in (cwd, *cwd.parents)
         for name in ("settings.json", "settings.local.json")
     )

@@ -272,3 +272,40 @@ async def test_error_terminal_is_not_replayed_or_replaced(opts):
 
     actual = [m async for m in wrapper(sdk)(prompt="q", options=opts)]
     assert actual[-1] is failed and len(calls) == 1
+
+
+@pytest.mark.parametrize("text,expected", [
+    ('{"permissions":{"allow":["Bash(read:*)"]}}', True),
+    ('{"permissions":{"deny":["Read(secret)"],"ask":[]}}', True),
+    ('{"permissions":{"allow":[]},"hooks":{}}', False),
+    ('{"permissions":{"defaultMode":"bypassPermissions"}}', False),
+    ('{"permissions":{"allow":42}}', False),
+    ('{"permissions":{"allow":[42]}}', False),
+    ('{"permissions":{"allow":[]},"permissions":{"allow":[]}}', False),
+    ('{"permissions":{"allow":[],"allow":[]}}', False),
+    ('{}', False), ('not json', False),
+])
+def test_ancestor_permission_lists_are_preserved_without_loading_hooks(opts, text, expected):
+    from pathlib import Path
+    root = Path(opts.cwd).parent / ".claude"
+    root.mkdir(exist_ok=True)
+    target = root / "settings.local.json"
+    target.write_text(text)
+    assert sc.supported(opts, "yinhe") is expected
+    assert target.read_text() == text
+
+
+def test_symlinked_or_oversized_settings_disable_checkpoint(opts):
+    from pathlib import Path
+    root = Path(opts.cwd) / ".claude"
+    root.mkdir()
+    source = Path(opts.cwd) / "permissions.json"
+    source.write_text('{"permissions":{"allow":[]}}')
+    target = root / "settings.local.json"
+    target.symlink_to(source)
+    assert not sc.supported(opts, "yinhe")
+    source.unlink()
+    assert not sc.supported(opts, "yinhe")
+    target.unlink()
+    target.write_text(" " * 65537)
+    assert not sc.supported(opts, "yinhe")
