@@ -1324,6 +1324,33 @@ async def test_original_prompt_batching_guidance_keeps_native_workflow(workspace
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('enabled', [False, True])
+async def test_independent_checkpoint_selects_query_factory_without_changing_prompt_or_tools(workspace_ctx, enabled):
+    from app.agents.log_analysis.agent import LogAnalysisAgent
+    sdk = MagicMock()
+    sdk.query = _fake_query_ok
+    with _patch_build_options() as options, _patch_mcp_server(), _patch_prompts(), _patch_skills(), \
+         patch.dict('sys.modules', {'claude_agent_sdk': sdk}), \
+         patch('app.config.settings', MagicMock(
+             anthropic_provider='yinhe', anthropic_model='yinhe-thinking', anthropic_max_turns=150,
+             anthropic_request_timeout_seconds=60, agent_evidence_efficiency_enabled=False,
+             agent_analysis_stage_checkpoint_enabled=enabled,
+         )), \
+         patch('app.agents.stage_checkpoint.make_checkpoint_query', return_value=_fake_query_ok) as factory:
+        result = await LogAnalysisAgent().run(workspace_ctx)
+    assert result['status'] == 'ok'
+    assert factory.call_count == int(enabled)
+    if enabled:
+        assert factory.call_args.kwargs['provider'] == 'yinhe'
+        assert factory.call_args.kwargs['locale'] == workspace_ctx.locale
+    actual = options.call_args.kwargs
+    assert actual['system_prompt'].startswith('You are a test agent.')
+    assert not actual.get('hooks')
+    assert 'max_turns' not in actual
+    assert all(tool in actual['allowed_tools'] for tool in ['Bash', 'Read', 'Grep', 'Glob', 'Skill'])
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('enabled,locale', [(False, 'zh'), (True, 'zh'), (True, 'en')])
 async def test_concise_confidence_prompt_is_independent_of_retrieval_and_keeps_native_workflow(workspace_ctx, enabled, locale):
     from app.agents.log_analysis.agent import LogAnalysisAgent

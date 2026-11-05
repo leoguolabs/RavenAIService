@@ -1457,6 +1457,14 @@ class LogAnalysisAgent:
                 on_phase=_on_stage, is_analysis_error=_analysis_error,
             )
 
+        if getattr(settings, "agent_analysis_stage_checkpoint_enabled", False) is True and not query_overrides:
+            from app.agents.stage_checkpoint import make_checkpoint_query
+
+            query_overrides["sdk_query"] = make_checkpoint_query(
+                query, provider=str(provider), locale=ctx.locale,
+                check_cancel=_check_cancel, on_phase=_on_stage,
+            )
+
         start = time.monotonic()
 
         # run_start lifecycle event (and legacy log line).

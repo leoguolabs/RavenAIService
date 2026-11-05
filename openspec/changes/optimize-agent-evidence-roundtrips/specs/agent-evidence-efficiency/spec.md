@@ -512,3 +512,16 @@ A separate default-off Log Analysis flag MAY append request-grouping guidance wi
 - **THEN** it encourages one native tool-use round for independent checks, while unknown paths or unfinished clones remain dependencies for later requests
 - **AND** a single known request need not wait, batches must retain per-item references and decisive later/companion/failure-branch evidence, and further investigation requires concrete material gaps
 - **AND** actual assembled prompt-prefix and SDK delivery proof precede fresh independent quality and paired timing validation
+
+### Requirement: Original-profile native session checkpoint
+A separate default-off Log Analysis experiment MAY end an SDK collection invocation after a bounded completed-tool checkpoint and resume the same evidence session for answering. It SHALL preserve the full original prompt, native tools, required Skills, selected model/effort/output settings and combined configured turn budget. It SHALL NOT publish the empty intermediate terminal as a final answer or use tool-result counts as SDK turn accounting.
+
+#### Scenario: Collection reaches the checkpoint with completed evidence operations
+- **WHEN** the verified native SDK profile has no other hooks/session overrides and the checkpoint observes its50th distinct completed tool result with no announced tools pending
+- **THEN** it may stop only that collection invocation, await its authoritative terminal accounting, and resume the same session with original tools and the remaining configured budget
+- **AND** finalization may still investigate decisive gaps; only its real final result reaches the public parser, with all stages included in latency, cancellation and usage
+
+#### Scenario: Compatibility or provenance cannot be retained
+- **WHEN** existing hooks/project settings/session overrides, background tasks, unsupported tool responses or an unverified SDK profile make the checkpoint unsafe
+- **THEN** the experiment retains the original query path where the boundary has not occurred; malformed post-boundary accounting or session changes fail visibly rather than fabricating a successful answer
+- **AND** raw tool evidence remains distinct from hypotheses, and actual SDK serial/parallel/resumption proofs plus fresh quality comparisons precede acceptance
