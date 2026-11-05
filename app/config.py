@@ -186,6 +186,7 @@ class Settings(BaseSettings):
     agent_evidence_log_overview_enabled: bool = False
     agent_evidence_statistics_enabled: bool = False
     agent_analysis_standalone_statistics_enabled: bool = False
+    agent_analysis_native_search_counts_enabled: bool = False
     agent_evidence_topic_context_enabled: bool = False
     agent_evidence_search_endpoints_enabled: bool = False
     agent_evidence_read_window_enabled: bool = False

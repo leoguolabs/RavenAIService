@@ -1415,6 +1415,17 @@ class LogAnalysisAgent:
 
             system_prompt += dependency_batching(ctx.locale)
 
+        if settings.agent_analysis_native_search_counts_enabled is True:
+            from claude_agent_sdk import HookMatcher
+            from app.agents.native_search_counts import NativeSearchCounts
+
+            counts = NativeSearchCounts(ctx.temp_dir, ctx.locale)
+            if evidence_hooks is None:
+                evidence_hooks = {}
+            evidence_hooks.setdefault("PostToolUse", []).append(
+                HookMatcher(matcher="Bash", hooks=[counts.after_tool]),
+            )
+
         def _make_options(endpoint: Optional[Any]) -> Any:
             options = build_options(
                 system_prompt=system_prompt,
