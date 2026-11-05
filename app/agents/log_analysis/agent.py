@@ -1180,6 +1180,30 @@ class LogAnalysisAgent:
 
                 system_prompt, user_prompt_template = use_snapshot_in_templates(system_prompt, user_prompt_template)
 
+        if (
+            supports_mcp
+            and evidence_snapshot is None
+            and settings.agent_analysis_standalone_statistics_enabled is True
+        ):
+            from app.agents.evidence_statistics import TOOL_NAME
+            from app.agents.evidence_tools import get_evidence_mcp_server
+
+            mcp_servers["evidence"] = get_evidence_mcp_server(
+                ctx.temp_dir, statistics=True, search_read=False,
+            )
+            allowed_tools.append(TOOL_NAME)
+            system_prompt += (
+                "\nWhen reporting record totals and distinct field values, use "
+                "mcp__evidence__summarize_evidence in values mode after identifying the original file and record pattern. "
+                "One complete scan reports matched lines, regex occurrences and distinct captured values separately. "
+                "Group other known independent statistics in the same call. Keep original source checks and cite the record scope.\n"
+                if ctx.locale == "en" else
+                "\n需要报告记录总数与字段种类数时，在定位原始文件和记录模式后，"
+                "用 mcp__evidence__summarize_evidence 的 values 模式一次核对。"
+                "完整扫描分别返回匹配行数、匹配次数和不同取值数量。"
+                "同轮合并其他已知的独立统计，保留源码核对及记录范围。\n"
+            )
+
         user_prompt = render_user_prompt(
             user_prompt_template,
             task_id=ctx.task_id,

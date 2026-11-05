@@ -208,6 +208,7 @@ def scan_statistics(workspace: str, request: dict) -> dict:
     if mode == "values":
         result["values"] = list(values.values())
         result["values_complete"] = result["complete"] and not result.get("unindexed_value_matches")
+        result["distinct_captured_values"] = len(values) if result["values_complete"] else None
     if mode == "compare":
         left_id, right_id = selected_groups
         left, right = grouped[left_id], grouped[right_id]

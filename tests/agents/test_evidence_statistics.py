@@ -59,6 +59,7 @@ def test_values_are_literal_and_capped_with_explicit_incompleteness(tmp_path, mo
     assert result["matches_complete"] and result["matches"] == 4
     assert not result["complete"] and not result["values_complete"]
     assert result["unindexed_value_matches"] == 1
+    assert result["distinct_captured_values"] is None
     assert result["values"] == [
         {"value": "2", "count": 2, "first_line": 1, "last_line": 4},
         {"value": "3", "count": 1, "first_line": 2, "last_line": 2},
@@ -207,3 +208,14 @@ async def test_statistics_tool_is_opt_in_and_returns_real_scan(tmp_path, monkeyp
     }]})
     result = json.loads(response["content"][0]["text"])["results"][0]
     assert result["complete"] and result["maximum"]["value"] == "7"
+
+
+def test_complete_values_separate_lines_occurrences_and_distinct_literals(tmp_path):
+    (tmp_path / "log").write_text("state=2 state=2\nstate=3\nstate=3\n")
+    result = stats.scan_statistics(str(tmp_path), {
+        "path": "log", "pattern": r"state=(?P<value>\d+)", "mode": "values",
+    })
+    assert result["complete"]
+    assert result["matched_lines"] == 3
+    assert result["matches"] == 4
+    assert result["distinct_captured_values"] == 2

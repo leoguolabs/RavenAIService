@@ -311,7 +311,7 @@ def encode_evidence(payload: dict) -> str:
     return json.dumps(encoded, ensure_ascii=False, separators=(",", ":"))
 
 
-def get_evidence_mcp_server(workspace: str, *, statistics: bool = False, regex_endpoints: bool = False, compare: bool = False):
+def get_evidence_mcp_server(workspace: str, *, statistics: bool = False, regex_endpoints: bool = False, compare: bool = False, search_read: bool = True):
     from claude_agent_sdk import create_sdk_mcp_server, tool
 
     def schema(properties: dict, required: list[str]) -> dict:
@@ -357,7 +357,7 @@ def get_evidence_mcp_server(workspace: str, *, statistics: bool = False, regex_e
     async def read(args):
         return await invoke(args, False)
 
-    tools = [search, read]
+    tools = [search, read] if search_read else []
     if statistics:
         from app.agents.evidence_statistics import run_statistics_batch
 
@@ -367,7 +367,8 @@ def get_evidence_mcp_server(workspace: str, *, statistics: bool = False, regex_e
               "a bounded literal value distribution. numeric/values require a Python regex named (?P<value>...) "
               "capture. Returns source LF line references, first/last samples and numeric extrema in one call. "
               "Check complete and coverage limits: a partial scan/distribution cannot prove absence or a global range. "
-              "Counts are physical matches per file; overlapping attachments are not distinct events. "
+              "Report matched_lines, matches and distinct_captured_values separately: physical lines, regex occurrences, and unique literals. "
+              "Overlapping attachments are not distinct events. "
               "A regex matches only its specified field/format, not every possible incident. "
               "Use original tools for unsupported statistics or decisive omitted evidence.",
               schema({"path": {"type": "string"}, "pattern": {"type": "string", "maxLength": 1000},
