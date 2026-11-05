@@ -401,6 +401,7 @@ def summarize(root: Path, label: str, target_reduction: float | None = None) -> 
         raise ValueError("target reduction must be a fraction in [0, 1)")
     pairs = []
     terminal_times = []
+    phase_pairs = []
     failures = []
     incomplete = []
     outcomes = {arm: {"success": 0, "failure": 0, "missing": 0, "invalid_timing": 0}
@@ -408,6 +409,7 @@ def summarize(root: Path, label: str, target_reduction: float | None = None) -> 
     for directory in sorted((root / "runs" / label).glob("case-*")):
         arms = {}
         all_arms = {}
+        phases = {}
         for arm in ("baseline", "candidate"):
             path = directory / arm / "result.json"
             if not path.exists():
@@ -427,6 +429,20 @@ def summarize(root: Path, label: str, target_reduction: float | None = None) -> 
                 all_arms[arm] = duration
                 if succeeded:
                     arms[arm] = duration
+                    analysis = server["result"]
+                    agent_seconds = analysis.get("duration_seconds")
+                    evidence = result.get("checkout_evidence") or {}
+                    phases[arm] = {
+                        "agent_seconds": agent_seconds
+                        if type(agent_seconds) in (int, float)
+                        and math.isfinite(agent_seconds) and 0 <= agent_seconds <= duration else None,
+                        "observed_model_response_ids": evidence.get("observed_model_response_ids"),
+                        "tool_calls": (analysis.get("trace_summary") or {}).get("tool_call_count"),
+                    }
+                    phases[arm]["wall_minus_agent_seconds"] = (
+                        duration - phases[arm]["agent_seconds"]
+                        if phases[arm]["agent_seconds"] is not None else None
+                    )
             else:
                 outcomes[arm]["invalid_timing"] += 1
                 incomplete.append({"case": directory.name, "arm": arm, "reason": "observation timing invalid after reconnect"})
@@ -434,6 +450,7 @@ def summarize(root: Path, label: str, target_reduction: float | None = None) -> 
             terminal_times.append({"case": directory.name, **all_arms})
         if len(arms) == 2:
             pairs.append({"case": directory.name, **arms})
+            phase_pairs.append({"case": directory.name, **phases})
     report = {"label": label, "complete_timing_pairs": len(pairs), "failures": failures, "incomplete": incomplete, "pairs": pairs,
               "metric_basis": "Successful paired analyses only; inspect all-terminal timing and failure rates before interpreting reduction.",
               "outcomes": outcomes, "quality_acceptance": "pending independent evidence review",
@@ -459,6 +476,25 @@ def summarize(root: Path, label: str, target_reduction: float | None = None) -> 
             report[arm] = {"median": statistics.median(times), "p90": times[math.ceil(len(times) * .9) - 1]}
         if report["baseline"]["median"] > 0:
             report["median_reduction"] = 1 - report["candidate"]["median"] / report["baseline"]["median"]
+    phase_metrics = {}
+    for field in ("agent_seconds", "wall_minus_agent_seconds", "observed_model_response_ids", "tool_calls"):
+        matched = [
+            row for row in phase_pairs
+            if all(type(row[arm][field]) in (int, float) and math.isfinite(row[arm][field])
+                   and row[arm][field] >= 0 for arm in ("baseline", "candidate"))
+        ]
+        phase_metrics[field] = {
+            "pairs": len(matched),
+            "baseline_median": statistics.median(row["baseline"][field] for row in matched) if matched else None,
+            "candidate_median": statistics.median(row["candidate"][field] for row in matched) if matched else None,
+        }
+    report["phase_metrics"] = phase_metrics
+    report["phase_pairs"] = phase_pairs
+    report["phase_metric_basis"] = (
+        "Matched successful analyses with the corresponding metric in both arms. "
+        "Wall minus Agent includes any preparation and delivery outside Agent timing. "
+        "Observed response IDs describe the retained SDK transcript, not all provider HTTP requests."
+    )
     report["timing_sample_complete"] = len(pairs) >= 20 and not failures and not incomplete
     report["median_improved"] = report.get("median_reduction", 0) > 0
     report["target_reduction"] = target_reduction
@@ -468,7 +504,7 @@ def summarize(root: Path, label: str, target_reduction: float | None = None) -> 
     ) if target_reduction is not None else None
     report["optimization_goal"] = "Minimize median latency subject to independent quality acceptance."
     write_json(root / "runs" / label / "summary.json", report)
-    print(json.dumps({k: v for k, v in report.items() if k != "pairs"}, ensure_ascii=False), flush=True)
+    print(json.dumps({k: v for k, v in report.items() if k not in ("pairs", "phase_pairs")}, ensure_ascii=False), flush=True)
 
 
 def main() -> None:

@@ -151,14 +151,27 @@ class BenchmarkEvidenceTests(unittest.TestCase):
             for arm in ("baseline", "candidate"):
                 path = self.root / f"runs/trial/case-{index:02d}" / arm / "result.json"
                 path.parent.mkdir(parents=True)
-                path.write_text(json.dumps({"server": {"status": "done", "result": {"status": "ok"}},
-                                            "observation_timing_valid": True,
-                                            "end_to_end_seconds": 100 if arm == "baseline" else 95}))
+                analysis = {"status": "ok", "duration_seconds": 72 if arm == "baseline" else 82,
+                            "trace_summary": {"tool_call_count": 40 if arm == "baseline" else 38}}
+                if index == 0 and arm == "candidate":
+                    analysis["duration_seconds"] = 96  # Exceeds the API wall clock.
+                path.write_text(json.dumps({
+                    "server": {"status": "done", "result": analysis},
+                    "observation_timing_valid": True,
+                    "end_to_end_seconds": 100 if arm == "baseline" else 95,
+                    "checkout_evidence": {"observed_model_response_ids": 39 if arm == "baseline" else 37},
+                }))
         summarize(self.root, "trial")
         result = json.loads((self.root / "runs/trial/summary.json").read_text())
         self.assertTrue(result["timing_sample_complete"])
         self.assertTrue(result["median_improved"])
         self.assertAlmostEqual(result["median_reduction"], .05)
+        self.assertEqual(result["phase_metrics"]["agent_seconds"],
+                         {"pairs": 19, "baseline_median": 72, "candidate_median": 82})
+        self.assertEqual(result["phase_metrics"]["wall_minus_agent_seconds"],
+                         {"pairs": 19, "baseline_median": 28, "candidate_median": 13})
+        self.assertEqual(result["phase_metrics"]["observed_model_response_ids"],
+                         {"pairs": 20, "baseline_median": 39, "candidate_median": 37})
         self.assertIsNone(result["target_reduction"])
         self.assertIsNone(result["timing_target_met"])
         self.assertFalse(result["eligible_for_acceptance"])
