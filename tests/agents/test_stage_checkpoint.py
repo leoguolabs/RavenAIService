@@ -60,7 +60,8 @@ async def execute_hooks(options, identities):
 @pytest.mark.asyncio
 async def test_parallel_completion_dedup_waits_for_all_pending_and_bounds_state():
     checkpoint = sc.CompletionCheckpoint(2)
-    checkpoint.observe(announcement("a", "b", "c"))
+    for identity in ("a", "b", "c"):
+        await checkpoint.before_tool(data(identity), identity, None)
     assert await checkpoint.after_tool(data("a"), "a", None) == {}
     assert await checkpoint.after_tool(data("a"), "a", None) == {}
     assert await checkpoint.after_tool(data("b"), "b", None) == {}
@@ -156,9 +157,41 @@ async def test_background_activation_keeps_original_multiple_terminal_behavior(o
 @pytest.mark.asyncio
 async def test_unknown_or_background_Bash_response_disables_checkpoint():
     checkpoint = sc.CompletionCheckpoint(1)
-    checkpoint.observe(announcement("a"))
+    await checkpoint.before_tool(data("a"), "a", None)
     assert await checkpoint.after_tool(data("a", tool_name="Bash", tool_response={"backgroundTaskId": "job"}), "a", None) == {}
     assert checkpoint.disabled and not checkpoint.triggered
+
+
+@pytest.mark.asyncio
+async def test_failed_tool_completion_releases_pending_without_message_consumer():
+    checkpoint = sc.CompletionCheckpoint(2)
+    for identity in ("missing", "found"):
+        await checkpoint.before_tool(data(identity), identity, None)
+    failed = data("missing", hook_event_name="PostToolUseFailure", error="File does not exist", is_interrupt=False)
+    assert await checkpoint.after_tool(failed, "missing", None) == {}
+    assert checkpoint.pending == {"found"}
+    assert (await checkpoint.after_tool(data("found"), "found", None))["continue_"] is False
+    assert not checkpoint.disabled
+
+
+@pytest.mark.asyncio
+async def test_interrupted_tool_keeps_original_flow():
+    checkpoint = sc.CompletionCheckpoint(1)
+    await checkpoint.before_tool(data("a"), "a", None)
+    assert await checkpoint.after_tool(data("a", hook_event_name="PostToolUseFailure", is_interrupt=True), "a", None) == {}
+    assert checkpoint.disabled and not checkpoint.triggered
+
+
+@pytest.mark.asyncio
+async def test_failure_last_defers_stop_until_successful_completion():
+    checkpoint = sc.CompletionCheckpoint(2)
+    for identity in ("found", "missing"):
+        await checkpoint.before_tool(data(identity), identity, None)
+    assert await checkpoint.after_tool(data("found"), "found", None) == {}
+    assert await checkpoint.after_tool(data("missing", hook_event_name="PostToolUseFailure"), "missing", None) == {}
+    assert not checkpoint.triggered and not checkpoint.pending
+    await checkpoint.before_tool(data("next"), "next", None)
+    assert (await checkpoint.after_tool(data("next"), "next", None))["continue_"] is False
 
 
 @pytest.mark.asyncio

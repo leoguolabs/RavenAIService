@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
+import logging
 from contextlib import aclosing
 from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
 
 _FINAL_ZH = """RAVEN_EVIDENCE_FINAL
 现在基于本会话保留的原始日志和源码证据，回答最初的问题并输出原要求的完整 JSON。
@@ -56,37 +57,16 @@ class CompletionCheckpoint:
             raise ValueError("Checkpoint threshold must be a bounded positive integer")
         self.threshold = after_results
         self.seen = set()
-        self.announced = set()
         self.pending = set()
-        self.waiters = {}
         self.disabled = False
+        self.disable_reason = None
         self.triggered = False
 
-    def _disable(self):
+    def _disable(self, reason):
         self.disabled = True
-        for event in self.waiters.values():
-            event.set()
-        self.waiters.clear()
+        self.disable_reason = reason
+        logger.info("stage_checkpoint: disabled reason=%s completed_results=%d", reason, len(self.seen))
         self.pending.clear()
-        self.announced.clear()
-        self.seen.clear()
-
-    def observe(self, message):
-        from claude_agent_sdk import AssistantMessage, ToolUseBlock
-
-        if self.disabled or not isinstance(message, AssistantMessage):
-            return
-        for block in message.content:
-            if isinstance(block, ToolUseBlock):
-                identity = block.id
-                if not isinstance(identity, str) or not 0 < len(identity) <= 256 or len(self.announced) >= 1024:
-                    self._disable()
-                    return
-                self.announced.add(identity)
-                if identity not in self.seen:
-                    self.pending.add(identity)
-                if identity in self.waiters:
-                    self.waiters[identity].set()
 
     @staticmethod
     def _identity(data, tool_id):
@@ -98,20 +78,18 @@ class CompletionCheckpoint:
             return {}
         payload = data.get("tool_input")
         if not isinstance(payload, dict) or data.get("tool_name") in ("Task", "Agent", "TaskOutput", "TaskStop") or payload.get("run_in_background"):
-            self._disable()
+            self._disable("background_or_unsupported_tool")
             return {}
         identity = self._identity(data, tool_id)
         if not identity:
-            self._disable()
+            self._disable("missing_tool_identity")
             return {}
-        if identity not in self.announced:
-            event = self.waiters.setdefault(identity, asyncio.Event())
-            try:
-                await asyncio.wait_for(event.wait(), .25)
-            except TimeoutError:
-                self._disable()
-            self.waiters.pop(identity, None)
-        if not self.disabled:
+        if len(self.seen | self.pending) >= 1024:
+            self._disable("tool_identity_bound")
+            return {}
+        # Hooks run on the SDK control channel. Do not wait for the outer
+        # backpressured message consumer to reach an AssistantMessage.
+        if identity not in self.seen:
             self.pending.add(identity)
         return {}
 
@@ -119,21 +97,33 @@ class CompletionCheckpoint:
         if self.disabled or not isinstance(data, dict):
             return {}
         identity = self._identity(data, tool_id)
-        if not identity or identity not in self.announced:
-            self._disable()
+        if not identity:
+            self._disable("missing_tool_identity")
             return {}
-        if data.get("tool_name") == "Bash":
+        if data.get("hook_event_name") == "PostToolUseFailure":
+            if data.get("is_interrupt"):
+                self._disable("interrupted_tool")
+                return {}
+        elif data.get("tool_name") == "Bash":
             response = data.get("tool_response")
             complete_keys = {"stdout", "stderr", "interrupted", "isImage", "noOutputExpected", "returnCodeInterpretation"}
             if not isinstance(response, dict) or set(response) - complete_keys or response.get("interrupted"):
-                self._disable()
+                self._disable("background_or_unsupported_Bash_response")
                 return {}
+        if len(self.seen | self.pending) >= 1024:
+            self._disable("tool_identity_bound")
+            return {}
         self.pending.discard(identity)
         self.seen.add(identity)
-        if not self.triggered and len(self.seen) >= self.threshold and not self.pending:
+        if (
+            data.get("hook_event_name") != "PostToolUseFailure"
+            and not self.triggered and len(self.seen) >= self.threshold and not self.pending
+        ):
             self.triggered = True
             # The CLI drops additionalContext on this stopping callback. Other
             # hooks are unsupported; do not attach evidence to this response.
+            # continueFalse is not honored on PostToolUseFailure: count that
+            # completion but defer the boundary to a successful tool callback.
             return {"continue_": False, "stopReason": "Server evidence-stage checkpoint; final stage retains the original tool history."}
         return {}
 
@@ -160,25 +150,32 @@ def make_checkpoint_query(sdk_query, *, provider, locale, check_cancel, on_phase
     from claude_agent_sdk import HookMatcher, ResultMessage
 
     async def query(*, prompt, options):
-        if not supported(options, provider):
+        eligible = supported(options, provider)
+        logger.info("stage_checkpoint: eligible=%s", eligible)
+        if not eligible:
             async with aclosing(sdk_query(prompt=prompt, options=options)) as stream:
                 async for message in stream:
                     yield message
             return
         checkpoint = CompletionCheckpoint(after_results)
         hooks = {"PreToolUse": [HookMatcher(hooks=[checkpoint.before_tool])],
-                 "PostToolUse": [HookMatcher(hooks=[checkpoint.after_tool])]}
+                 "PostToolUse": [HookMatcher(hooks=[checkpoint.after_tool])],
+                 "PostToolUseFailure": [HookMatcher(hooks=[checkpoint.after_tool])]}
         first = None
-        async with aclosing(sdk_query(prompt=prompt, options=replace(options, hooks=hooks))) as stream:
-            async for message in stream:
-                check_cancel()
-                checkpoint.observe(message)
-                if isinstance(message, ResultMessage) and checkpoint.triggered:
-                    if first is not None:
-                        raise RuntimeError("SDK checkpoint returned multiple terminal results")
-                    first = message
-                else:
-                    yield message
+        try:
+            async with aclosing(sdk_query(prompt=prompt, options=replace(options, hooks=hooks))) as stream:
+                async for message in stream:
+                    check_cancel()
+                    if isinstance(message, ResultMessage) and checkpoint.triggered:
+                        if first is not None:
+                            raise RuntimeError("SDK checkpoint returned multiple terminal results")
+                        first = message
+                    else:
+                        yield message
+        finally:
+            logger.info("stage_checkpoint: stopped=%s disabled=%s reason=%s completed_results=%d pending=%d",
+                        checkpoint.triggered, checkpoint.disabled, checkpoint.disable_reason,
+                        len(checkpoint.seen), len(checkpoint.pending))
         check_cancel()
         if not checkpoint.triggered:
             return

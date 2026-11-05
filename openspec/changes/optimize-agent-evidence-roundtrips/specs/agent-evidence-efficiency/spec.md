@@ -517,7 +517,7 @@ A separate default-off Log Analysis flag MAY append request-grouping guidance wi
 A separate default-off Log Analysis experiment MAY end an SDK collection invocation after a bounded completed-tool checkpoint and resume the same evidence session for answering. It SHALL preserve the full original prompt, native tools, required Skills, selected model/effort/output settings and combined configured turn budget. It SHALL NOT publish the empty intermediate terminal as a final answer or use tool-result counts as SDK turn accounting.
 
 #### Scenario: Collection reaches the checkpoint with completed evidence operations
-- **WHEN** the verified native SDK profile has no other hooks/session overrides and the checkpoint observes its50th distinct completed tool result with no announced tools pending
+- **WHEN** the verified native SDK profile has no other hooks/session overrides and the checkpoint observes its50th distinct completed tool result with no started SDK tool operations pending
 - **THEN** it may stop only that collection invocation, await its authoritative terminal accounting, and resume the same session with original tools and the remaining configured budget
 - **AND** finalization may still investigate decisive gaps; only its real final result reaches the public parser, with all stages included in latency, cancellation and usage
 
