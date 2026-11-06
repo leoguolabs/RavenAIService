@@ -2216,15 +2216,7 @@ const openShareModal = () => {
             <div class="rw-user-meta-line">{{ currentUserName }}</div>
           </template>
           <template v-else>
-            <div class="rw-ai-avatar" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5 14 19 6"/>
-                <path d="M5 14a7 7 0 0 0 9.5 5"/>
-                <circle cx="6" cy="18" r="1.5" fill="currentColor" stroke="none"/>
-              </svg>
-            </div>
             <div class="rw-ai-body">
-              <div class="rw-ai-name">RAVENAI</div>
               <div
                 v-if="msg.ocrStatus && msg.ocrStatus.imageCount > 0"
                 class="rw-ocr-degraded"
@@ -2282,11 +2274,8 @@ const openShareModal = () => {
                       <FileDown :size="17" :stroke-width="1.8" aria-hidden="true" />
                     </button>
                   </div>
-                  <div
-                    v-if="getAgentMessageView(msg.content).completionSummary?.model"
-                    class="rw-ai-run-meta"
-                  >
-                    <span class="rw-ai-run-model">
+                  <div class="rw-ai-run-meta">
+                    <span v-if="getAgentMessageView(msg.content).completionSummary?.model" class="rw-ai-run-model">
                       {{ t('aiChat.export.modelMeta', {
                         model: getAgentMessageView(msg.content).completionSummary?.model,
                       }) }}
@@ -2299,6 +2288,16 @@ const openShareModal = () => {
                         }) }}
                       </span>
                     </template>
+                    <span
+                      v-if="getAgentMessageView(msg.content).completionSummary?.model"
+                      class="rw-ai-run-separator"
+                      aria-hidden="true"
+                    ></span>
+                    <span class="rw-ai-disclaimer">{{ t('aiChat.disclaimer') }}</span>
+                    <span
+                      v-if="getAgentMessageView(msg.content).completionSummary?.packageBuildCompleted"
+                      class="rw-ai-packaging-notice"
+                    >{{ t('aiChat.packageBuildConfirmationNotice') }}</span>
                   </div>
                 </div>
               </template>
@@ -2583,7 +2582,6 @@ const openShareModal = () => {
           </button>
         </div>
       </div>
-      <div class="rw-composer-hint">{{ t('aiChat.disclaimer') }}</div>
     </div>
 
     <!-- Share conversation modal -->
@@ -2919,18 +2917,7 @@ const openShareModal = () => {
   word-break: break-word;
 }
 .rw-user-meta-line { font-size: 11px; color: var(--rw-muted); margin-top: 6px; font-weight: 500; }
-.rw-msg.is-ai { display: flex; gap: 14px; align-items: flex-start; }
-.rw-ai-avatar {
-  width: 28px; height: 28px; border-radius: 8px;
-  background: var(--rw-surface-dark); color: var(--rw-on-primary);
-  display: grid; place-items: center;
-  flex-shrink: 0; margin-top: 2px;
-}
-.rw-ai-body { flex: 1; min-width: 0; }
-.rw-ai-name {
-  font-size: 12.5px; color: var(--rw-muted); font-weight: 600;
-  margin-bottom: 6px; letter-spacing: 0.2px; text-transform: uppercase;
-}
+.rw-ai-body { min-width: 0; }
 .rw-ai-trace { margin-bottom: 12px; }
 .rw-ocr-degraded {
   display: inline-flex; align-items: center; gap: 6px;
@@ -3022,9 +3009,10 @@ const openShareModal = () => {
 }
 .rw-ai-run-meta {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 4px 8px;
   min-width: 0;
   color: var(--rw-muted);
   font-family: var(--rw-mono);
@@ -3214,12 +3202,6 @@ const openShareModal = () => {
 }
 .rw-send-btn.is-stop { background: var(--rw-ink, #171717); color: var(--rw-canvas, #fff); }
 .rw-send-btn.is-stop:hover:not(:disabled) { background: var(--rw-danger, #b91c1c); }
-
-.rw-composer-hint {
-  max-width: 820px; margin: 8px auto 0;
-  font-size: 11.5px; color: var(--rw-muted);
-  text-align: center; font-family: var(--rw-mono);
-}
 
 .rw-composer-alert {
   display: flex; align-items: flex-start; gap: 8px;

@@ -1596,7 +1596,8 @@ export default {
     deviceNoMatch: '暂无匹配的设备',
     canceling: '正在取消...',
     cancelTask: '取消当前任务',
-    disclaimer: 'RavenAI 可能会出错。在线设备下发和配置管理员整包打包均需你二次确认。',
+    disclaimer: 'RavenAI 可能会出错。',
+    packageBuildConfirmationNotice: '在线设备下发和配置管理员整包打包均需你二次确认。',
     defaultLogAnalysisMessage: '请分析这个日志包。',
     defaultPackageBuildMessage: '请根据这些组件文件制作软件升级整包。',
     agents: {

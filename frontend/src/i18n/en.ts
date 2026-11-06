@@ -1601,7 +1601,8 @@ export default {
     deviceNoMatch: 'No matching devices',
     canceling: 'Canceling...',
     cancelTask: 'Cancel current task',
-    disclaimer: 'RavenAI can make mistakes. Online-device actions and Configuration Manager package builds require your confirmation.',
+    disclaimer: 'RavenAI can make mistakes.',
+    packageBuildConfirmationNotice: 'Online-device actions and Configuration Manager package builds require your confirmation.',
     defaultLogAnalysisMessage: 'Please analyze this log package.',
     defaultPackageBuildMessage: 'Build a software upgrade package from these component files.',
     agents: {

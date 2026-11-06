@@ -27,6 +27,7 @@ describe('parseAgentMessage', () => {
       title: '项目专家 Agent',
       model: 'claude-sonnet-4-5',
       duration: '12.34s',
+      packageBuildCompleted: false,
     })
     expect(view.completionSummary?.fields).toContainEqual({
       label: '项目',
@@ -65,6 +66,32 @@ describe('parseAgentMessage', () => {
     })
     expect(view.completionSummary?.model).toBe('qwen-max')
     expect(view.completionSummary?.duration).toBeUndefined()
+    expect(view.completionSummary?.packageBuildCompleted).toBe(true)
+  })
+
+  it.each([
+    ['**配置管理员 Agent** 已完成本轮打包。', '- 状态：`ok`', true],
+    ['**配置管理员 Agent** 已完成本轮整包打包。', '- 状态：`ok`', true],
+    ['**Configuration Manager Agent** completed this packaging.', '- Status: `ok`', true],
+    ['**Configuration Manager Agent** completed the full-package build.', '- Status: `ok`', true],
+    ['**配置管理员 Agent** 已完成本轮检索。', '- 状态：`ok`', false],
+    ['**Configuration Manager Agent** completed this search.', '- Status: `ok`', false],
+    ['**项目专家 Agent** 已完成本轮分析。', '- 状态：`ok`', false],
+    ['**配置管理员 Agent** 已完成本轮打包。', '- 状态：`error`', false],
+    ['**配置管理员 Agent** 已完成本轮打包。', '- 状态：`cancelled`', false],
+    ['**配置管理员 Agent** 已完成本轮打包。', '- 状态：`pending`', false],
+  ])('recognizes only completed package builds: %s / %s', (title, status, expected) => {
+    const view = parseAgentMessage([
+      title,
+      '',
+      status,
+      '- 模型：`full-package-build`，耗时：69.96s',
+      '',
+      '## 配置管理员说明',
+      '回复正文可能提到打包或已完成本轮打包，不代表这一轮执行过打包。',
+    ].join('\n'))
+    expect(view.completionSummary?.packageBuildCompleted).toBe(expected)
+    expect(view.completionSummary?.duration).toBe('69.96s')
   })
 })
 

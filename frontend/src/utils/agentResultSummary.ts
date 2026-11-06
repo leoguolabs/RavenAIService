@@ -8,6 +8,7 @@ export type AgentCompletionSummary = {
   fields: AgentCompletionField[]
   model?: string
   duration?: string
+  packageBuildCompleted?: boolean
 }
 
 export type AgentMessageView = {
@@ -21,7 +22,7 @@ export type VisualAnalysis = {
 }
 
 const COMPLETION_LINE_RE =
-  /^\*\*(.+?\bAgent)\*\*\s+(?:\u5df2\u5b8c\u6210(?:\u672c\u8f6e)?(?:\u5206\u6790|\u68c0\u7d22|\u6253\u5305|\u6574\u5305\u6253\u5305|\u6574\u5305\u6784\u5efa|\u5904\u7406)|completed (?:(?:this|the current) (?:analysis|search|packaging|package build|run)|(?:the )?full-package build))[\u3002.]*$/i
+  /^\*\*(.+?\bAgent)\*\*\s+(\u5df2\u5b8c\u6210(?:\u672c\u8f6e)?(?:\u5206\u6790|\u68c0\u7d22|\u6253\u5305|\u6574\u5305\u6253\u5305|\u6574\u5305\u6784\u5efa|\u5904\u7406)|completed (?:(?:this|the current) (?:analysis|search|packaging|package build|run)|(?:the )?full-package build))[\u3002.]*$/i
 const SECTION_HEADING_RE = /^##\s+(.+?)\s*$/
 const FIELD_RE = /^-\s+([^：:]+)[：:]\s*(.*)$/
 
@@ -72,6 +73,12 @@ export function parseAgentMessage(content: string): AgentMessageView {
   }
 
   const modelField = fields.find((field) => /^(?:\u6a21\u578b|model)$/i.test(field.label))
+  const statusField = fields.find((field) => /^(?:\u72b6\u6001|status)$/i.test(field.label))
+  // Read the persisted completion preamble, not mentions of packaging in the answer.
+  const packageBuildCompleted =
+    /^(?:\u914d\u7f6e\u7ba1\u7406\u5458|Configuration Manager)\s+Agent$/i.test(titleMatch[1].trim()) &&
+    /(?:\u6253\u5305|\u6574\u5305\u6784\u5efa|packaging|package build|full-package build)/i.test(titleMatch[2]) &&
+    (!statusField || /^(?:ok|success|succeeded|built|completed)$/i.test(statusField.value))
   let model: string | undefined
   let duration: string | undefined
   if (modelField) {
@@ -99,6 +106,7 @@ export function parseAgentMessage(content: string): AgentMessageView {
       fields,
       model,
       duration,
+      packageBuildCompleted,
     },
   }
 }

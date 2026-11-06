@@ -1,12 +1,7 @@
 <template>
   <div v-if="hasContent" class="agent-trace">
-    <div v-if="runtime.executor || loadedSkills.length" class="agent-trace__metadata">
-      <div v-if="runtime.executor" class="agent-trace__runtime">
-        <span>{{ runtime.executor }}</span>
-        <template v-for="(route, index) in runtime.routes" :key="index">
-          <span aria-hidden="true">→</span><span>{{ route.provider }} · {{ route.model }}</span>
-        </template>
-      </div>
+    <div v-if="runtimeModel || loadedSkills.length" class="agent-trace__metadata">
+      <div v-if="runtimeModel" class="agent-trace__runtime">{{ runtimeModel }}</div>
       <div v-if="loadedSkills.length" class="agent-trace__skills" :title="t('agentTrace.loadedSkillsTitle')">
         <span class="agent-trace__skills-label">{{ t('agentTrace.loadedSkillsLabel') }}</span>
         <span
@@ -161,6 +156,12 @@ const props = defineProps<{
 
 const eventsRef = toRef(props, 'events')
 const runtime = computed(() => collectRuntime(props.events || []))
+const runtimeModel = computed(() => {
+  const route = runtime.value.routes[runtime.value.routes.length - 1]
+  const model = route?.model || props.completionSummary?.model || ''
+  const providerPrefix = route ? `${route.provider}/` : ''
+  return providerPrefix && model.startsWith(providerPrefix) ? model.slice(providerPrefix.length) : model
+})
 const { cards, running: streamRunning, summary, terminal } = useAgentTraceStream(eventsRef)
 const toolDisplay = useToolDisplayName(props.toolNameMap)
 
