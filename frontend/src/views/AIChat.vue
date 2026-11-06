@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
+import { useChatComposerKeyboard } from '@/composables/useChatComposerKeyboard'
 import { deviceLinkApi } from '@/api/deviceLink'
 import { userApi, userToken } from '@/api/user'
 import type { DeviceInfo } from '@/types'
@@ -1674,12 +1675,8 @@ const submitClarificationAnswers = async () => {
   }
 }
 
-const handleKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault()
-    sendMessage()
-  }
-}
+const { handleKeydown, handleCompositionStart, handleCompositionEnd } =
+  useChatComposerKeyboard(() => { void sendMessage() })
 
 const cancelCurrentRun = async () => {
   const sid = effectiveSessionId.value
@@ -2441,6 +2438,9 @@ const openShareModal = () => {
           rows="2"
           :readonly="!isLoggedIn"
           @keydown="handleKeydown"
+          @compositionstart="handleCompositionStart"
+          @compositionend="handleCompositionEnd"
+          @blur="handleCompositionEnd"
           @paste="handleComposerPaste"
           @click="!isLoggedIn && appStore.requestLoginModal('login')"
         ></textarea>
