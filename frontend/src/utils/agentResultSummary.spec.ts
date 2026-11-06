@@ -20,9 +20,7 @@ describe('parseAgentMessage', () => {
       '`config`',
     ].join('\n'))
 
-    expect(view.displayMarkdown).toBe(
-      '启动失败是因为配置缺失。\n\n## 关键词\n`config`',
-    )
+    expect(view.displayMarkdown).toBe('启动失败是因为配置缺失。')
     expect(view.completionSummary).toMatchObject({
       title: '项目专家 Agent',
       model: 'claude-sonnet-4-5',
@@ -41,6 +39,71 @@ describe('parseAgentMessage', () => {
       displayMarkdown: content,
       completionSummary: null,
     })
+  })
+
+  it('hides summary and keywords while retaining later diagnosis and recommendations', () => {
+    const view = parseAgentMessage([
+      '**日志分析 Agent** 已完成本轮分析。',
+      '',
+      '- 模型：`yinhe-thinking`，耗时：69.96s',
+      '',
+      '## 回答',
+      '正文结论。',
+      '',
+      '## 摘要',
+      '不展示的重复摘要。',
+      '### 摘要细节',
+      '也不展示。',
+      '',
+      '## 根因假设',
+      '- 配置缺失。',
+      '',
+      '## 建议',
+      '- 检查配置。',
+      '',
+      '## 关键词',
+      '`config` `timeout`',
+    ].join('\n'))
+    expect(view.displayMarkdown).toBe('正文结论。\n\n## 根因假设\n- 配置缺失。\n\n## 建议\n- 检查配置。')
+    expect(view.completionSummary).toMatchObject({ model: 'yinhe-thinking', duration: '69.96s' })
+  })
+
+  it('preserves code, quoted headings, and nested answer sections', () => {
+    const answer = [
+      '## 回答',
+      '```markdown',
+      '## 摘要',
+      '这是代码示例。',
+      '## 关键词',
+      '```',
+      '',
+      '> ## 摘要',
+      '> 引用内容。',
+      '',
+      '### 摘要',
+      '正文中的子标题。',
+    ].join('\n')
+    const view = parseAgentMessage('**项目专家 Agent** 已完成本轮分析。\n\n' + answer + '\n\n## 关键词\n`hidden`')
+    expect(view.displayMarkdown).toBe(answer.replace('## 回答\n', ''))
+  })
+
+  it('also hides English result metadata and keeps subsequent sections', () => {
+    const view = parseAgentMessage([
+      '**Project Expert Agent** completed this analysis.',
+      '',
+      '## Answer',
+      'The answer.',
+      '',
+      '## Summary',
+      'Repeated summary.',
+      '',
+      '## Keywords',
+      '`hidden`',
+      '',
+      '# References',
+      '[Evidence](https://example.com)',
+    ].join('\n'))
+    expect(view.displayMarkdown).toBe('The answer.\n\n# References\n[Evidence](https://example.com)')
   })
 
   it('supports a Configuration Manager package-build summary and preserves its download link', () => {

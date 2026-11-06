@@ -1,3 +1,5 @@
+import MarkdownIt from 'markdown-it'
+
 export type AgentCompletionField = {
   label: string
   value: string
@@ -25,6 +27,30 @@ const COMPLETION_LINE_RE =
   /^\*\*(.+?\bAgent)\*\*\s+(\u5df2\u5b8c\u6210(?:\u672c\u8f6e)?(?:\u5206\u6790|\u68c0\u7d22|\u6253\u5305|\u6574\u5305\u6253\u5305|\u6574\u5305\u6784\u5efa|\u5904\u7406)|completed (?:(?:this|the current) (?:analysis|search|packaging|package build|run)|(?:the )?full-package build))[\u3002.]*$/i
 const SECTION_HEADING_RE = /^##\s+(.+?)\s*$/
 const FIELD_RE = /^-\s+([^：:]+)[：:]\s*(.*)$/
+const resultMarkdown = new MarkdownIt()
+const HIDDEN_RESULT_SECTION_RE = /^(?:\u6458\u8981|\u5173\u952e\u8bcd|summary|keywords)$/i
+
+/** Hide generated result sections without treating code examples as headings. */
+function omitResultMetadataSections(content: string): string {
+  const lines = content.split('\n')
+  const tokens = resultMarkdown.parse(content, {})
+  const sections = tokens.flatMap((token, index) => {
+    if (token.type !== 'heading_open' || token.level !== 0 || !token.map) return []
+    if (token.tag !== 'h1' && token.tag !== 'h2') return []
+    return [{
+      start: token.map[0],
+      hidden: token.tag === 'h2' && HIDDEN_RESULT_SECTION_RE.test(tokens[index + 1]?.content.trim() || ''),
+    }]
+  })
+  const hiddenRanges = sections.flatMap((section, index) => section.hidden
+    ? [{ start: section.start, end: sections[index + 1]?.start ?? lines.length }]
+    : [])
+  if (!hiddenRanges.length) return content
+  return lines
+    .filter((_, index) => !hiddenRanges.some(({ start, end }) => index >= start && index < end))
+    .join('\n')
+    .trim()
+}
 
 const cleanInlineMarkdown = (value: string) =>
   value
@@ -100,7 +126,7 @@ export function parseAgentMessage(content: string): AgentMessageView {
     answerStart === -1 ? '' : lines.slice(answerStart).join('\n').trim()
 
   return {
-    displayMarkdown,
+    displayMarkdown: omitResultMetadataSections(displayMarkdown),
     completionSummary: {
       title: titleMatch[1].trim(),
       fields,

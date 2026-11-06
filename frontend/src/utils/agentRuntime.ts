@@ -2,10 +2,12 @@ import type { AgentTraceEvent } from '@/types/agentTrace'
 
 export function collectRuntime(events: AgentTraceEvent[]) {
   let executor = ''
+  let agentKey = ''
   const routes: { provider: string; model: string }[] = []
   for (const event of events) {
     if (event.type !== 'system_notice') continue
     if (event.kind !== 'raven_executor' && event.kind !== 'raven_route') continue
+    if (event.agent_key) agentKey = event.agent_key
     if (event.executor) executor = event.executor === 'antigravity_cli' ? 'Antigravity CLI' : 'Claude Agent SDK'
     if (event.kind === 'raven_route' && event.provider && event.model) {
       const previous = routes[routes.length - 1]
@@ -14,5 +16,5 @@ export function collectRuntime(events: AgentTraceEvent[]) {
       }
     }
   }
-  return { executor, routes }
+  return { executor, agentKey, routes }
 }

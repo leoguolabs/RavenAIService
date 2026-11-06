@@ -1,6 +1,7 @@
 <template>
   <div v-if="hasContent" class="agent-trace">
-    <div v-if="runtimeModel || loadedSkills.length" class="agent-trace__metadata">
+    <div v-if="agentName || runtimeModel || loadedSkills.length || finished" class="agent-trace__metadata">
+      <span v-if="agentName" class="agent-trace__agent">{{ agentName }}</span>
       <div v-if="runtimeModel" class="agent-trace__runtime">{{ runtimeModel }}</div>
       <div v-if="loadedSkills.length" class="agent-trace__skills" :title="t('agentTrace.loadedSkillsTitle')">
         <span class="agent-trace__skills-label">{{ t('agentTrace.loadedSkillsLabel') }}</span>
@@ -13,47 +14,48 @@
           {{ skill }}
         </span>
       </div>
+      <!-- Keep the completed trace disclosure within the metadata row. -->
+      <button
+        v-if="finished"
+        type="button"
+        class="agent-trace__summary-row"
+        :aria-expanded="summaryExpanded"
+        :title="summaryLine"
+        :aria-label="availableSkills.length ? `${summaryLine} · ${t('agentTrace.availableSkillsLabel')} ${availableSkills.length}` : summaryLine"
+        @click="summaryExpanded = !summaryExpanded"
+      >
+        <span v-if="terminal" class="agent-trace__summary-icon" aria-hidden="true">
+          <Check v-if="terminal.type === 'run_complete'" class="agent-trace__summary-icon-svg" />
+          <Ban v-else-if="terminal.type === 'cancelled'" class="agent-trace__summary-icon-svg" />
+          <AlertTriangle v-else class="agent-trace__summary-icon-svg" />
+        </span>
+        <span class="agent-trace__summary-text">
+          {{ compactSummaryLine }}
+          <span v-if="availableSkills.length" class="agent-trace__summary-skills">
+            · {{ t('agentTrace.availableSkillsCount', { count: availableSkills.length }) }}
+          </span>
+        </span>
+        <ChevronDown
+          class="agent-trace__summary-chevron"
+          :class="{ 'agent-trace__summary-chevron--open': summaryExpanded }"
+          aria-hidden="true"
+        />
+      </button>
     </div>
 
-    <!-- Completed runs share one disclosure for the Skill catalog and trace. -->
-    <button
-      v-if="terminal"
-      type="button"
-      class="agent-trace__summary-row"
-      :aria-expanded="summaryExpanded"
-      @click="summaryExpanded = !summaryExpanded"
-    >
-      <span class="agent-trace__summary-icon" aria-hidden="true">
-        <Check v-if="terminal.type === 'run_complete'" class="agent-trace__summary-icon-svg" />
-        <Ban v-else-if="terminal.type === 'cancelled'" class="agent-trace__summary-icon-svg" />
-        <AlertTriangle v-else class="agent-trace__summary-icon-svg" />
-      </span>
-      <span class="agent-trace__summary-text">
-        {{ summaryLine }}
-        <span v-if="availableSkills.length" class="agent-trace__summary-skills">
-          · {{ t('agentTrace.availableSkillsLabel') }} {{ availableSkills.length }}
-        </span>
-      </span>
-      <ChevronDown
-        class="agent-trace__summary-chevron"
-        :class="{ 'agent-trace__summary-chevron--open': summaryExpanded }"
-        aria-hidden="true"
-      />
-    </button>
-
     <!-- Expanded list: running view, OR terminal view after user expands. -->
-    <div v-if="!terminal || summaryExpanded" class="agent-trace__list">
+    <div v-if="!finished || summaryExpanded" class="agent-trace__list">
       <component
-        :is="terminal ? 'section' : 'details'"
+        :is="finished ? 'section' : 'details'"
         v-if="availableSkills.length"
         class="agent-trace__available-skills"
         :title="t('agentTrace.availableSkillsTitle')"
         :aria-label="t('agentTrace.availableSkillsLabel')"
       >
-        <component :is="terminal ? 'h3' : 'summary'" class="agent-trace__available-summary">
+        <component :is="finished ? 'h3' : 'summary'" class="agent-trace__available-summary">
           <span class="agent-trace__skills-label">{{ t('agentTrace.availableSkillsLabel') }}</span>
           <span class="agent-trace__available-count">{{ availableSkills.length }}</span>
-          <ChevronDown v-if="!terminal" class="agent-trace__available-chevron" aria-hidden="true" />
+          <ChevronDown v-if="!finished" class="agent-trace__available-chevron" aria-hidden="true" />
         </component>
         <div class="agent-trace__skills agent-trace__skills--available">
           <span v-for="skill in availableSkills" :key="skill" class="agent-trace__skill-pill" :title="skill">
@@ -63,7 +65,7 @@
       </component>
 
       <section v-if="cards.length" class="agent-trace__steps" :aria-label="t('agentTrace.toolCallsLabel')">
-        <h3 v-if="terminal" class="agent-trace__section-title">{{ t('agentTrace.toolCallsLabel') }}</h3>
+        <h3 v-if="finished" class="agent-trace__section-title">{{ t('agentTrace.toolCallsLabel') }}</h3>
         <TraceStepCard
           v-for="card in cards"
           :key="card.stepId"
@@ -142,7 +144,7 @@ import { useToolDisplayName, type ToolNameMap } from '@/composables/useToolDispl
 import TraceStepCard from './TraceStepCard.vue'
 import { collectRuntime } from '@/utils/agentRuntime'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 const props = defineProps<{
   events: AgentTraceEvent[]
@@ -156,6 +158,12 @@ const props = defineProps<{
 
 const eventsRef = toRef(props, 'events')
 const runtime = computed(() => collectRuntime(props.events || []))
+const agentName = computed(() => {
+  if (runtime.value.executor) return runtime.value.executor
+  const key = runtime.value.agentKey
+  if (key) return te(`agentTrace.agents.${key}`) ? t(`agentTrace.agents.${key}`) : key
+  return props.completionSummary?.title.replace(/\s+Agent$/i, '') || ''
+})
 const runtimeModel = computed(() => {
   const route = runtime.value.routes[runtime.value.routes.length - 1]
   const model = route?.model || props.completionSummary?.model || ''
@@ -171,6 +179,7 @@ const running = computed(() => {
   if (props.running !== undefined) return props.running && !terminal.value
   return streamRunning.value
 })
+const finished = computed(() => !running.value)
 
 const hasContent = computed(
   () =>
@@ -189,8 +198,8 @@ const availableSkills = computed(() => collectAvailableSkills(props.events || []
 const loadedSkills = computed(() => collectLoadedSkills(props.events || []))
 
 const cancelling = ref(false)
-watch(terminal, (term: unknown) => {
-  if (term) {
+watch(finished, (done) => {
+  if (done) {
     cancelling.value = false
     summaryExpanded.value = false
   }
@@ -211,9 +220,14 @@ function formatDuration(secs: number | undefined | null): string {
   return `${secs.toFixed(1)}s`
 }
 
+const compactSummaryLine = computed(() => t('agentTrace.compactSummary', {
+  duration: formatDuration(summary.value?.thought_duration_seconds),
+  count: summary.value?.tool_call_count ?? 0,
+}))
+
 const summaryLine = computed(() => {
   const term = terminal.value
-  if (!term) return ''
+  if (!term) return compactSummaryLine.value
   const s: TraceSummary | null = summary.value
   const toolCalls = s?.tool_call_count ?? 0
   const duration = s?.thought_duration_seconds ?? 0
@@ -231,21 +245,36 @@ const summaryLine = computed(() => {
 .agent-trace__metadata,
 .agent-trace__runtime {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: 10px;
   min-width: 0;
   font-size: 12px;
   color: var(--el-text-color-secondary, #64748b);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 .agent-trace__metadata {
-  column-gap: 16px;
+  height: 26px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.agent-trace__runtime + .agent-trace__skills {
-  min-width: 0;
+.agent-trace__metadata::-webkit-scrollbar {
+  display: none;
+}
+
+.agent-trace__metadata > * {
+  flex-shrink: 0;
+}
+
+.agent-trace__metadata > .agent-trace__skills {
+  flex-wrap: nowrap;
+  padding: 0;
+}
+
+.agent-trace__agent {
+  font-weight: 500;
 }
 .agent-trace {
   display: flex;
@@ -355,12 +384,12 @@ section.agent-trace__available-skills + .agent-trace__steps {
 }
 
 .agent-trace__summary-row {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 8px;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
   border: 1px solid var(--el-border-color-lighter, #e5e7eb);
   background: var(--el-fill-color-light, #f5f7fa);
   cursor: pointer;
@@ -375,12 +404,13 @@ section.agent-trace__available-skills + .agent-trace__steps {
 
 .agent-trace__summary-row:focus-visible {
   outline: 2px solid var(--el-color-primary, #409eff);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 .agent-trace__summary-icon-svg {
-  width: 16px;
-  height: 16px;
+  display: block;
+  width: 12px;
+  height: 12px;
 }
 
 .agent-trace__summary-text {
