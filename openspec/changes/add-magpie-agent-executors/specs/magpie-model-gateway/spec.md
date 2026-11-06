@@ -20,3 +20,14 @@ Acceptance MUST exercise both executors against each of the three configured pro
 #### Scenario: Six executor-provider combinations
 - **WHEN** the acceptance matrix completes
 - **THEN** each cell has a successful real task, matched Magpie route evidence and persisted frontend trace evidence
+
+#### Scenario: Disabled explicitly selected provider
+- **WHEN** a selected model's provider is disabled in Magpie
+- **THEN** both executors report the HTTP failure, requested model and disabled-provider cause without exposing credentials or raw upstream bodies
+- **AND** Raven does not silently switch an explicit model to another provider or replay the Agent
+
+#### Scenario: Agent and executor are independent of model provider
+- **WHEN** each of the six Agent kinds selects each configured model with either executor
+- **THEN** enabled models are callable with the selected executor and the actual route is recorded
+- **AND** disabled models fail explicitly, while unrelated enabled models remain callable with OpenAI disabled
+- **AND** acceptance-only model overrides are removed after testing so executor-only overrides inherit the administrator's default model

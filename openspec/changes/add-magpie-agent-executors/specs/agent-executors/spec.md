@@ -18,6 +18,16 @@ Both executors MUST receive the task workspace, prompts, materialized skills and
 - **WHEN** a user cancels an Antigravity run
 - **THEN** its process and pending tool calls stop, the normal cancelled terminal event is persisted, and another user's run is unaffected
 
+#### Scenario: Device tools preserve evidence and approvals across executors
+- **WHEN** either executor calls a read-only device tool
+- **THEN** both MCP response shapes preserve the same verified evidence without shell-based tool discovery
+- **WHEN** a device tool is write, destructive or has unknown risk
+- **THEN** it is not auto-approved before Raven's broker, denial causes no dispatch and approval dispatches once
+
+#### Scenario: Malformed answer after a confirmed route
+- **WHEN** project expert receives an invalid structured answer after route attribution
+- **THEN** it reports schema mismatch with the actual model metadata without a duplicate-model argument exception
+
 ### Requirement: Versioned backend installation
 The backend image MUST contain a verified, pinned Antigravity CLI supporting machine-readable events on Linux ARM64 and AMD64.
 

@@ -188,8 +188,12 @@ async def query(*, prompt, options):
                                 await control.hooks("PostToolUse", name, args,
                                     f"agy-{adapter.session_id}-{step.get('step_index')}", info.get("output"))
                     code = await process.wait()
-                if code != 0 or adapter.result is None:
-                    raise RuntimeError(f"Antigravity failed (exit {code}); no successful terminal event")
+                if adapter.result is None:
+                    raise RuntimeError(f"Antigravity failed (exit {code}); no terminal event")
+                # The structured error result already carries the failure. Do not replace it
+                # with a generic exit-code exception after the caller consumes the result.
+                if code != 0 and adapter.result.get("status") == "SUCCESS":
+                    raise RuntimeError(f"Antigravity failed (exit {code}) after a successful terminal event")
             finally:
                 await terminate(process)
                 stderr_task.cancel()

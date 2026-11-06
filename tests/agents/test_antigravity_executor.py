@@ -52,6 +52,11 @@ async def test_real_memory_mcp_bridge_enforces_denial_and_post_hooks():
     options = ClaudeAgentOptions(cwd="/tmp", mcp_servers={"fixture": create_sdk_mcp_server("fixture", tools=[read])},
         can_use_tool=can_use, hooks={"PostToolUse": [HookMatcher(hooks=[post])]})
     async with control_bridge(options) as (control, url, token):
+        startup = await control.native_hook("PreInvocation", {"invocationNum": 0})
+        catalog = startup["injectSteps"][0]["systemMessage"]["systemMessage"]
+        assert '"ServerName": "fixture"' in catalog and '"ToolName": "read"' in catalog
+        assert '"inputSchema"' in catalog and 'call_mcp_tool directly' in catalog
+        assert not (await control.native_hook("PreInvocation", {"invocationNum": 1}))["injectSteps"]
         async with httpx.AsyncClient() as client:
             assert (await client.post(url + "/mcp/fixture", json={})).status_code == 401
             for value in ("denied", "allowed"):
@@ -104,3 +109,35 @@ def test_transport_secrets_are_removed_before_trace_persistence():
     safe = redact(message, ("private-token", "control-secret"))
     assert safe.content[0].text == "[redacted] [redacted]"
     assert message.content[0].text == "private-token control-secret"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal,code,expected", [
+    ({"status": "ERROR", "error": "specific CLI failure"}, 3, None),
+    ({"status": "SUCCESS", "response": "ok"}, 0, None),
+    (None, 3, "no terminal event"),
+    ({"status": "SUCCESS"}, 3, "after a successful terminal event"),
+])
+async def test_real_process_terminal_status_is_not_overwritten(tmp_path, monkeypatch, terminal, code, expected):
+    import json
+    import os
+    import sys
+    from app.agents.antigravity_executor import query
+
+    binary = tmp_path / "agy"
+    event = json.dumps({"event": "result", "result": terminal}) if terminal else ""
+    binary.write_text(f"#!{sys.executable}\nimport sys\nsys.stdin.read()\n"
+                      f"event = {event!r}\nif event: print(event, flush=True)\nsys.exit({code})\n")
+    binary.chmod(0o700)
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    options = ClaudeAgentOptions(cwd=str(tmp_path), model="fixture", env={
+        "ANTHROPIC_BASE_URL": "http://unused", "ANTHROPIC_API_KEY": "token", "API_TIMEOUT_MS": "5000"})
+    if expected:
+        with pytest.raises(RuntimeError, match=expected):
+            _ = [message async for message in query(prompt="test", options=options)]
+    else:
+        messages = [message async for message in query(prompt="test", options=options)]
+        assert len(messages) == 1
+        assert messages[0].is_error == (terminal["status"] == "ERROR")
+        if messages[0].is_error:
+            assert messages[0].errors == ["specific CLI failure"]

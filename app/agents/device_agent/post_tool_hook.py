@@ -129,6 +129,10 @@ def _extract_envelope(tool_response: Any) -> Dict[str, Any]:
     剥回去拿到 dispatcher 写入的 JSON。失败时构造一个 ``schema_mismatch``
     占位 envelope（保留原 raw 文本截断后传递）。
     """
+    # Claude Code passes MCP content blocks directly; Antigravity's bridge
+    # passes the complete CallToolResult. Normalize both before validation.
+    if isinstance(tool_response, list):
+        tool_response = {"content": tool_response}
     if isinstance(tool_response, dict):
         # 优先解 content[0].text 为 JSON
         content = tool_response.get("content")

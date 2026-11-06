@@ -29,13 +29,49 @@ Bootstrap 从现有主模型、备用模型和 BugFix 模型配置读取端点�
 
 Admin API 为 `GET/PUT /admin/agent-runtime` 和 `GET /admin/agent-runtime/models`，需要管理员认证。密钥只写不回显，空密钥保留原值。更改只影响新任务。模型目录中的完整 ID（如 `raven-yinhe/yinhe-thinking`）或 Magpie 路由组 ID 均可填写；单个 Agent 留空即继承默认配置。
 
+执行器和模型分别继承。例如项目专家仅设置 `executor=antigravity_cli`、`model=null`，仍使用全局默认模型；选择 Antigravity 不需要 OpenAI 供应商。测试某个模型后应恢复测试前的配置，交付时不要残留验收专用的模型覆盖。
+
 ## 运行与验收
 
 两种执行器共享工作区、项目提示词、materialized Skills 和 Raven MCP handler。Antigravity 使用独立临时 HOME、结构化 stdin/stdout、PreInvocation/PreToolUse/Stop hook；工具权限及澄清仍由 Raven 管理。未知原生工具默认拒绝，避免 CLI 升级绕过现有权限规则。第三方 stdio/HTTP MCP 配置暂不直接透传，只桥接 Raven 拥有的 SDK MCP server。模型能力来自 Magpie 模型目录；改变模型能力后刷新目录。
 
+Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema，使设备 Agent 无需先通过 Read/Bash 查找 CLI 内部工具说明。真正的 MCP 调用、原生文件读写和 shell 权限仍经过原有 Raven 审批；这不会把任意文件或命令自动放行。
+
+设备结果校验兼容 Claude SDK 的 content 列表与 Antigravity 的完整 MCP 结果对象。Claude 的 `allowed_tools` 仅自动批准已判定为 read 的设备工具；write/destructive/未知工具必须进入 Raven broker，回传决策会转成 SDK 所需的类型。`--deny` / `--approve-write` 可用本地设备桩交叉检查拒绝后零执行、批准后仅执行一次。
+
 至少验收：两种执行器分别使用银河、DeepSeek、OpenAI；读取含随机证据编号的日志、激活同一个 Skill、调用 MCP；浏览器检查工具卡片、实际执行器与模型，刷新后回放；取消一个会话并确认另一个并发会话正常完成；制造不可用主端点并确认实际备用模型出现在回答及 trace 中。只收到模型文本或容器 healthy 不算完整验收。
 
 模型切换由 Magpie 按单次请求处理。Raven 不会在工具已执行后重跑整个 Agent。实际模型取自 `X-Magpie-Provider` / `X-Magpie-Model`，请求的路由组保存在 `requested_model`；两者可能不同。取消会关闭本次代理与 CLI 进程组，历史 trace 和取消终态继续保留。BugFix 完成后的详情也使用同一 trace 组件。
+
+### 供应商停用与错误排查
+
+若 Magpie 中关闭了 OpenAI，但某个 Agent 的模型覆盖仍为 `raven-openai/gpt-6.1-terra`，请求会被 Magpie 拒绝（HTTP 404，`provider switched off`）。显式模型 ID 不表示自动选其他供应商。清除该 Agent 的模型覆盖即可继承默认模型；需要自动切换时，在 Magpie 创建含多个模型的路由组，并在 Raven 选择 `group/<id>`。仅停用供应商不会自动修改 Raven 已保存的模型覆盖。
+
+两种执行器均应报告 HTTP 状态、执行器、请求模型及可识别的停用原因。桥接层仅输出自有的双语诊断，不持久化原始上游错误正文或 CLI stderr；结构化 CLI 错误终态也不会被后续的 exit code 覆盖。成功重试会清除之前的网关失败，避免把后续工具错误误归因于旧请求。
+
+### 六类 Agent 交叉用例
+
+`scripts/verify-agent-model-matrix.py` 是显式运行的真实调用用例。每个单元使用独立进程/容器及私有运行配置副本，不保存管理员配置。覆盖真实 Agent 类入口、模型选择、真实 CLI 与网关、工具执行、结果解析和 trace；采用短合成提示词及本地只读设备/项目目录桩，因此不代表完整日志分析、真实设备操作或修复质量验收。
+
+| 维度 | 用例与断言 |
+| --- | --- |
+| Agent | 通用、日志分析、设备、项目专家、配置管理员、BugFix 六种实际入口 |
+| 执行器 | `claude_sdk`、`antigravity_cli` |
+| 启用模型 | 遍历 `/v1/models` 的全部目标模型；必须有实际路由、真实工具步骤及随机证据回读，结构化 Agent 还必须解析成功 |
+| 已停用模型 | 加 `--disabled`；必须指出供应商停用，没有实际路由，也不执行模型驱动的工具 |
+| 路由组 | 已停用 OpenAI 放首位、启用模型放后位；`--actual-model` 指定备用模型，断言 requested 与 actual 分别正确 |
+| 继承 | 单独覆盖执行器后修改默认模型，Agent 必须继承新模型；配置保存及启动用例另有单元回归 |
+
+在具有同版本 CLI、网关网络访问及隔离数据目录的验收容器中运行单元，例如：
+
+```sh
+PYTHONPATH=/app RUNTIME_SETTINGS_PATH=/run/runtime.private.json \
+  python scripts/verify-agent-model-matrix.py \
+  --agent device_agent --executor antigravity_cli \
+  --model raven-yinhe/yinhe-thinking --output /evidence/device-yinhe.json
+```
+
+运行配置副本包含 caller key，应只读挂载、限制文件权限，不提交。矩阵运行时保持已停用供应商关闭，不能把预期失败列计作模型成功调用。新增供应商/模型后扩展目标列表重跑，不能用三家现有模型的结果推定所有未来模型都支持工具或图片输入。
 
 ## 回滚与边界
 

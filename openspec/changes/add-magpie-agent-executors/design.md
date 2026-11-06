@@ -16,6 +16,8 @@ Six Raven agents prepare workspaces and consume Claude SDK message shapes. `prov
 4. Bridge existing in-process MCP servers over an authenticated local transport. Keep the original handlers, permission broker and hooks; normalize CLI tool names so existing UI labels, tool results and skill activation remain truthful. Do not invent tool or skill events.
 5. Pin Antigravity download URLs and checksums for Linux ARM64/AMD64. Add Magpie as a separate persistent Compose service, using the fork pinned by the umbrella submodule. A bootstrap path imports only existing model configuration, preserving source settings for rollback and never printing credentials.
 6. Persist executor identity and observed routes in normal trace events. The UI consumes actual route notices and does not infer a served model from the requested group. Before a response, indicate only the requested route. Keep existing result metadata consistent with observed route information.
+7. Preserve a bounded, safe Magpie failure classification through assistant-shaped CLI rejections, terminal errors and nonzero exits. Never expose arbitrary upstream error bodies or stderr. Clear failed-request diagnostics after successful retry; explicit disabled model selections fail with a configuration hint rather than changing model policy.
+8. Supply registered MCP schemas in Antigravity's initial invocation context. This avoids CLI filesystem/shell discovery triggering DeviceAgent approval before a read-only MCP call. Actual tool authorization remains unchanged.
 
 ## Risks / Trade-offs
 

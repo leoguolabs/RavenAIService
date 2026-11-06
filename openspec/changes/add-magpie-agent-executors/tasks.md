@@ -24,3 +24,9 @@
 - [x] 4.3 Run real tool-and-skill E2E tasks for Claude SDK × Yinhe/DeepSeek/OpenAI and Antigravity CLI × Yinhe/DeepSeek/OpenAI.
 - [x] 4.4 Verify browser UI, actual gateway fallback attribution, persisted replay and cancellation without changing normal user flows.
 - [x] 4.5 Update runtime/trace/deployment documentation, review diffs and commit scoped changes and umbrella gitlinks.
+
+## 5. Disabled-provider regression and full agent matrix
+
+- [x] 5.1 Preserve safe gateway failure causes through both executors and test disabled-provider, recovery and terminal-error behavior.
+- [x] 5.2 Verify all six agent selections with both executors and every locally configured model; record live enabled-model successes and disabled-model failures separately.
+- [x] 5.3 Clear the acceptance-only project-expert model pin, verify OpenAI-off operation and group fallback, update the runbook and commit the fix.

@@ -65,6 +65,15 @@ def _extract_modified(output: dict) -> dict:
 
 
 class TestPostToolHook:
+    @pytest.mark.parametrize("wrapped", [False, True])
+    def test_executor_mcp_response_shapes_preserve_evidence(self, wrapped):
+        meta = _meta(output_schema={"type": "object", "required": ["text"]})
+        hook, events = _events_and_hook({meta.sdk_name: meta})
+        response = _wrap({"status": "ok", "result": {"text": "random-proof"}})
+        out = _run_hook(hook, meta.sdk_name, response if wrapped else response["content"])
+        assert _extract_modified(out) == {"status": "ok", "result": {"text": "random-proof"}}
+        assert events[-1]["status"] == "ok"
+
     def test_ok_passes_through(self):
         meta = _meta()
         hook, events = _events_and_hook({meta.sdk_name: meta})

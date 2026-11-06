@@ -218,6 +218,21 @@ async def control_bridge(options):
                     canonical = f"mcp__{name}__{tool.name}"
                     for alias in (canonical, f"mcp_{name}_{tool.name}", f"{name}/{tool.name}"):
                         control.mcp_names[alias] = canonical
+            if control.catalog:
+                # Antigravity normally discovers MCP schemas by reading its internal
+                # files. DeviceAgent correctly treats arbitrary Read/Bash as requiring
+                # approval, so give it the schemas directly without weakening that gate.
+                catalog = [{"ServerName": name, "ToolName": tool["name"],
+                            "description": tool.get("description", ""),
+                            "inputSchema": tool.get("inputSchema", {})}
+                           for name, entries in control.catalog.items() for tool in entries]
+                control.pending_context.append(
+                    "Raven MCP tool catalog: use call_mcp_tool directly with ServerName, ToolName "
+                    "and Arguments matching inputSchema below. Do not read or list internal MCP "
+                    "schema files or use shell commands to discover tools; all required schemas "
+                    "are provided here. Actual tool calls still require Raven permission checks.\n"
+                    + json.dumps(catalog, ensure_ascii=False)
+                )
             sock = socket.socket()
             sock.bind(("127.0.0.1", 0))
             sock.listen()

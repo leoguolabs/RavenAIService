@@ -255,7 +255,10 @@ async def test_run_stream_rejects_unsupported_provider(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_stream_registers_and_cleans_broker(monkeypatch):
     """``broker_registry[session_id]`` is set during the run and removed in finally."""
-    device = _FakeDevice({"protocol_version": 2, "mcp": {"servers": []}})
+    device = _FakeDevice({"protocol_version": 2, "mcp": {"servers": [{"name": "probe", "tools": [
+        {"name": "read", "risk": "read"}, {"name": "write", "risk": "write"},
+        {"name": "erase", "risk": "destructive"}, {"name": "unknown"},
+    ]}]}})
 
     async def _get_device(*_a, **_kw):
         return device
@@ -298,5 +301,8 @@ async def test_run_stream_registers_and_cleans_broker(monkeypatch):
     assert seen_options
     assert "AskUserQuestion" in (seen_options[0].disallowed_tools or [])
     assert "mcp__ask__AskUserQuestion" in (seen_options[0].allowed_tools or [])
+    assert "mcp__device__probe__read" in seen_options[0].allowed_tools
+    for name in ("write", "erase", "unknown"):
+        assert f"mcp__device__probe__{name}" not in seen_options[0].allowed_tools
     # ...and removed after run_stream finished.
     assert "sess-broker" not in registry

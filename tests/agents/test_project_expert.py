@@ -440,6 +440,8 @@ async def test_agent_rejects_duplicate_fields_even_with_optional_skill(tmp_path,
     terminal = f"```json\n{body}\n```" if fenced else body
 
     async def query(*_args, **_kwargs):
+        yield SimpleNamespace(subtype="raven_route", data={"executor": "antigravity_cli",
+            "provider": "raven-yinhe", "model": "raven-yinhe/yinhe-thinking", "requested_model": "group/test"})
         yield FakeResultMessage(result=terminal)
 
     with _patch_agent_common(query), \
@@ -451,6 +453,8 @@ async def test_agent_rejects_duplicate_fields_even_with_optional_skill(tmp_path,
     assert result["status"] == "schema_mismatch"
     assert result["answer"] == ""
     assert result["raw"] == terminal
+    assert result["model"] == "raven-yinhe/yinhe-thinking"
+    assert result["executor"] == "antigravity_cli"
 
 
 @pytest.mark.asyncio

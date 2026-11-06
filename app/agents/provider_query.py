@@ -8,7 +8,7 @@ import json
 import os
 import uuid
 from contextlib import aclosing
-from dataclasses import replace
+from dataclasses import is_dataclass, replace
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -47,6 +47,22 @@ def workspace_image_blocks(cwd: str) -> list[dict]:
 
 async def _claude_query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
     from claude_agent_sdk import query as sdk_query
+
+    callback = getattr(options, "can_use_tool", None)
+    if is_dataclass(options) and callback is not None:
+        from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+
+        async def sdk_permission(name, arguments, context):
+            decision = await callback(name, arguments, context)
+            if not isinstance(decision, dict):
+                return decision
+            if decision.get("behavior") == "allow":
+                return PermissionResultAllow(updated_input=decision.get("updated_input", decision.get("updatedInput")))
+            return PermissionResultDeny(message=decision.get("message") or "Denied by Raven")
+
+        # Raven's broker returns dictionaries shared with the CLI adapter; the
+        # SDK control protocol requires typed decisions, including on approval.
+        options = replace(options, can_use_tool=sdk_permission)
 
     env = dict(getattr(options, "env", {}) or {})
     if env.get("RAVEN_API_PROTOCOL") != "openai_responses":
@@ -90,7 +106,7 @@ async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
                 yield message
         return
 
-    from claude_agent_sdk import SystemMessage
+    from claude_agent_sdk import ResultMessage, SystemMessage
     from app.agents.magpie_bridge import GatewayConfig, gateway_bridge
 
     executor = env.get("RAVEN_EXECUTOR", "claude_sdk")
@@ -100,12 +116,18 @@ async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
     async def on_route(data: dict) -> None:
         await events.put(("message", SystemMessage(subtype="raven_route", data=data)))
 
+    last_gateway_error = None
+
+    def on_error(error):
+        nonlocal last_gateway_error
+        last_gateway_error = error
+
     config = GatewayConfig(base_url=env["ANTHROPIC_BASE_URL"], api_key=env["ANTHROPIC_API_KEY"],
         model=options.model, executor=executor, session_id=str(uuid.uuid4()), agent_kind=agent_kind,
         timeout_seconds=float(env.get("API_TIMEOUT_MS", "3600000")) / 1000)
     yield SystemMessage(subtype="raven_executor", data={"executor": executor, "agent_key": agent_kind,
         "requested_model": options.model})
-    async with gateway_bridge(config, on_route) as (base_url, token):
+    async with gateway_bridge(config, on_route, on_error) as (base_url, token):
         env = {key: value for key, value in env.items() if not key.startswith("RAVEN_")}
         # Claude Code merges options.env into the application environment.
         # Explicitly clear inherited provider credentials in that subprocess.
@@ -130,12 +152,21 @@ async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
                 prompt = multimodal_prompt()
 
         async def produce():
+            from app.agents.routed_query import _upstream_error_candidate
+
             try:
                 async with aclosing(run(prompt=prompt, options=adapted)) as stream:
                     async for message in stream:
+                        # Claude may emit an assistant-shaped API rejection before its
+                        # terminal result; routed_query can stop at that first frame.
+                        if last_gateway_error and (
+                            (isinstance(message, ResultMessage) and message.is_error)
+                            or _upstream_error_candidate(message) is not None
+                        ):
+                            raise last_gateway_error
                         await events.put(("message", message))
             except Exception as exc:
-                await events.put(("error", exc))
+                await events.put(("error", last_gateway_error or exc))
             finally:
                 # Do not block cancellation if the consumer closed a full queue.
                 if not asyncio.current_task().cancelling():

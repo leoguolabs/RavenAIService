@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
 
 from app.agents.device_agent.mcp_tools import build_device_mcp_server
-from app.agents.device_agent.permissions import PermissionBroker, make_can_use_tool
+from app.agents.device_agent.permissions import PermissionBroker, classify_risk, make_can_use_tool
 from app.agents.device_agent.post_tool_hook import build_post_tool_use_hook
 from app.agents.device_agent.prompts import (
     get_prompts,
@@ -403,6 +403,10 @@ class DeviceAgent:
                 ctx.broker_registry[broker_key] = broker
 
             risk_rules = get_risk_rules(ctx.scene_hint)
+            # Claude Code's allowed_tools auto-approves before can_use_tool. Keep
+            # write/destructive/unknown device tools out so Raven's broker is consulted.
+            full_allowed = [name for name in full_allowed if name not in tool_meta_map
+                            or classify_risk(name, tool_meta_map[name], risk_rules) == "read"]
             timeout_s = float(
                 getattr(settings, "device_agent_permission_timeout_seconds", 120)
             )

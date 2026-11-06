@@ -94,10 +94,10 @@ AGENT_KEY = "project_expert"
 TraceEmitter = Callable[[AgentTraceEvent], None]
 
 
-def _empty_result(model: str, *, status: str, error_kind: Optional[str], **extra: Any) -> Dict[str, Any]:
+def _empty_result(fallback_model: str, *, status: str, error_kind: Optional[str], **extra: Any) -> Dict[str, Any]:
     base = {
         "engine": "claude-agent-sdk",
-        "model": model,
+        "model": fallback_model,
         "schema_version": 3,
         "status": status,
         "error_kind": error_kind,

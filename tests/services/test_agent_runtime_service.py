@@ -24,6 +24,35 @@ def test_invalid_runtime_configuration(patch):
         runtime.RuntimeConfig(**patch)
 
 
+@pytest.mark.parametrize("agent", runtime.AGENTS)
+@pytest.mark.parametrize("executor", runtime.EXECUTORS)
+@pytest.mark.parametrize("model", ["raven-yinhe/yinhe-thinking", "raven-yinhe/yinhe-chat",
+    "raven-deepseek/deepseek-v4-flash", "raven-openai/gpt-6.1-terra", "group/fallback"])
+def test_every_agent_can_select_every_model_and_executor(monkeypatch, agent, executor, model):
+    from app.agents.anthropic_client import build_options
+    from app.services import model_router
+
+    config = runtime.RuntimeConfig(enabled=True, api_key="gateway-private", model="default/model",
+        agent_overrides={agent: {"executor": executor, "model": model}})
+    monkeypatch.setattr(runtime, "get_config", lambda: config)
+    endpoint, = model_router.candidates(agent_kind=agent)
+    assert (endpoint.model, endpoint.executor, endpoint.agent_kind) == (model, executor, agent)
+    options = build_options(system_prompt="test", cwd="/tmp", allowed_tools=[], endpoint=endpoint)
+    assert options.model == model
+    assert options.env["RAVEN_EXECUTOR"] == executor
+    assert options.env["RAVEN_AGENT_KIND"] == agent
+
+
+@pytest.mark.parametrize("agent", runtime.AGENTS)
+def test_executor_only_override_inherits_changed_default_model(agent):
+    config = runtime.RuntimeConfig(enabled=True, api_key="key", model="raven-yinhe/yinhe-thinking",
+        agent_overrides={agent: {"executor": "antigravity_cli"}})
+    assert config.selection(agent).model == "raven-yinhe/yinhe-thinking"
+    changed = config.model_copy(update={"model": "raven-deepseek/deepseek-v4-flash"})
+    assert changed.selection(agent).model == "raven-deepseek/deepseek-v4-flash"
+    assert changed.selection(agent).executor == "antigravity_cli"
+
+
 @pytest.mark.asyncio
 async def test_bootstrap_imports_key_pool_and_refreshes_catalog(monkeypatch):
     import json
