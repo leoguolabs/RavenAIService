@@ -200,7 +200,15 @@ envelopes can omit `run_id`; clients use the owning subscription's run ID
 for sequence deduplication. Answer deltas never become tool/thinking cards.
 Specialist JSON result streams are projected into their top-level `answer`
 string before the string or object closes, decoding complete escapes and
-hiding the JSON envelope. The authoritative formatted `done.answer` still
+hiding the JSON envelope, including when progress prose or earlier code examples
+precede the result. Ambiguous object/fence prefixes are buffered until they can
+be classified, so split metadata cannot flash on screen. After prose, an object
+must contain a top-level `answer` and a result metadata field (such as `status`
+or `question_type`) to be projected; ordinary JSON examples and code inside the
+decoded answer are preserved. Detection after prose is enabled only for specialist
+runs; plain-text chat can still explain the result schema using a JSON example.
+Snapshot replay uses the same projection.
+The authoritative formatted `done.answer` still
 supplies completion metadata and any additional answer sections. Presentation
 pacing does not modify stored/exported text, respects reduced motion, and
 stops on unmount. Active snapshots restore accumulated answer deltas before

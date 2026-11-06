@@ -637,6 +637,47 @@ describe('conversationRuns store', () => {
     expect(answer.animateAnswer).toBe(true)
   })
 
+  it.each(['answer_delta', 'agent_trace'])(
+    'projects prefaced JSON through %s, snapshot recovery, and duplicate replay', (event) => {
+      const store = useConversationRunsStore()
+      const state = store.ensureState('session-a')
+      state.runAgentKind = 'log_analysis'
+      const raw = '项目匹配，调查完成。以下是解释：\n```json\n{"status":"ok","question_type":"qa","answer":"1PPS 秒脉冲'
+      const deltas = Array.from(raw, (text, index) => ({
+        ...answerDelta('run-a', 'session-a', index + 2, text), event,
+      }))
+      store.applyEventToState(state, traceEvent('run-a', 'session-a', 1, 'run_start'))
+      const answer = state.messages.find((message) => message.role === 'ai')!
+      for (const delta of deltas) {
+        store.applyEventToState(state, delta)
+        expect(answer.content).not.toMatch(/```json|"(?:status|question_type|answer)"/)
+      }
+      expect(answer.content).toBe('1PPS 秒脉冲')
+      store.mergeSnapshot(state, {
+        run_id: 'run-a', status: 'running', agent_kind: 'log_analysis',
+        trace_events: [...deltas].reverse(),
+      })
+      expect(answer.content).toBe('1PPS 秒脉冲')
+      for (const delta of deltas) store.applyEventToState(state, delta)
+      store.applyEventToState(state, {
+        ...answerDelta('run-a', 'session-a', raw.length + 2, '和 TOD 时间。"}\n```'), event,
+      })
+      expect(answer.content).toBe('1PPS 秒脉冲和 TOD 时间。')
+      store.applyEventToState(state, { event: 'done', answer: '## 回答\n1PPS 秒脉冲和 TOD 时间。' })
+      expect(answer.content).toBe('## 回答\n1PPS 秒脉冲和 TOD 时间。')
+      expect(answer.traceRunning).toBe(false)
+    },
+  )
+
+  it('preserves result-shaped JSON examples in ordinary chat', () => {
+    const store = useConversationRunsStore()
+    const state = store.ensureState('session-a')
+    state.runAgentKind = 'device'
+    const markdown = '协议示例：\n```json\n{"status":"ok","answer":"example"}\n```'
+    store.applyEventToState(state, answerDelta('run-a', 'session-a', 1, markdown))
+    expect(state.messages.find((message) => message.role === 'ai')?.content).toBe(markdown)
+  })
+
   it('corrects the bubble to final_text on run_complete after streaming deltas', () => {
     const store = useConversationRunsStore()
     const state = store.ensureState('session-a')

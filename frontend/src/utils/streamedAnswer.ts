@@ -28,39 +28,102 @@ function readString(source: string, start: number) {
   return { text: text.replace(/[\uD800-\uDBFF]$/, ''), end: index, complete: false }
 }
 
-/**
- * Specialist agents stream fenced JSON results, while general chat streams
- * Markdown. Project only the top-level answer string, before JSON is complete.
- */
-export function projectStreamedAnswer(raw: string): string {
-  let source = raw.trimStart()
-  const fence = source.match(/^```json\s*/i)
-  if (fence) source = source.slice(fence[0].length).trimStart()
-  else if (/^`{1,3}(?:j(?:s(?:o(?:n)?)?)?)?\s*$/i.test(source)) return ''
-  else if (source.startsWith('```')) {
-    // A bare JSON fence is allowed by the result parser too.
-    const body = source.slice(3).trimStart()
-    if (body.startsWith('{')) source = body
-  }
-  if (!source.startsWith('{')) return fence ? '' : raw.trimStart()
-
+/** Read only outer object fields; braces and field names in strings are data. */
+function readObject(source: string, start: number) {
+  const fields = new Set<string>()
+  let answer: string | undefined
   let depth = 0
-  for (let index = 0; index < source.length; index += 1) {
+  let index = start
+  for (; index < source.length; index += 1) {
     const char = source[index]
     if (char === '{' || char === '[') depth += 1
-    else if (char === '}' || char === ']') depth -= 1
-    else if (char === '"') {
+    else if (char === '}' || char === ']') {
+      depth -= 1
+      if (depth === 0) return { fields, answer, end: index + 1, complete: true }
+    } else if (char === '"') {
       const key = readString(source, index)
-      if (!key.complete) return ''
+      if (!key.complete) break
       let valueStart = key.end
-      while (/\s/.test(source[valueStart] || '') && valueStart < source.length) valueStart += 1
-      if (depth === 1 && key.text === 'answer' && source[valueStart] === ':') {
-        valueStart += 1
-        while (/\s/.test(source[valueStart] || '') && valueStart < source.length) valueStart += 1
-        return source[valueStart] === '"' ? readString(source, valueStart).text.trimStart() : ''
+      while (valueStart < source.length && /\s/.test(source[valueStart])) valueStart += 1
+      if (depth === 1 && source[valueStart] === ':') {
+        fields.add(key.text)
+        if (key.text === 'answer') {
+          valueStart += 1
+          while (valueStart < source.length && /\s/.test(source[valueStart])) valueStart += 1
+          if (source[valueStart] === '"') {
+            const value = readString(source, valueStart)
+            answer = value.text.trimStart()
+            if (!value.complete) break
+            index = value.end - 1
+            continue
+          }
+        }
       }
       index = key.end - 1
     }
   }
-  return ''
+  return { fields, answer, end: source.length, complete: false }
+}
+
+const RESULT_METADATA = ['status', 'question_type', 'summary', 'error_kind', 'root_cause_hypotheses', 'recommended_actions']
+
+/**
+ * Model progress text may precede the final JSON, even in the same text block.
+ * Buffer ambiguous JSON prefixes so their shell never flashes on screen, then
+ * project the outer answer. Ordinary code examples remain Markdown; decoded
+ * answer text is returned verbatim, without recursively interpreting examples.
+ */
+export function projectStreamedAnswer(raw: string, allowPrefacedResult = true): string {
+  const source = raw.trimStart()
+  for (let index = 0; index < source.length; index += 1) {
+    // Plain-text agents may intentionally explain the specialist result schema.
+    // Only structured-result agents opt into interpreting objects after prose.
+    if (index > 0 && !allowPrefacedResult) return source
+    const candidateStart = index
+    let fence: string | undefined
+    if (source[index] === '`') {
+      const rest = source.slice(index)
+      // A fence/language token can be split at any character boundary.
+      if (/^`{1,3}(?:j(?:s(?:o(?:n)?)?)?)?\s*$/i.test(rest)) {
+        return source.slice(0, candidateStart).trimEnd()
+      }
+      fence = rest.match(/^`+/)![0]
+      if (fence.length >= 3) {
+        const opening = rest.match(/^`{3,}(?:json\b)?\s*/i)![0]
+        index += opening.length
+        if (source[index] !== '{') {
+          const end = source.indexOf(fence, index)
+          if (end < 0) return source
+          index = end + fence.length - 1
+          continue
+        }
+      } else {
+        // Never inspect JSON inside an inline code span.
+        const end = source.indexOf(fence, index + fence.length)
+        if (end < 0) return source
+        index = end + fence.length - 1
+        continue
+      }
+    }
+    if (source[index] !== '{') continue
+    // Ordinary prose such as {name} is not a JSON object.
+    const first = source.slice(index + 1).trimStart()[0]
+    if (first && first !== '"' && first !== '}') continue
+
+    const object = readObject(source, index)
+    const hasAnswer = object.fields.has('answer')
+    const hasMetadata = RESULT_METADATA.some((field) => object.fields.has(field))
+    // An answer-only example following prose is ambiguous, so require result
+    // metadata there. Keep supporting the original answer-only root envelope.
+    if (hasAnswer && (candidateStart === 0 || hasMetadata)) return object.answer || ''
+    if (!object.complete) return source.slice(0, candidateStart).trimEnd()
+
+    index = object.end - 1
+    if (fence) {
+      const end = source.indexOf(fence, object.end)
+      if (end < 0) return source
+      index = end + fence.length - 1
+    }
+  }
+  return source
 }

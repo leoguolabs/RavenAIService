@@ -623,7 +623,9 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
       if (!chunk) return
       const target = ensureAnswerMessage(state, answerId)
       target.streamedAnswer = (target.streamedAnswer || '') + chunk
-      target.content = projectStreamedAnswer(target.streamedAnswer) || THINKING_PLACEHOLDER
+      target.content = projectStreamedAnswer(
+        target.streamedAnswer, state.runAgentKind !== null && state.runAgentKind !== 'device',
+      ) || THINKING_PLACEHOLDER
       target.animateAnswer = true
       target.kind = 'answer'
       target.traceRunning = true
@@ -849,7 +851,11 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
         state.seenSeq[key] = 1
       }
     }
-    if (target.streamedAnswer) target.content = projectStreamedAnswer(target.streamedAnswer) || THINKING_PLACEHOLDER
+    if (target.streamedAnswer) {
+      target.content = projectStreamedAnswer(
+        target.streamedAnswer, state.runAgentKind !== null && state.runAgentKind !== 'device',
+      ) || THINKING_PLACEHOLDER
+    }
     // If the snapshot has an answer-so-far, render it.
     const answerSoFar = snapshot.answer_so_far
     if (typeof answerSoFar === 'string' && answerSoFar.trim()) {
