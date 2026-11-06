@@ -726,6 +726,7 @@ export default {
     availableSkillsLabel: 'Available Skills',
     loadedSkillsTitle: 'Skills whose instructions were loaded by this agent run',
     loadedSkillsLabel: 'Loaded Skills',
+    toolCallsLabel: 'Tool calls',
     runSummary: 'Run summary',
     completed: 'AI completed this run',
     visualAnalysis: 'Visual analysis · {count} images',

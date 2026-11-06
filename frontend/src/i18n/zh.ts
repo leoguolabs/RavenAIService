@@ -725,6 +725,7 @@ export default {
     availableSkillsLabel: '可用 Skills',
     loadedSkillsTitle: '本次 Agent 运行实际读取指令的 Skills',
     loadedSkillsLabel: '已加载 Skills',
+    toolCallsLabel: '工具调用',
     runSummary: '本轮运行汇总',
     completed: 'AI 已完成本轮处理',
     visualAnalysis: '视觉内容解析 · {count} 张图片',
