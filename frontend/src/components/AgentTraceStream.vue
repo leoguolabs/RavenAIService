@@ -1,5 +1,11 @@
 <template>
   <div v-if="hasContent" class="agent-trace">
+    <div v-if="runtime.executor" class="agent-trace__runtime">
+      <span>{{ runtime.executor }}</span>
+      <template v-for="(route, index) in runtime.routes" :key="index">
+        <span aria-hidden="true">→</span><span>{{ route.provider }} · {{ route.model }}</span>
+      </template>
+    </div>
     <details
       v-if="availableSkills.length"
       class="agent-trace__available-skills"
@@ -138,6 +144,7 @@ import {
 } from '@/composables/useAgentTraceStream'
 import { useToolDisplayName, type ToolNameMap } from '@/composables/useToolDisplayName'
 import TraceStepCard from './TraceStepCard.vue'
+import { collectRuntime } from '@/utils/agentRuntime'
 
 const { t } = useI18n()
 
@@ -152,6 +159,7 @@ const props = defineProps<{
 }>()
 
 const eventsRef = toRef(props, 'events')
+const runtime = computed(() => collectRuntime(props.events || []))
 const { cards, running: streamRunning, summary, terminal } = useAgentTraceStream(eventsRef)
 const toolDisplay = useToolDisplayName(props.toolNameMap)
 
@@ -215,6 +223,7 @@ const summaryLine = computed(() => {
 </script>
 
 <style scoped>
+.agent-trace__runtime { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--el-text-color-secondary, #64748b); overflow-wrap: anywhere; }
 .agent-trace {
   display: flex;
   flex-direction: column;

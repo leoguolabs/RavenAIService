@@ -85,6 +85,7 @@ class BugFixTask(Base, TimestampMixin):
     )
     source_context_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    trace_events_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     fix_outcomes_json: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,

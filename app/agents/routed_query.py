@@ -82,6 +82,7 @@ import asyncio
 import logging
 import re
 import time
+from dataclasses import replace
 from typing import Any, AsyncIterator, Callable, List, Optional, Set, Tuple
 
 from app.services import model_router
@@ -668,6 +669,11 @@ async def routed_query(
                         break
 
                     message = payload
+                    if (choice is not None and getattr(message, "subtype", None) == "raven_route"
+                            and on_endpoint is not None):
+                        actual = message.data
+                        on_endpoint(replace(choice, provider=actual["provider"],
+                            model=actual["model"], small_fast_model=actual["model"]))
                     if not committed:
                         if _is_init_frame(message):
                             # CLI startup, not model latency — restart both the TTFT

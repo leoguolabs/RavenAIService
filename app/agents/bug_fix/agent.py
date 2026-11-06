@@ -215,7 +215,9 @@ def _result(
     error: Optional[str] = None,
     model: Optional[str] = None,
     duration_seconds: float = 0.0,
+    trace_events: Optional[List[dict]] = None,
 ) -> Dict[str, Any]:
+    from app.agents.log_analysis.trace import runtime_metadata
     return {
         "status": status,
         "error_kind": error_kind,
@@ -226,6 +228,8 @@ def _result(
         "duration_seconds": round(duration_seconds, 2),
         "engine": "claude_agent_sdk",
         "agent_kind": AGENT_KEY,
+        "trace_events": trace_events or [],
+        **runtime_metadata(trace_events or []),
     }
 
 
@@ -290,7 +294,8 @@ class BugFixCodingAgent:
         from app.services.model_router import _resolve
         from app.services.model_settings_service import BUG_FIX_SLOT
 
-        endpoint = _resolve(BUG_FIX_SLOT)
+        from app.services.agent_runtime_service import gateway_endpoint
+        endpoint = gateway_endpoint(AGENT_KEY) or _resolve(BUG_FIX_SLOT)
         if endpoint is None:
             return _result(status="failed", merge_requests=[],
                            error_kind="bug_fix_model_unconfigured",
@@ -321,11 +326,18 @@ class BugFixCodingAgent:
         )
 
         from app.agents.provider_query import query as _query
+        from app.agents.log_analysis.agent import _RunState, _emit_for_message, _close_any_active_steps
+        from app.agents.log_analysis.trace import build_event, RUN_START, RUN_COMPLETE, ERROR, summarize
+        state = _RunState(ctx.task_id, None)
+        state.emit(build_event(RUN_START, task_id=ctx.task_id, seq_counter=state.seq_counter, model=effective_model))
 
         run_error: Optional[Exception] = None
         try:
             async with asyncio.timeout(settings.bug_fix_agent_request_timeout_seconds):
                 async for message in _query(prompt=user_prompt, options=options):
+                    _emit_for_message(message, state=state)
+                    if getattr(message, "subtype", None) == "raven_route":
+                        effective_model = message.data.get("model") or effective_model
                     _log_message(ctx.task_id, message)
                     if getattr(message, "is_error", False):
                         errors = getattr(message, "errors", None) or []
@@ -346,6 +358,9 @@ class BugFixCodingAgent:
             )
 
         duration = time.monotonic() - start
+        _close_any_active_steps(state, reason="error" if run_error else "completed")
+        state.emit(build_event(ERROR if run_error else RUN_COMPLETE, task_id=ctx.task_id,
+            seq_counter=state.seq_counter, trace_summary=summarize(state.trace_events)))
         full_text = "\n".join(collected_text)
         parsed = _extract_final_json(full_text)
         # A turn-limit/transport failure must not discard already-published MRs.
@@ -368,6 +383,7 @@ class BugFixCodingAgent:
                     error=str(run_error) or _sdk_error_kind(run_error),
                     model=effective_model,
                     duration_seconds=duration,
+                    trace_events=list(state.trace_events),
                 )
             logger.warning(
                 "BugFixCodingAgent task=%s produced no parseable result JSON", ctx.task_id
@@ -379,6 +395,7 @@ class BugFixCodingAgent:
                 error="Agent did not emit a parseable merge_requests JSON",
                 model=effective_model,
                 duration_seconds=duration,
+                trace_events=list(state.trace_events),
             )
 
         merge_requests = _normalize_merge_requests(parsed.get("merge_requests"))
@@ -415,6 +432,7 @@ class BugFixCodingAgent:
             error=(str(run_error) or _sdk_error_kind(run_error)) if run_error else parsed.get("error"),
             model=effective_model,
             duration_seconds=duration,
+            trace_events=list(state.trace_events),
         )
 
     def run_sync(self, ctx: BugFixWorkspaceContext) -> Dict[str, Any]:

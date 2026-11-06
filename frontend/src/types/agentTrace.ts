@@ -116,6 +116,11 @@ export interface AnswerDeltaEvent extends BaseTraceEvent {
 }
 
 export interface SystemNoticeEvent extends BaseTraceEvent {
+  executor?: 'claude_sdk' | 'antigravity_cli'
+  provider?: string
+  model?: string
+  requested_model?: string
+  agent_key?: string
   /** Server-side required Skill activation; distinct from SDK tool calls. */
   name?: string
   load_method?: 'server_prompt'

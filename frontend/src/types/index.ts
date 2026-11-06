@@ -457,6 +457,7 @@ export interface BugFixTaskSummary {
 }
 
 export interface BugFixTaskDetail extends BugFixTaskSummary {
+  trace_events?: import('./agentTrace').AgentTraceEvent[]
   model?: string | null
   context_availability?: string | null
   summary?: string | null

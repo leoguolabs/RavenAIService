@@ -6,6 +6,14 @@ Every AI invocation and selected business event is persisted as one row in the
 `metric_events` table — the single auditable fact source — and exposed through
 admin/self HTTP APIs plus a low-cardinality Prometheus `/metrics` endpoint.
 
+With Magpie enabled, shared Agent traces record the actual executor and gateway
+route headers. Terminal metadata and routed-query callbacks use the last served
+provider/model, not the requested group. A run may span multiple model routes;
+its cumulative token count is still one run total, not a per-provider billing
+breakdown. Use Magpie usage records for request-level accounting. Antigravity
+structured usage maps into the existing token counters; choosing the CLI does
+not imply that a Google subscription was used.
+
 For provider `openai`, the shared Responses bridge maps actual response usage to
 the existing SDK counters: cached input is separated from uncached input and
 output includes billed reasoning tokens. These counters are recorded under the

@@ -2,6 +2,8 @@
 
 本文档说明日志分析 Agent（`LogAnalysisAgent`）的工作流、源码定位、以及"代码强制使用"策略。面向后端工程师、Prompt 维护者与 QA。
 
+启用 Magpie 后，管理员可为日志分析选择 Claude Agent SDK 或 Antigravity CLI，工作区、项目提示词、Skills、MCP 工具与现有前端流程保持一致。模型提供商和故障切换交由 Magpie；实际执行器、模型及路由变化写入共享 trace。Antigravity 使用结构化事件适配与独立 MCP/hook 桥接；原有 SDK 执行路径和默认关闭的性能实验保持独立。部署及验收见 [Magpie runbook](runbook/magpie.md)。
+
 - Python 入口：[app/agents/log_analysis/agent.py](../app/agents/log_analysis/agent.py)
 - 工作区准备：[app/agents/log_analysis/workspace.py](../app/agents/log_analysis/workspace.py)
 - MCP 工具：[app/agents/log_analysis/mcp_tools.py](../app/agents/log_analysis/mcp_tools.py)

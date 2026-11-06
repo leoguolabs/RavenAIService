@@ -24,6 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unar \
     && rm -rf /var/lib/apt/lists/*
 
+COPY scripts/install-antigravity.py /tmp/install-antigravity.py
+RUN python /tmp/install-antigravity.py && rm /tmp/install-antigravity.py
+
 COPY requirements.txt .
 
 RUN pip install --upgrade pip \

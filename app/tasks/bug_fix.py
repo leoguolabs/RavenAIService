@@ -121,6 +121,7 @@ def run_bug_fix_task(self, bug_fix_task_id: str) -> Dict[str, Any]:
             cleanup(ctx)
 
         task.model = result.get("model")
+        task.trace_events_json = json.dumps(result.get("trace_events") or [], ensure_ascii=False)
         merge_requests = result.get("merge_requests") or []
         recorded_mrs = 0
         recording_errors = []

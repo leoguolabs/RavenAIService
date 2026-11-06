@@ -1,0 +1,28 @@
+# Layer on docker-compose.yml after initializing the Magpie submodule.
+# Create the private web key once; see docs/runbook/magpie.md.
+services:
+  backend:
+    secrets:
+      - magpie_web_key
+  magpie:
+    build:
+      context: ../Magpie
+    image: ${MAGPIE_IMAGE:-raven-magpie:local}
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ['export MAGPIE_WEB_KEY="$$(cat /run/secrets/magpie_web_key)"; exec /magpie web --addr 0.0.0.0:3430 --no-open']
+    volumes:
+      - magpie_data:/config
+    secrets:
+      - magpie_web_key
+    expose:
+      - "3425"
+    ports:
+      - "127.0.0.1:${MAGPIE_ADMIN_PORT:-3430}:3430"
+    restart: unless-stopped
+
+secrets:
+  magpie_web_key:
+    file: ${MAGPIE_WEB_KEY_FILE:-./data/magpie-private/web-key}
+
+volumes:
+  magpie_data:

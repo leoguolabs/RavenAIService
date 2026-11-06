@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import json
+import os
+import uuid
 from contextlib import aclosing
 from dataclasses import replace
 from pathlib import Path
@@ -42,7 +45,7 @@ def workspace_image_blocks(cwd: str) -> list[dict]:
              "data": image.data}} for image in attachments]
 
 
-async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
+async def _claude_query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
     from claude_agent_sdk import query as sdk_query
 
     env = dict(getattr(options, "env", {}) or {})
@@ -76,3 +79,78 @@ async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
         async with aclosing(sdk_query(prompt=prompt, options=adapted)) as stream:
             async for message in stream:
                 yield message
+
+
+async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
+    """Run the selected backend; gateway notices share the same event ordering."""
+    env = dict(getattr(options, "env", {}) or {})
+    if env.get("RAVEN_GATEWAY") != "magpie":
+        async with aclosing(_claude_query(prompt=prompt, options=options)) as stream:
+            async for message in stream:
+                yield message
+        return
+
+    from claude_agent_sdk import SystemMessage
+    from app.agents.magpie_bridge import GatewayConfig, gateway_bridge
+
+    executor = env.get("RAVEN_EXECUTOR", "claude_sdk")
+    agent_kind = env.get("RAVEN_AGENT_KIND", "")
+    events: asyncio.Queue = asyncio.Queue(maxsize=128)
+    # A route is reported only when it changes; headers precede response bytes.
+    async def on_route(data: dict) -> None:
+        await events.put(("message", SystemMessage(subtype="raven_route", data=data)))
+
+    config = GatewayConfig(base_url=env["ANTHROPIC_BASE_URL"], api_key=env["ANTHROPIC_API_KEY"],
+        model=options.model, executor=executor, session_id=str(uuid.uuid4()), agent_kind=agent_kind,
+        timeout_seconds=float(env.get("API_TIMEOUT_MS", "3600000")) / 1000)
+    yield SystemMessage(subtype="raven_executor", data={"executor": executor, "agent_key": agent_kind,
+        "requested_model": options.model})
+    async with gateway_bridge(config, on_route) as (base_url, token):
+        env = {key: value for key, value in env.items() if not key.startswith("RAVEN_")}
+        # Claude Code merges options.env into the application environment.
+        # Explicitly clear inherited provider credentials in that subprocess.
+        env.update({key: "" for key in os.environ if key.endswith(("API_KEY", "API_KEYS", "AUTH_TOKEN"))})
+        env.update({"ANTHROPIC_BASE_URL": base_url, "ANTHROPIC_API_KEY": token,
+                    "ANTHROPIC_AUTH_TOKEN": "", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"})
+        adapted = replace(options, env=env)
+        if executor == "antigravity_cli":
+            from app.agents.antigravity_executor import query as run
+        elif executor == "claude_sdk":
+            run = _claude_query
+        else:
+            raise ValueError("Unsupported Agent executor")
+
+        if executor == "claude_sdk":
+            images = workspace_image_blocks(str(options.cwd))
+            if images and isinstance(prompt, str):
+                text = prompt
+                async def multimodal_prompt():
+                    yield {"type": "user", "message": {"role": "user", "content": [
+                        {"type": "text", "text": text}, *images]}}
+                prompt = multimodal_prompt()
+
+        async def produce():
+            try:
+                async with aclosing(run(prompt=prompt, options=adapted)) as stream:
+                    async for message in stream:
+                        await events.put(("message", message))
+            except Exception as exc:
+                await events.put(("error", exc))
+            finally:
+                # Do not block cancellation if the consumer closed a full queue.
+                if not asyncio.current_task().cancelling():
+                    await events.put(("end", None))
+
+        producer = asyncio.create_task(produce())
+        try:
+            while True:
+                kind, value = await events.get()
+                if kind == "end":
+                    break
+                if kind == "error":
+                    raise value
+                from app.agents.runtime_secrets import redact
+                yield redact(value, (token, config.api_key))
+        finally:
+            producer.cancel()
+            await asyncio.gather(producer, return_exceptions=True)

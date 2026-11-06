@@ -108,6 +108,9 @@ class AgentTraceEvent(TypedDict, total=False):
     # lifecycle: full enabled Agent/project catalog (not materialization proof)
     model: str
     provider: str
+    executor: str
+    requested_model: str
+    agent_key: str
     available_skills: List[str]
     # Deprecated lifecycle alias for the filtered materialized subset.
     loaded_skills: List[str]
@@ -155,6 +158,26 @@ class SeqCounter:
 def mask_tokens(text: str) -> str:
     """Strip the credential portion from a token-bearing URL."""
     return _TOKEN_URL_RE.sub("https://***@", text)
+
+
+def runtime_metadata(events: Iterable[dict]) -> dict:
+    """Read authoritative runtime notices from live or persisted traces."""
+    metadata: dict = {}
+    routes = []
+    for event in events:
+        if event.get("type") != SYSTEM_NOTICE or event.get("kind") not in {"raven_executor", "raven_route"}:
+            continue
+        for key in ("executor", "provider", "model", "requested_model"):
+            if event.get(key):
+                metadata[key] = event[key]
+        if event.get("kind") == "raven_route":
+            route = {key: event[key] for key in ("provider", "model") if event.get(key)}
+            if route and (not routes or routes[-1] != route):
+                routes.append(route)
+    if metadata:
+        metadata["engine"] = "antigravity-cli" if metadata.get("executor") == "antigravity_cli" else "claude-agent-sdk"
+        metadata["routes"] = routes
+    return metadata
 
 
 def mask_input(value: Any) -> Any:

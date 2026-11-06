@@ -634,6 +634,12 @@ def build_options(
         },
     }
 
+    if endpoint is not None and endpoint.provider == "magpie":
+        options_kwargs["env"].update({
+            "RAVEN_GATEWAY": "magpie", "RAVEN_EXECUTOR": endpoint.executor,
+            "RAVEN_AGENT_KIND": endpoint.agent_kind,
+        })
+
     if (
         getattr(settings, "agent_sdk_disable_nonessential_traffic", False) is True
         and profile.api_protocol != "openai_responses"

@@ -5,6 +5,20 @@ Unified event schema for streaming Claude Agent SDK internal messages
 frontend. One event type, two transport channels, same TypeScript and
 Python definitions on both sides.
 
+When Magpie is enabled, both Claude SDK and Antigravity CLI feed this schema.
+`system_notice.kind=raven_executor` records the selected `executor`, `agent_key`
+and `requested_model`; `kind=raven_route` records the actual `provider` and
+`model` from gateway response headers before response bytes are consumed.
+Only changed routes are emitted. Selection alone never establishes the served
+model. Terminal events and result metadata retain the actual last route and
+route history, including cancellation and persisted replay. Antigravity native
+tool names are normalized to Raven names; reading a materialized `SKILL.md`
+produces a real Skill activation. Ephemeral transport secrets are removed
+before trace persistence. BugFix stores these events in `trace_events_json`
+and reuses the same UI component in its completed task detail.
+
+See [Magpie runbook](runbook/magpie.md) for setup, selection and rollback.
+
 OpenAI runs use the same trace contract. `provider_query` translates the native
 Responses text/function-argument stream through a per-run loopback bridge while
 the SDK executes existing tools and permission checks. `run_start.provider` is

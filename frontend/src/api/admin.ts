@@ -38,6 +38,20 @@ export interface RegistrationEmailSettings {
   email_validation_message: string
 }
 
+export type AgentExecutor = 'claude_sdk' | 'antigravity_cli'
+export interface AgentRuntimeSettings {
+  enabled: boolean
+  executor: AgentExecutor
+  base_url: string
+  api_key_set: boolean
+  model: string
+  agent_overrides: Record<string, { executor?: AgentExecutor | null; model?: string | null }>
+  executors: Record<AgentExecutor, string>
+  agents: string[]
+}
+
+export interface GatewayModel { id: string; display_name?: string; owned_by?: string }
+
 /** Endpoint slots the Admin page can configure; mirrors FieldSpec.group. */
 export type ModelSettingsTarget = 'anthropic' | 'anthropic_backup' | 'bug_fix' | 'ocr'
 
@@ -285,6 +299,11 @@ export const adminApi = {
 
   getModelSettings: (): Promise<ApiResponse<ModelSettingsData>> =>
     adminClient.get('/admin/model-settings'),
+
+  getAgentRuntime: (): Promise<ApiResponse<AgentRuntimeSettings>> => adminClient.get('/admin/agent-runtime'),
+  updateAgentRuntime: (payload: Partial<AgentRuntimeSettings> & { api_key?: string }): Promise<ApiResponse<AgentRuntimeSettings>> =>
+    adminClient.put('/admin/agent-runtime', payload),
+  getGatewayModels: (): Promise<ApiResponse<GatewayModel[]>> => adminClient.get('/admin/agent-runtime/models'),
 
   updateModelSettings: (
     payload: UpdateModelSettingsPayload

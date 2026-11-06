@@ -69,6 +69,8 @@ from app.agents.log_analysis.mcp_tools import (
     build_project_fit_guidance,
 )
 
+from app.agents.log_analysis.trace import runtime_metadata
+
 logger = logging.getLogger(__name__)
 
 
@@ -108,6 +110,7 @@ def _empty_result(model: str, *, status: str, error_kind: Optional[str], **extra
         "related_keywords": [],
     }
     base.update(extra)
+    base.update(runtime_metadata(extra.get("trace_events", [])))
     return base
 
 
@@ -595,6 +598,7 @@ class ProjectExpertAgent:
         parsed = _extract_fenced_json(final_text)
         tool_trace = derive_tool_trace(state.trace_events)
         common_extra = {
+            **runtime_metadata(state.trace_events),
             "tool_trace": tool_trace,
             "trace_events": list(state.trace_events),
             "trace_summary": trace_summary,

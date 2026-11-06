@@ -325,6 +325,44 @@ async def get_model_settings(
     return ModelSettingsResponse(data=model_settings_service.describe(), message="读取成功")
 
 
+class AgentRuntimeUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: Optional[bool] = None
+    executor: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = Field(default=None, repr=False)
+    model: Optional[str] = None
+    agent_overrides: Optional[Dict[str, Any]] = None
+
+
+@router.get("/agent-runtime")
+async def get_agent_runtime(_username: str = Depends(require_admin)):
+    from app.services import agent_runtime_service
+    return {"success": True, "data": agent_runtime_service.describe()}
+
+
+@router.put("/agent-runtime")
+async def update_agent_runtime(payload: AgentRuntimeUpdate, _username: str = Depends(require_admin)):
+    from app.services import agent_runtime_service
+    try:
+        data = agent_runtime_service.save(payload.model_dump(exclude_none=True))
+    except ValueError as exc:
+        # Pydantic's default exception string includes input values, possibly keys.
+        errors = exc.errors(include_input=False, include_url=False) if hasattr(exc, "errors") else []
+        detail = "; ".join(str(error["msg"]) for error in errors) or "Invalid runtime configuration / 执行配置无效"
+        raise HTTPException(status_code=400, detail=detail) from exc
+    return {"success": True, "data": data}
+
+
+@router.get("/agent-runtime/models")
+async def get_agent_runtime_models(_username: str = Depends(require_admin)):
+    from app.services import agent_runtime_service
+    try:
+        return {"success": True, "data": await agent_runtime_service.models()}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Cannot read Magpie models / 无法读取 Magpie 模型") from exc
+
+
 @router.put("/model-settings", response_model=ModelSettingsResponse)
 async def update_model_settings(
     payload: UpdateModelSettingsRequest,

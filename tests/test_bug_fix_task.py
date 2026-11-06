@@ -7,6 +7,7 @@ without any token leakage.
 
 from __future__ import annotations
 
+import json
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -85,6 +86,9 @@ def test_run_bug_fix_task_succeeded(monkeypatch, session_factory):
     Session = session_factory
     agent_result = {
         "status": "succeeded",
+        "model": "provider/served-model",
+        "trace_events": [{"type": "system_notice", "kind": "raven_route",
+                          "executor": "antigravity_cli", "provider": "provider", "model": "provider/served-model"}],
         "merge_requests": [
             {
                 "title": "Fix",
@@ -102,6 +106,8 @@ def test_run_bug_fix_task_succeeded(monkeypatch, session_factory):
     s = Session()
     task = s.get(BugFixTask, task_id)
     assert task.status == BugFixTaskStatus.SUCCEEDED
+    assert task.model == "provider/served-model"
+    assert json.loads(task.trace_events_json) == agent_result["trace_events"]
     mrs = s.query(BugFixMergeRequest).filter_by(task_id=task_id).all()
     assert len(mrs) == 1
     assert "@" not in (mrs[0].mr_url or "")

@@ -73,6 +73,8 @@ from app.agents.log_analysis.agent import (
 )
 from app.agents.package_search.workspace import WorkspaceContext
 
+from app.agents.log_analysis.trace import runtime_metadata
+
 logger = logging.getLogger(__name__)
 
 
@@ -203,6 +205,7 @@ def _base_result(model: str, *, status: str, **extra: Any) -> Dict[str, Any]:
         "loaded_skills": [],
     }
     base.update(extra)
+    base.update(runtime_metadata(extra.get("trace_events", [])))
     return base
 
 

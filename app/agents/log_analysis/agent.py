@@ -64,6 +64,8 @@ from app.agents.log_analysis.mcp_tools import (
     build_project_fit_guidance,
 )
 
+from app.agents.log_analysis.trace import runtime_metadata
+
 logger = logging.getLogger(__name__)
 
 
@@ -555,6 +557,9 @@ class _RunState:
 
     def emit(self, event: AgentTraceEvent) -> None:
         """Append to internal buffer and notify external emitter (if any)."""
+        if event.get("type") in {RUN_COMPLETE, CANCELLED, ERROR}:
+            from app.agents.log_analysis.trace import runtime_metadata
+            event.update(runtime_metadata(self.trace_events))
         self.trace_events.append(event)
         safe_emit(self.emitter, event)
 
@@ -896,6 +901,11 @@ def _emit_for_message(message: Any, *, state: _RunState) -> None:
     data = getattr(message, "data", None)
     subtype = getattr(message, "subtype", None)
     if isinstance(data, dict) and subtype:
+        if subtype in {"raven_executor", "raven_route"}:
+            fields = {key: data[key] for key in ("executor", "provider", "model", "requested_model", "agent_key") if key in data}
+            state.emit(build_event(SYSTEM_NOTICE, task_id=state.task_id,
+                seq_counter=state.seq_counter, kind=str(subtype), **fields))
+            return
         summary_text = data.get("summary") or data.get("description") or data.get("message")
         detail = coerce_excerpt(mask_tokens(str(summary_text or "")), 512) or None
         if str(subtype) != "thinking_tokens":
@@ -972,6 +982,7 @@ def _cancelled_result(
 ) -> Dict[str, Any]:
     return {
         "engine": "claude-agent-sdk",
+        **runtime_metadata(trace_events),
         "model": model,
         "schema_version": 3,
         "status": "cancelled",
@@ -1679,6 +1690,7 @@ class LogAnalysisAgent:
         parsed = isolated_result if isolated_result is not None else _extract_fenced_json(final_text)
         tool_trace = derive_tool_trace(state.trace_events)
         common_extra = {
+            **runtime_metadata(state.trace_events),
             "tool_trace": tool_trace,
             "trace_events": list(state.trace_events),
             "trace_summary": trace_summary,

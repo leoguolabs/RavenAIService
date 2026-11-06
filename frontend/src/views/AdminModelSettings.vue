@@ -25,6 +25,7 @@ import {
   type UpdateModelSettingsPayload,
 } from '@/api/admin'
 import AnthropicEndpointCard from '@/components/admin/AnthropicEndpointCard.vue'
+import AgentRuntimeCard from '@/components/admin/AgentRuntimeCard.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { useAppStore } from '@/stores/app'
 import { resolveAdminNavKey, type AdminNavItem } from '@/utils/adminNav'
@@ -536,6 +537,7 @@ onMounted(() => {
       </section>
 
       <section v-else class="space-y-4 admin-model-form">
+        <AgentRuntimeCard />
         <div v-if="loadingSettings" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 text-sm text-slate-500">
           {{ t('admin.modelSettings.loading') }}
         </div>

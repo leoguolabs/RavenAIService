@@ -58,6 +58,33 @@ def test_router_policy_round_trips_over_http(client):
     assert settings.model_router_first_token_deadline_ms == 15_000
 
 
+def test_agent_runtime_round_trip_redacts_secret_and_rejects_invalid_executor(client):
+    response = client.put('/admin/agent-runtime', json={
+        'enabled': True, 'model': 'group/default', 'api_key': 'private-gateway-key',
+        'agent_overrides': {'project_expert': {'executor': 'antigravity_cli'}},
+    })
+    assert response.status_code == 200
+    assert 'private-gateway-key' not in response.text
+    assert response.json()['data']['api_key_set']
+    response = client.put('/admin/agent-runtime', json={'executor': 'unknown'})
+    assert response.status_code == 400
+    assert 'private-gateway-key' not in response.text
+    response = client.put('/admin/agent-runtime', json={'api_key': '', 'model': 'provider/next'})
+    assert response.status_code == 200
+    assert response.json()['data']['api_key_set']
+    assert response.json()['data']['agent_overrides']['project_expert']['executor'] == 'antigravity_cli'
+
+
+def test_agent_runtime_requires_admin():
+    application = FastAPI()
+    application.include_router(admin_api.router)
+    with TestClient(application) as client:
+        for method, path in [('get', '/admin/agent-runtime'), ('get', '/admin/agent-runtime/models'),
+                             ('put', '/admin/agent-runtime')]:
+            response = getattr(client, method)(path)
+            assert response.status_code in (401, 403)
+
+
 def test_router_policy_is_exposed_as_its_own_group(client):
     """The Admin form renders by group; a mislabelled field lands nowhere."""
     fields = client.get("/admin/model-settings").json()["data"]["fields"]

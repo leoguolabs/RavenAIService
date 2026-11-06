@@ -112,6 +112,8 @@ class EndpointChoice:
     api_key_id: str = "key-single"
     api_key_index: int = 0
     api_key_count: int = 1
+    executor: str = "claude_sdk"
+    agent_kind: str = ""
 
     @property
     def is_backup(self) -> bool:
@@ -446,6 +448,12 @@ def candidates(
     """
     from app.config import settings
     from app.services.model_settings_service import BACKUP_SLOT, PRIMARY_SLOT
+
+    from app.services.agent_runtime_service import gateway_endpoint
+    gateway = gateway_endpoint(agent_kind)
+    if gateway is not None:
+        # Magpie alone owns member/account fallback; never replay an Agent run.
+        return [gateway]
 
     caps = dict(
         require_mcp=require_mcp,

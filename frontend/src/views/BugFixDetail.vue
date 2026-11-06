@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ExternalLink, GitBranch, RefreshCw, RotateCcw } from 'lucide-vue-next'
 import WorkbenchTopbar from '@/layouts/WorkbenchTopbar.vue'
+import AgentTraceStream from '@/components/AgentTraceStream.vue'
 import { useBugFixStore } from '@/stores/bugFixes'
 import type {
   BugFixChangedFile,
@@ -293,6 +294,7 @@ onUnmounted(() => {
             <div class="section-head">
               <h2>{{ $t('bugFix.executionInfo') }}</h2>
             </div>
+            <AgentTraceStream v-if="task.trace_events?.length" :events="task.trace_events" />
             <dl class="info-list">
               <div v-if="task.model">
                 <dt>{{ $t('bugFix.model') }}</dt><dd>{{ task.model }}</dd>
