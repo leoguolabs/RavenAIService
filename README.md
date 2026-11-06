@@ -10,7 +10,7 @@ Logs, AI, devices, code assets, and releases are no longer isolated modules — 
 
 ## Companion Desktop Client
 
-**[RavenClient](https://github.com/visiontrail/RavenClient)** is the cross-platform desktop client for RavenAIService. Built with Electron, React, and TypeScript, it provides native Windows, macOS, and Linux access to Raven accounts, AI chat, server-backed Agent workflows, projects, logs, packages, local files and knowledge bases, and an embedded AI-powered terminal.
+**[RavenClient](https://github.com/leoguolabs/RavenClient)** is the cross-platform desktop client for RavenAIService. Built with Electron, React, and TypeScript, it provides native Windows, macOS, and Linux access to Raven accounts, AI chat, server-backed Agent workflows, projects, logs, packages, local files and knowledge bases, and an embedded AI-powered terminal.
 
 RavenClient requires a compatible RavenAIService deployment for authentication and managed AI capabilities. The service remains the platform core for identity, model routing, project context, multi-Agent execution, devices, packages, and release assets, while RavenClient provides the native desktop workspace and operating-system integration.
 
@@ -284,7 +284,7 @@ Common scripts:
 
 ## Related Documents
 
-- [RavenClient](https://github.com/visiontrail/RavenClient) — cross-platform desktop client for RavenAIService
+- [RavenClient](https://github.com/leoguolabs/RavenClient) — cross-platform desktop client for RavenAIService
 - [QUICKSTART.md](QUICKSTART.md) — release, packaging, and Docker workflow
 - [PROJECT_SETUP.md](PROJECT_SETUP.md)
 - [DEPLOY_USAGE.md](DEPLOY_USAGE.md)
