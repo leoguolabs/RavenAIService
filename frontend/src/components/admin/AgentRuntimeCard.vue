@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminApi, type AgentRuntimeSettings, type GatewayModel } from '@/api/admin'
 
+const emit = defineEmits<{ 'routing-change': [enabled: boolean] }>()
 const { locale } = useI18n()
 const en = computed(() => locale.value.startsWith('en'))
 const form = ref<AgentRuntimeSettings | null>(null)
@@ -23,6 +24,8 @@ function setForm(value: AgentRuntimeSettings) {
     const current = value.agent_overrides[agent] || {}
     value.agent_overrides[agent] = { executor: current.executor || undefined, model: current.model || '' }
   }
+  // Report only the server-confirmed state, never an unsaved checkbox edit.
+  emit('routing-change', value.enabled)
 }
 async function refreshModels() {
   try { models.value = (await adminApi.getGatewayModels()).data || [] }

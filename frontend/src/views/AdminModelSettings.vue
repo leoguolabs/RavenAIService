@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  Info,
   LogOut,
   Menu,
   PanelLeftClose,
@@ -49,6 +50,7 @@ const loadingSettings = ref(false)
 const savingSettings = ref(false)
 const resettingSettings = ref(false)
 const settingsData = ref<ModelSettingsData | null>(null)
+const magpieEnabled = ref<boolean | null>(null)
 
 // The two Anthropic slots are grouped so each can be handed to
 // AnthropicEndpointCard as one object; the flat `anthropic_*` / `ocr_*` keys
@@ -537,7 +539,7 @@ onMounted(() => {
       </section>
 
       <section v-else class="space-y-4 admin-model-form">
-        <AgentRuntimeCard />
+        <AgentRuntimeCard @routing-change="magpieEnabled = $event" />
         <div v-if="loadingSettings" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 text-sm text-slate-500">
           {{ t('admin.modelSettings.loading') }}
         </div>
@@ -546,7 +548,18 @@ onMounted(() => {
           <!-- Anthropic 主力模型 -->
           <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
             <div class="mb-4">
-              <h2 class="text-lg font-semibold text-slate-900">{{ t('admin.modelSettings.anthropicSectionTitle') }}</h2>
+              <h2 class="flex flex-wrap items-center gap-2 text-lg font-semibold text-slate-900">
+                {{ t('admin.modelSettings.anthropicSectionTitle') }}
+                <span v-if="magpieEnabled" class="ms-badge ms-badge--override">{{ t('admin.modelSettings.magpieManagedBadge') }}</span>
+              </h2>
+              <div v-if="magpieEnabled" class="ms-magpie-notice" role="status">
+                <Info :size="20" class="shrink-0 mt-0.5" aria-hidden="true" />
+                <div class="min-w-0">
+                  <p class="font-semibold">{{ t('admin.modelSettings.magpieNoticeTitle') }}</p>
+                  <p class="mt-1">{{ t('admin.modelSettings.magpieNoticeBody') }}</p>
+                  <p class="mt-2 text-xs">{{ t('admin.modelSettings.magpieNoticeScope') }}</p>
+                </div>
+              </div>
               <p class="text-sm text-slate-500">{{ t('admin.modelSettings.anthropicSectionDesc') }}</p>
             </div>
 
@@ -587,7 +600,7 @@ onMounted(() => {
           <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
             <div class="mb-4">
               <h2 class="text-lg font-semibold text-slate-900">{{ t('admin.modelSettings.backupSectionTitle') }}</h2>
-              <p class="text-sm text-slate-500">{{ t('admin.modelSettings.backupSectionDesc') }}</p>
+              <p :class="magpieEnabled ? 'ms-magpie-note' : 'text-sm text-slate-500'">{{ t(magpieEnabled ? 'admin.modelSettings.magpieLegacyHint' : 'admin.modelSettings.backupSectionDesc') }}</p>
             </div>
 
             <label class="flex items-center gap-2 text-sm text-slate-700 mb-1">
@@ -595,10 +608,10 @@ onMounted(() => {
               <span>{{ t('admin.modelSettings.backupEnabledLabel') }}</span>
               <span class="ms-badge" :class="`ms-badge--${sourceOf('anthropic_backup_enabled')}`">{{ sourceLabel('anthropic_backup_enabled') }}</span>
             </label>
-            <p class="text-xs text-slate-500 mb-4">{{ t('admin.modelSettings.backupEnabledHint') }}</p>
+            <p v-if="!magpieEnabled" class="text-xs text-slate-500 mb-4">{{ t('admin.modelSettings.backupEnabledHint') }}</p>
 
             <!-- Live routing state: which endpoint is answering right now. -->
-            <div v-if="router$" class="ms-route" :class="onBackup ? 'is-backup' : 'is-primary'">
+            <div v-if="router$ && magpieEnabled === false" class="ms-route" :class="onBackup ? 'is-backup' : 'is-primary'">
               <component :is="onBackup ? AlertTriangle : CheckCircle2" :size="16" class="ms-test-icon" />
               <div class="min-w-0">
                 <p class="ms-test-title">
@@ -634,13 +647,13 @@ onMounted(() => {
               @test="runTest('anthropic_backup')"
             />
 
-            <p class="text-xs text-slate-500 mt-3">{{ t('admin.modelSettings.backupRoutingNote') }}</p>
+            <p v-if="!magpieEnabled" class="text-xs text-slate-500 mt-3">{{ t('admin.modelSettings.backupRoutingNote') }}</p>
           </div>
 
           <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
             <div class="mb-4">
               <h2 class="text-lg font-semibold text-slate-900">{{ t('admin.modelSettings.bugFixTitle') }}</h2>
-              <p class="text-sm text-slate-500">{{ t('admin.modelSettings.bugFixDesc') }}</p>
+              <p :class="magpieEnabled ? 'ms-magpie-note' : 'text-sm text-slate-500'">{{ t(magpieEnabled ? 'admin.modelSettings.magpieBugFixHint' : 'admin.modelSettings.bugFixDesc') }}</p>
             </div>
             <AnthropicEndpointCard slot-name="bug_fix" :form="form.bug_fix"
               :fields="settingsData?.fields" :provider-options="providerOptions" :profiles="providerProfiles"
@@ -663,7 +676,7 @@ onMounted(() => {
           <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
             <div class="mb-4">
               <h2 class="text-lg font-semibold text-slate-900">{{ t('admin.modelSettings.routerSectionTitle') }}</h2>
-              <p class="text-sm text-slate-500">{{ t('admin.modelSettings.routerSectionDesc') }}</p>
+              <p :class="magpieEnabled ? 'ms-magpie-note' : 'text-sm text-slate-500'">{{ t(magpieEnabled ? 'admin.modelSettings.magpieLegacyHint' : 'admin.modelSettings.routerSectionDesc') }}</p>
             </div>
 
             <label class="flex items-center gap-2 text-sm text-slate-700 mb-1">
@@ -671,7 +684,7 @@ onMounted(() => {
               <span>{{ t('admin.modelSettings.routerEnabledLabel') }}</span>
               <span class="ms-badge" :class="`ms-badge--${sourceOf('model_router_enabled')}`">{{ sourceLabel('model_router_enabled') }}</span>
             </label>
-            <p class="text-xs text-slate-500 mb-4">{{ t('admin.modelSettings.routerEnabledHint') }}</p>
+            <p v-if="!magpieEnabled" class="text-xs text-slate-500 mb-4">{{ t('admin.modelSettings.routerEnabledHint') }}</p>
 
             <div class="grid gap-4 lg:grid-cols-2" :class="{ 'opacity-50 pointer-events-none': !form.model_router_enabled }">
               <label
@@ -988,6 +1001,28 @@ onMounted(() => {
 
 .admin-model-form :deep(code) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ms-magpie-notice,
+.ms-magpie-note {
+  color: var(--admin-ink, #0f172a);
+  background: var(--admin-accent-soft-bg, #ecfeff);
+  border-left: 3px solid var(--admin-accent-soft-ink, #0e7490);
+  border-radius: 0.5rem;
+  padding: 0.85rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.ms-magpie-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin: 0.75rem 0;
+}
+
+.ms-magpie-note {
+  margin-top: 0.5rem;
 }
 
 @media (max-width: 768px) {

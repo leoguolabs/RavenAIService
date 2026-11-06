@@ -837,8 +837,14 @@ export default {
       resetDone: '已恢复为环境变量默认值',
       resetConfirm: '确定要清除后台的所有模型覆盖、恢复为环境变量 / .env 默认值吗？',
       anthropicSectionTitle: '主力模型',
+      magpieManagedBadge: 'Magpie 已接管 Agent 路由',
+      magpieNoticeTitle: '当前 Agent 模型请在上方「Agent 执行与模型路由」中设置',
+      magpieNoticeBody: 'Magpie 已启用：新任务使用上方的默认模型 / 路由组或按 Agent 单独配置的模型。此处的主力、备用和 BugFix 独立端点不参与 Agent 模型选择；故障切换由 Magpie 管理。',
+      magpieNoticeScope: '这些端点配置保留供关闭 Magpie 后使用，修改不会同步到 Magpie；「测试连接」仅测试所填端点。主力 Provider 仍参与图片 / OCR 处理判断，因此保留编辑能力。OCR 和任务执行参数仍由各自配置控制。',
+      magpieLegacyHint: 'Magpie 已启用，此处备用端点和路由策略不参与 Agent 故障切换。配置保留供关闭 Magpie 后使用；当前故障切换请在 Magpie 中管理。',
+      magpieBugFixHint: 'Magpie 已启用，BugFix 使用上方的默认模型或 BugFix 单独配置的模型。此处端点保留供关闭 Magpie 后使用；下方 Token、回合数和超时仍作为任务执行参数。',
       anthropicSectionDesc:
-        '日志分析、设备联动等对话智能体使用此模型端点，支持 OpenAI 原生 Responses 和 Anthropic Messages 协议。BugFix 使用下方独立配置。此处配置会立即覆盖 .env 默认值，无需重启。',
+        '未启用 Magpie 时，日志分析、设备联动等对话智能体使用此模型端点，支持 OpenAI 原生 Responses 和 Anthropic Messages 协议，BugFix 使用下方独立配置。此处保存的值会覆盖 .env 默认值，无需重启。',
       backupSectionTitle: '备用模型（故障转移）',
       backupSectionDesc:
         '主力端点降级或不可用时自动切换到此端点，恢复后自动切回。适合「主力免费但高峰期慢、备用付费但随时可用」的成本优化场景。字段含义与主力完全一致。',

@@ -838,8 +838,14 @@ export default {
       resetConfirm:
         'Clear all admin model overrides and revert to the environment / .env defaults?',
       anthropicSectionTitle: 'Primary model',
+      magpieManagedBadge: 'Agent routing managed by Magpie',
+      magpieNoticeTitle: 'Set the active Agent model in “Agent execution and model routing” above',
+      magpieNoticeBody: 'Magpie is enabled: new runs use the default model / routing group or per-Agent model configured above. The primary, backup and dedicated BugFix endpoints here do not select Agent models; Magpie manages failover.',
+      magpieNoticeScope: 'These endpoints are kept for use after disabling Magpie; edits are not synced to Magpie. “Test connection” only probes the entered endpoint. The primary Provider still affects image / OCR processing, so editing remains available. OCR and task execution parameters keep their own settings.',
+      magpieLegacyHint: 'Magpie is enabled, so these backup and routing settings do not control Agent failover. They are kept for use after disabling Magpie. Manage current failover in Magpie.',
+      magpieBugFixHint: 'Magpie is enabled: BugFix uses the default or per-Agent model configured above. This endpoint is kept for use after disabling Magpie; token, turn and timeout values below remain task execution parameters.',
       anthropicSectionDesc:
-        'Log analysis and conversational agents use this endpoint, supporting native OpenAI Responses and Anthropic Messages. BugFix uses its dedicated configuration below. Values set here override the .env defaults immediately — no restart required.',
+        'When Magpie is disabled, log analysis and conversational agents use this endpoint, supporting native OpenAI Responses and Anthropic Messages; BugFix uses its dedicated configuration below. Saved values override the .env defaults without a restart.',
       backupSectionTitle: 'Backup model (failover)',
       backupSectionDesc:
         'Automatically takes over when the primary endpoint degrades or becomes unavailable, and hands back once it recovers. Built for the "primary is free but slow at peak, backup costs money but is always available" trade-off. Fields mean exactly what they do for the primary.',
