@@ -553,6 +553,8 @@ class RavenPackageService:
         components: Optional[list[Any]] = None,
         description: str = "由配置管理员在用户逐项确认后生成",
         tags: Optional[list[str]] = None,
+        expected_sha256: Optional[str] = None,
+        cancel_event: Optional[Any] = None,
     ) -> dict[str, Any]:
         """Atomically copy a confirmed full package into the Raven repository.
 
@@ -611,6 +613,10 @@ class RavenPackageService:
                         digest.update(chunk)
                     outgoing.flush()
                     os.fsync(outgoing.fileno())
+                if cancel_event is not None and cancel_event.is_set():
+                    raise ValueError("Package publication cancelled")
+                if expected_sha256 and digest.hexdigest() != expected_sha256:
+                    raise ValueError("Package bytes changed after confirmation")
                 os.replace(partial, destination)
 
                 custom_fields = {

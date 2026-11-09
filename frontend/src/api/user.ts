@@ -180,7 +180,7 @@ export const userApi = {
     }),
 
   fetchMessages: (sessionId: string): Promise<ApiResponse<ChatMessageRecord[]> & {
-    workspace_context?: { agent_kind: 'log_analysis'; project_repo_id: number | null; has_log_workspace: boolean } | null
+    workspace_context?: { agent_kind: 'log_analysis' | 'package_search'; project_repo_id: number | null; has_log_workspace: boolean } | null
   }> =>
     userClient.get(`/api/v1/users/chat-sessions/${sessionId}/messages`),
 

@@ -657,6 +657,7 @@ async def chat_run_snapshot_endpoint(
 async def chat_run_stream_endpoint(
     run_id: str,
     http_request: Request,
+    db: AsyncSession = Depends(get_db),
     current_user=Depends(get_optional_user),
     locale: str = Depends(get_request_locale),
 ):
@@ -675,6 +676,11 @@ async def chat_run_stream_endpoint(
             status_code=404,
             detail=t("chat.run_not_found_evicted", locale),
         )
+
+    # get_optional_user queried this same cached request session. No DB work is
+    # needed by replay/follow; return its connection before a long-lived SSE.
+    if db is not None:
+        await db.close()
 
     async def _stream():
         async for chunk in chat_run_service.subscribe(run_id, owner_scope=owner_scope):

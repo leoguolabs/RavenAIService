@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -106,6 +107,56 @@ class FastAgent:
                 }
             )
         return _canned_result()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('mode', ['new', 'running', 'completed'])
+async def test_package_stream_releases_database_connection_before_subscribing(tmp_path, monkeypatch, mode):
+    """Even a one-connection pool remains usable while the browser follows SSE."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.services.package_search_chat_service import AgentJob, PackageSearchChatService
+
+    engine = create_async_engine(f'sqlite+aiosqlite:///{tmp_path}/pool.db',
+                                 pool_size=1, max_overflow=0, pool_timeout=0.1)
+    sessions = async_sessionmaker(engine)
+    service = PackageSearchChatService()
+    ctx = _make_ctx(tmp_path)
+    meta = {'project_repo_id': PROJECT_REPO_ID}
+    _patch_service_for_fast_run(monkeypatch, service, ctx, meta)
+    monkeypatch.setattr(service, '_register_chat_run', AsyncMock())
+    monkeypatch.setattr(service, '_finalize_chat_run', AsyncMock())
+    monkeypatch.setattr('app.services.package_search_chat_service.PackageSearchAgent', FastAgent)
+    if mode != 'new':
+        service._jobs['pool-session'] = AgentJob(
+            session_id='pool-session', task_id=ctx.task_id, context_meta=meta,
+            question='package', user_id=None, remember=False, started_at=time.monotonic(),
+            owner_scope='anon:legacy', done=mode == 'completed',
+        )
+    checked = False
+
+    async def subscribe(_job):
+        nonlocal checked
+        async with sessions() as other_browser:
+            assert (await other_browser.execute(text('SELECT 1'))).scalar() == 1
+        checked = True
+        yield service._sse_event({'event': 'done'})
+
+    monkeypatch.setattr(service, '_subscribe', subscribe)
+    try:
+        async with sessions() as db:
+            await db.execute(text('SELECT 1'))  # connection held by auth lookup
+            async for _ in service.stream(
+                message='' if mode == 'completed' else 'continue', session_id='pool-session',
+                history_json=None, remember=False, project_repo_id=PROJECT_REPO_ID, db=db, user=None,
+            ):
+                pass
+            assert checked
+        job = service._jobs['pool-session']
+        if job.task:
+            await job.task
+    finally:
+        await engine.dispose()
 
 
 # ───────────────────────── service-level tests ──────────────────────────
@@ -378,7 +429,7 @@ def chat_app(monkeypatch, tmp_path) -> FastAPI:
     user = SimpleNamespace(id="user-1", preferred_language=None)
 
     async def fake_db():
-        yield object()
+        yield SimpleNamespace(close=AsyncMock())
 
     application.dependency_overrides[get_db] = fake_db
     application.dependency_overrides[get_current_user] = lambda: user
@@ -631,3 +682,32 @@ async def test_stage_total_limit_removes_partial_turn(tmp_path, monkeypatch):
         )
 
     assert not (tmp_path / "inputs" / "run-too-large").exists()
+
+
+@pytest.mark.asyncio
+async def test_failed_packaging_followup_reuses_inputs_without_new_upload(monkeypatch, tmp_path):
+    from app.services.package_search_chat_service import PackageSearchChatService
+    from unittest.mock import AsyncMock
+    ctx = _make_ctx(tmp_path)
+    manifest_path = tmp_path / "input-manifest.json"
+    manifest_path.write_text(json.dumps({"manifest_path": str(manifest_path), "inputs": [
+        {"upload_id": "original", "original_name": "release.zip", "path": str(tmp_path / "release.zip")}
+    ]}))
+    meta = {"session_id": "retry-package", "project_repo_id": 7, "project_code": "proj-a",
+            "last_inputs_manifest": str(manifest_path), "last_result_status": "error"}
+    service = PackageSearchChatService()
+    _patch_service_for_fast_run(monkeypatch, service, ctx, meta)
+    monkeypatch.setattr(service, "_discover_package_projects", AsyncMock(return_value=[{"id": 7, "project_code": "proj-a"}]))
+    monkeypatch.setattr(service, "_register_chat_run", AsyncMock())
+    async def finish(job, ctx):
+        assert job.input_manifest["inputs"][0]["upload_id"] == "original"
+        assert json.loads(Path(ctx.task_json_path).read_text())["packaging_requested"] is True
+        job.events.append({"event": "done", "answer": "retried"})
+        job.done = True
+    monkeypatch.setattr(service, "_run_job_async", finish)
+    events = [_decode_sse_event(chunk) async for chunk in service.stream(
+        message="请继续打包", session_id="retry-package", history_json=None, remember=False,
+        project_repo_id=7, db=None, user=None,
+    )]
+    assert events[-1]["event"] == "done"
+    assert service._jobs["retry-package"].run_id

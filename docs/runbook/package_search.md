@@ -1,152 +1,109 @@
 # Configuration Manager (`package_search`) Runbook
 
-The user-facing Agent name is **Configuration Manager** (Chinese:
-**配置管理员**). The internal key remains `package_search` so existing project
-bindings, conversations, metrics, and API clients remain compatible.
+The internal key remains `package_search`; the user-facing name is 配置管理员 /
+Configuration Manager. Project-scoped search and uploaded-release packaging use
+the configured real Agent runtime and model.
 
-It supports two paths:
+## Agent packaging
 
-1. project-scoped package search, retained for compatibility; and
-2. Skill-driven full upgrade package creation from uploaded component files.
+`POST /api/v1/ai-chat/package-search/stream` accepts multipart `message`, optional
+`session_id`, `project_repo_id`, `remember`, and repeated `files`. New search-only
+sessions require a project; uploads can start unbound. Each upload is streamed to
+an isolated workspace and recorded with upload ID, filename, size and SHA-256.
 
-## Skills
+The Agent reads `task.json`, the input manifest and the `full-package-build`
+Skill. Bash/Python, Read/Grep/Glob and Write/Edit are available. The workspace-bound
+`project_repo` MCP discovers and clones enabled project repositories without
+putting Git credentials in prompts or task files. Project source, archive
+manifests and user instructions provide the business evidence for package type,
+PacketAttr, FileAttr, target name, component version and whole-release version.
+The Agent writes and executes its own build script, then produces a flat TGZ and
+`review-plan.json` using the schema in the Skill.
 
-Configuration Manager loads Skills through the same host used by Project
-Expert and Log Analysis. Runtime precedence is deterministic:
+Configuration Manager does not expose the legacy credential-bearing repository
+lookup tool. The clone tool removes HTTP/HTTPS userinfo from Git remotes before
+returning a new or reused checkout, so `git remote -v` and `.git/config` cannot
+reveal its clone token. Trace masking also covers HTTP and bare GitLab PATs.
 
-```text
-built-in Skill -> uploaded Agent Skill -> project Skill
-```
+The old `package-projects.json` catalog is historical reference only. Chat runs
+never call the old classifier, catalog version validation or deterministic
+builder. New component IDs and valid timestamp-bearing versions require no
+catalog change. Standalone legacy builder APIs/tests remain for compatibility.
+There is no deterministic fallback if the Agent or its provider fails.
 
-Later layers override an earlier Skill with the same name. The source tree
-ships a built-in `full-package-build` Skill so packaging works out of the box;
-administrators can extend or replace its rules without changing the Agent.
-For an unbound upload, each visible project's catalog is evaluated in an
-isolated preflight workspace so project-level rules can participate in the
-initial inference. The selected project's Skill becomes the live workspace
-layer only after confirmation; if that effective catalog changes the draft,
-Raven reclassifies and asks the complete confirmation card again.
+## Publication boundary
 
-The component/project rule catalog is JSON-driven. A component entry contains
-its stable key, display name, package/file attributes, matching evidence, build
-strategy, and whether it is publishable. Recognition-only entries are useful
-for preliminary classification but cannot be silently put into a release.
+`mcp__agent_package__PublishPackage(plan_path, artifact_path)` validates the
+Agent-authored result before asking for publication confirmation:
 
-Catalog project identifiers can differ from database registry identifiers.
-Use an explicit `registry_project_codes` list for that binding; LX10 is bound
-to `oam_lx10` and LX07A to `oam_lx07a`. Confirmation, Skill selection, and
-publication retain the registered project code. Display labels and general
-aliases never authorize a different project's rules. Uploaded project Skills
-retain precedence and invalid overrides stop the build.
+- Workspace-contained regular files, bounded plan/archive size, no archive links,
+  sparse files, traversal, duplicate members or undeclared payloads.
+- Registered project identity, complete upload accounting (include or explicit
+  exclusion), distinct payload names/FileAttr, cited evidence and current source
+  SHA-256/size.
+- `si.ini` agrees with the plan on Packet_Ver, PacketAttr, Publisher, component
+  count, names, FileAttr and FileVer; every payload hash matches the review plan.
+- After review, the plan and artifact are validated again. The publisher checks
+  the hash of the bytes actually copied before atomic rename/registration, and
+  rolls back on failure. Cancellation prevents publication.
 
-## Chat endpoint
+These are integrity checks, not project business classifiers. They do not prove
+that the Agent interpreted code correctly; the full mapping and its evidence
+are displayed for human review. Ordinary clarification preferences cannot skip
+this publication review. The tool is idempotent within a run and returns the
+real package ID, SHA-256 and `/raven/api/download/<id>` URL. Shell writes belong
+in the workspace, never directly in repository storage.
 
-Use the interactive endpoint for packaging:
+The service derives download links from the authoritative published artifact,
+even if final model prose fails. It records the actual model/runtime used.
 
-`POST /api/v1/ai-chat/package-search/stream`
+## Conversation recovery
 
-It accepts `multipart/form-data`:
+SSE disconnects do not cancel the Agent. A second page/browser can fetch the
+active-run snapshot and reattach, including a pending publication card.
+Completed, failed and cancelled exchanges are persisted. History also recovers
+legacy failed packaging runs that have a terminal `chat_agent_runs` row but no
+ordinary message rows. No data migration is needed.
 
-| Field | Required | Notes |
-| --- | --- | --- |
-| `message` | no | Defaults to a full-package request when files are attached. |
-| `session_id` | no | Server creates one when absent. |
-| `project_repo_id` | search only | Required for a new pure-search session. Optional evidence for a packaging turn; it is not authoritative until confirmed. |
-| `files` | packaging only | Repeat the same field for every component input. Any extension is accepted; type is detected independently. |
-| `remember` | no | Persist the exchange when true. |
-| `images` | no | Existing image/OCR JSON contract. |
+A failed/cancelled turn retains staged inputs for a follow-up retry; the retry
+creates fresh publication authority. Successful turns cannot silently reuse old
+confirmation. History restoration deduplicates concurrent requests, bounds the
+active-run fetch, and ignores stale view selections.
 
-The endpoint streams the normal `AgentTraceEvent` protocol. A terminal `done`
-frame includes `artifacts`, and the rendered answer contains a relative Markdown
-link such as `[下载整包](/raven/api/download/<package-id>)`.
+Initial package streams and unified run replay release their request database
+session before following SSE. Auth/history queries must not retain a pooled
+connection for the entire Agent run. Background persistence uses its own short
+session. Regression tests use a one-connection pool and query it from a second
+client while the first stream is still subscribed. Workspace write failures also
+finalize the run, preventing a permanently running conversation.
 
-Projects without a Git repository are valid Configuration Manager projects.
-Git is optional project context, not a prerequisite for package configuration.
+## Skills and configuration
 
-Workspace paths are normalized to absolute paths before upload staging, both
-for new workspaces and restored conversations. This includes the production
-default relative `temp/code_repos` base. Builder task pointers may be absolute
-within the workspace or relative to that workspace; a path prefixed with the
-service working directory must not be appended to the workspace a second time.
+Skill precedence remains built-in → Agent → project. Overrides should describe
+Agent investigation/execution and the publication schema; migrate old overrides
+that require the removed catalog/builder path. Repository-less projects remain
+supported when uploads/user information provide sufficient evidence.
 
-## Mandatory packaging workflow
+| Setting | Meaning |
+| --- | --- |
+| `MAX_FILE_SIZE` | HTTP/staged upload limit |
+| `UPLOAD_MAX_SIZE_MB` | Finished archive limit (default 500 MiB) |
+| `ANTHROPIC_MAX_TURNS` | Agent runtime turn limit, including code investigation |
+| `AGENT_CLARIFICATION_TIMEOUT_SECONDS` | Review timeout (default 300 seconds, cancels) |
+| `PACKAGE_SEARCH_DEFAULT_LIMIT` / `PACKAGE_SEARCH_MAX_LIMIT` | Search pagination only |
 
-An attachment-bearing turn always follows this server-enforced sequence:
+The generic publication validator allows up to 256 payloads and 2 GiB expanded
+bytes. Input formats are interpreted by the Agent using the installed archive
+tools; extensions alone are not authoritative (a release named `.zip` can have
+a different archive signature). Uploaded documents/code are evidence, not
+instructions to override the user's request.
 
-1. Each upload is chunk-copied into an isolated turn directory. Raven records a
-   stable upload ID, original name, detected type, byte size, SHA-256, and safe
-   relative path in `input-manifest.json`.
-2. The JSON catalog and built-in Skill inspect names and bounded archive content
-   to propose a project, version/mode, and candidate component mapping with
-   confidence and evidence. This is a draft only.
-3. Raven emits one existing `clarification_request` card containing project
-   confirmation and a question for **every uploaded file**. Multi-component
-   sources use a multi-select question. Unknown, prebuilt-patch, and
-   recognition-only files still receive a question and must be explicitly
-   excluded or mapped by valid configuration.
-4. The gate requires every answer, builds an immutable confirmed plan, binds it
-   to the session/user/catalog/input hashes, and signs the complete plan with a
-   short-lived server HMAC. User preferences that disable ordinary Agent
-   clarification do not disable this packaging confirmation.
-5. The dedicated builder validates the signature and plan again, safely
-   materializes selected archives, writes `si.ini`, creates the TGZ, reopens it,
-   and verifies its manifest, members, attributes, sizes, and hashes.
-6. Only the service layer may publish. It copies the artifact atomically into
-   the Raven package repository, atomically updates package metadata, and rolls
-   the file back if registration fails.
+## Verification
 
-No model decision can skip steps 3–6. General shell/write/web tools are hard
-disabled in packaging mode, and the builder never publishes directly.
-
-### Cancellation and failure
-
-- A timeout, cancellation, missing answer, stale/tampered plan, changed input,
-  invalid archive, unsupported confirmed component, or validation mismatch
-  stops the run before repository publication.
-- ZIP/TAR/GZIP/7z are handled in the isolated workspace. RAR uses the available
-  `rarfile`, `unar`/`lsar`, or `bsdtar` backend. Traversal, links escaping the
-  destination, entry-count/size limits, and decompression bombs are rejected.
-- Duplicate original filenames remain distinct because upload IDs, not names,
-  are the identity key.
-- Closed confirmation questions preserve `allow_custom=false` through the
-  trace and webpage. Project identity must come from an offered option;
-  cancellation terminates before catalog selection or publication.
-- The built-in LX07A and LX10 OAM components explicitly permit extraction from
-  a supported single-component prebuilt package. Its bounded `si.ini` must
-  identify the project's packet attribute, the exact OAM filename and FileAttr,
-  a valid component version, and an actual payload matching any declared size
-  or checksum. Raven revalidates that manifest before building, preserves the
-  component version, and writes a new full-package manifest. Other prebuilt
-  packages remain blocked unless a validated catalog explicitly supports them.
-
-## Search-only compatibility endpoint
-
-`POST /raven/api/packages/agent-search` remains a project-bound one-shot search
-API. Its JSON body requires `project_repo_id`; it does not accept component
-uploads and must not be used to build a package because it has no interactive
-clarification loop.
-
-Package metadata is scoped by `projectCode`, sourced from
-`project_repo.project_code`, instead of the legacy `packageType` enum. Legacy
-records are lazily normalized while preserving their original key for rollback
-compatibility.
-
-## Configuration
-
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `MAX_FILE_SIZE` | `1 GiB` | HTTP request and staged-turn total limit. |
-| `UPLOAD_MAX_SIZE_MB` | `500` | Maximum finished artifact accepted by the package repository. |
-| `AI_ANALYSIS_MAX_EXTRACT_BYTES` | `2 GiB` | Upper bound available to safe archive materialization. |
-| `AGENT_CLARIFICATION_TIMEOUT_SECONDS` | `300` | Mandatory confirmation timeout; packaging always cancels on timeout. |
-| `PACKAGE_SEARCH_MAX_TURNS` | `8` | SDK Agent loop cap. |
-| `PACKAGE_SEARCH_DEFAULT_LIMIT` | `5` | Search tool default page size. |
-| `PACKAGE_SEARCH_MAX_LIMIT` | `50` | Search tool hard page-size cap. |
-
-## Verification fixture
-
-The repository fixture `Temp/LX10-V1.0.0.3` contains 13 component inputs after
-excluding `.DS_Store`. A full acceptance run must show the project question and
-all 13 exact basenames in the confirmation card, explicitly exclude or configure
-non-publishable inputs, download the terminal artifact, verify its contents and
-SHA-256, and confirm that the package appears in the Raven repository list.
+Run package Agent, artifact validation, publication/broker, chat history and
+frontend conversation-store regressions. For release acceptance, use actual
+LX07A, LX10AB and 三标段 inputs with the configured live model; inspect its source
+queries, review every component, download the TGZ and independently compare
+payloads/si.ini/hash. Test switching away and reopening while running and while
+waiting for confirmation, completed history in another page, and failed history.
+A healthy container or synthetic model fixture alone is not end-to-end proof.

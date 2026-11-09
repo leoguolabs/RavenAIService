@@ -38,6 +38,13 @@ class TestSeqCounter:
 
 
 class TestMaskTokens:
+    @pytest.mark.parametrize('scheme', ['http', 'https', 'HTTPS'])
+    def test_git_remote_userinfo_and_bare_pat_are_hidden(self, scheme):
+        token = 'glpat-fixture_secret_123'
+        masked = mask_tokens(f'origin {scheme}://oauth2:{token}@git.example/repo.git; token={token}')
+        assert token not in masked
+        assert f'{scheme}://***@git.example/repo.git' in masked
+
     def test_strips_credential(self):
         url = "https://abc123@example.com/repo.git"
         assert mask_tokens(url) == "https://***@example.com/repo.git"

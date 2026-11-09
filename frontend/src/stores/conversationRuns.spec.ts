@@ -78,6 +78,44 @@ describe('conversationRuns store', () => {
     setI18nLocale('zh')
   })
 
+  it('deduplicates overlapping restores of a failed packaging conversation', async () => {
+    const store = useConversationRunsStore()
+    let release: (value: any) => void = () => {}
+    const history = vi.spyOn(userApi, 'fetchMessages').mockReturnValue(new Promise((resolve) => { release = resolve }))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 404 })))
+    const first = store.loadSession('package', { isLoggedIn: true, force: true })
+    const second = store.loadSession('package', { isLoggedIn: true, force: true })
+    release({ success: true, data: [
+      { id: 'u', role: 'user', content: '打包' },
+      { id: 'a', role: 'ai', content: '构建失败，可以继续重试', run_status: 'failed', run_agent_kind: 'package_search' },
+    ], workspace_context: { agent_kind: 'package_search', project_repo_id: 3, has_log_workspace: false } })
+    const [a, b] = await Promise.all([first, second])
+    expect(history).toHaveBeenCalledTimes(1)
+    expect(a).toBe(b)
+    expect(a.messages[1].content).toContain('构建失败')
+    expect(a.lastAgentKind).toBe('package_search')
+    expect(a.lastProjectRepoId).toBe(3)
+    expect(a.loadingMessages).toBe(false)
+  })
+
+  it('unblocks history when the active-run endpoint never responds', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = useConversationRunsStore()
+      vi.spyOn(userApi, 'fetchMessages').mockResolvedValue({ success: true, data: [], message: 'ok' })
+      vi.stubGlobal('fetch', vi.fn((_url, options) => new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new DOMException('Timeout', 'AbortError')))
+      })))
+      const loading = store.loadSession('package', { isLoggedIn: true, force: true })
+      await vi.advanceTimersByTimeAsync(15001)
+      const state = await loading
+      expect(state.loadingMessages).toBe(false)
+      expect(state.loaded).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('routes streamed events by session/run and keeps another selected session clean', () => {
     const store = useConversationRunsStore()
     const sessionA = store.ensureState('session-a')

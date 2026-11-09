@@ -53,14 +53,7 @@ from app.agents.clarification import (
     request_mandatory_clarification,
 )
 from app.agents.hitl_broker import PermissionBroker
-from app.agents.log_analysis.trace import (
-    RUN_COMPLETE,
-    RUN_START,
-    SYSTEM_NOTICE,
-    SeqCounter,
-    build_event,
-    summarize,
-)
+from app.agents.log_analysis.trace import SeqCounter
 from app.config import settings
 from app.models.chat import ChatMessage, ImageAttachment
 from app.models.user import User
@@ -261,6 +254,8 @@ class PackageSearchChatService:
         if existing_job is not None and not existing_job.done:
             # A reconnect never consumes newly submitted attachments.
             await self._close_uploads(uploaded_files)
+            if db is not None:
+                await db.close()
             yield self._sse_event(
                 {
                     "event": "package_search_status",
@@ -275,6 +270,8 @@ class PackageSearchChatService:
         # Re-subscribe path: Job already done and still cached; replay terminal events.
         if existing_job is not None and existing_job.done and not question:
             await self._close_uploads(uploaded_files)
+            if db is not None:
+                await db.close()
             async for chunk in self._subscribe(existing_job):
                 yield chunk
             return
@@ -381,10 +378,22 @@ class PackageSearchChatService:
 
             input_manifest: Optional[Dict[str, Any]] = None
             project_catalog: List[Dict[str, Any]] = []
+            if not uploaded_files and context_meta.get("last_inputs_manifest") and context_meta.get("last_result_status") != "ok":
+                from app.services.agent_package_service import workspace_file
+
+                # A failed/rejected plan can be corrected in the same chat
+                # without uploading the release again. Authority is always new.
+                manifest_path = workspace_file(Path(ctx.temp_dir), context_meta["last_inputs_manifest"])
+                input_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                packaging_requested = bool(input_manifest.get("inputs"))
+                task = json.loads(Path(ctx.task_json_path).read_text(encoding="utf-8"))
+                task["inputs_manifest"] = str(manifest_path)
+                self._write_json_atomic(Path(ctx.task_json_path), task)
             if packaging_requested:
-                input_manifest = await self._stage_uploaded_inputs(
-                    ctx, uploaded_files, run_id=run_id
-                )
+                if uploaded_files:
+                    input_manifest = await self._stage_uploaded_inputs(
+                        ctx, uploaded_files, run_id=run_id
+                    )
                 ctx.metadata["inputs_manifest"] = input_manifest
                 context_meta["last_inputs_manifest"] = input_manifest.get(
                     "manifest_path"
@@ -517,6 +526,12 @@ class PackageSearchChatService:
                 }
             )
             await self._register_chat_run(job, ctx)
+            # Auth/history/project lookups use this request session. A streaming
+            # dependency otherwise retains its connection until SSE disconnects,
+            # starving history/reconnect requests across multiple browser tabs.
+            # All writes below use independent background-job sessions.
+            if db is not None:
+                await db.close()
             job.task = asyncio.create_task(self._run_job_async(job, ctx))
 
             logger.info(
@@ -549,6 +564,7 @@ class PackageSearchChatService:
     async def _run_job_async(self, job: AgentJob, ctx: WorkspaceContext) -> None:
         """Background Agent task. Survives SSE disconnects; persists to DB on completion."""
         packaging_requested = bool(job.input_manifest)
+        persisted = False
         try:
 
             def _emit_trace(event: Dict[str, Any]) -> None:
@@ -556,67 +572,57 @@ class PackageSearchChatService:
                 job.events.append({"event": "agent_trace", **event})
 
             if packaging_requested:
-                # Packaging is a deterministic Skill workflow after the
-                # server-enforced human gate.  Do not put an LLM/provider call
-                # between confirmation and publication: provider timeouts can
-                # outlive the signed plan and must never strand a fully
-                # confirmed build.
                 ctx.metadata["trace_seq_counter"] = SeqCounter()
-                job.confirmed_plan = await self._prepare_and_confirm_packaging(
-                    job, ctx, _emit_trace
-                )
-                if job.cancel_requested or job.cancel_event.is_set():
-                    raise MandatoryClarificationError(
-                        "cancelled", "整包发布前任务已取消，未写入重构包仓库。"
+                loop = asyncio.get_running_loop()
+                publication_lock = asyncio.Lock()
+
+                async def publish_on_service_loop(plan_path: str, artifact_path: str):
+                    async with publication_lock:
+                        return await self._publish_agent_package(
+                            job, ctx, plan_path, artifact_path, _emit_trace
+                        )
+
+                async def publish(plan_path: str, artifact_path: str):
+                    # The SDK owns a worker-thread loop; confirmation and job
+                    # state stay on the service loop, as do cancel requests.
+                    future = asyncio.run_coroutine_threadsafe(
+                        publish_on_service_loop(plan_path, artifact_path), loop
                     )
-                build_result, package, artifact = await self._build_and_publish_package(
-                    job, ctx
-                )
-                job.artifacts = [artifact]
-                final_text = (
-                    f"已按逐项确认的计划生成并发布整包 {artifact['name']}，"
-                    f"共包含 {len(build_result.get('components') or [])} 个组件。"
-                )
-                result = {
-                    "engine": "configuration-manager-skill",
-                    "model": "full-package-build",
-                    "provider": "deterministic-skill-engine",
-                    "status": "ok",
-                    "error_kind": None,
-                    "answer": final_text,
-                    "recommended_package_ids": [str(package.get("id"))],
-                    "relevant_package_ids": [str(package.get("id"))],
-                    "notes": "整包由 full-package-build Skill 按已签名确认计划构建。",
-                    "loaded_skills": list(
-                        ctx.metadata.get("materialized_packaging_skills")
-                        or ["full-package-build"]
-                    ),
-                    "packaging": build_result,
-                    "artifacts": list(job.artifacts),
-                    "package_id": package.get("id"),
-                }
-                seq_counter = ctx.metadata.get("trace_seq_counter")
-                if not isinstance(seq_counter, SeqCounter):
-                    seq_counter = SeqCounter()
-                    ctx.metadata["trace_seq_counter"] = seq_counter
-                _emit_trace(
-                    build_event(
-                        RUN_COMPLETE,
-                        task_id=ctx.task_id,
-                        seq_counter=seq_counter,
-                        trace_summary=summarize(job.trace_events),
-                        final_text=final_text,
+                    return await asyncio.wrap_future(future)
+
+                ctx.metadata["packaging_publisher"] = publish
+                task = json.loads(Path(ctx.task_json_path).read_text(encoding="utf-8"))
+                task["packaging_requested"] = True
+                task["projects"] = job.project_catalog
+                task["run_id"] = job.run_id
+                self._write_json_atomic(Path(ctx.task_json_path), task)
+
+            result = await asyncio.to_thread(
+                PackageSearchAgent().run_sync,
+                ctx,
+                job.cancel_event,
+                _emit_trace,
+                job.clarification,
+            )
+            if packaging_requested and isinstance(result, dict):
+                result["packaging"] = True
+                if job.artifacts:
+                    result["artifacts"] = list(job.artifacts)
+                    result["recommended_package_ids"] = [a["package_id"] for a in job.artifacts]
+                    result["relevant_package_ids"] = result["recommended_package_ids"]
+                    # Publication is authoritative even if the final prose/JSON
+                    # or the provider connection fails after the tool succeeds.
+                    result["status"] = "ok"
+                    result["error_kind"] = None
+                    result["answer"] = result.get("answer") or "整包已发布 / Package published."
+                elif result.get("status") not in {"cancelled", "error"}:
+                    result["status"] = "error"
+                    result["error_kind"] = "package_not_published"
+                    result["answer"] = (result.get("answer") or "") + (
+                        "\n\n本轮未发布整包，可继续补充信息后重试。 / No package was published; continue this conversation to retry."
                     )
-                )
-                result["trace_summary"] = summarize(job.trace_events)
-            else:
-                result = await asyncio.to_thread(
-                    PackageSearchAgent().run_sync,
-                    ctx,
-                    job.cancel_event,
-                    _emit_trace,
-                    job.clarification,
-                )
+                if result.get("status") == "error":
+                    job.error = str(result.get("error_kind") or "agent_error")
 
             if not isinstance(result, dict):
                 result = {
@@ -639,6 +645,7 @@ class PackageSearchChatService:
             job.answer = answer_text
 
             await self._persist_job_result(job, result, answer_text)
+            persisted = True
             self._touch_context(job.session_id, result=result, answer=answer_text)
 
             job.events.append(
@@ -672,8 +679,8 @@ class PackageSearchChatService:
             cancelled = job.cancel_requested or exc.code in {"cancelled", "timeout"}
             if cancelled:
                 job.result = {
-                    "engine": "configuration-manager-skill",
-                    "model": "full-package-build",
+                    "engine": "configuration-manager-agent",
+                    "model": None,
                     "status": "cancelled",
                     "error_kind": exc.code,
                     "answer": str(exc),
@@ -700,128 +707,109 @@ class PackageSearchChatService:
             job.error = str(exc)
             job.events.append({"event": "error", "message": str(exc)})
         finally:
-            if packaging_requested:
-                self._revoke_packaging_authority(ctx, run_id=job.run_id)
-            job.done = True
-            job.finished_at = time.monotonic()
-            await self._finalize_chat_run(job)
-
-    def _packaging_catalog_source(self, ctx: WorkspaceContext) -> Optional[Path]:
-        candidate = (
-            Path(ctx.temp_dir)
-            / ".claude"
-            / "skills"
-            / "full-package-build"
-            / "references"
-            / "package-projects.json"
-        )
-        return candidate if candidate.is_file() else None
-
-    @staticmethod
-    def _validate_packaging_questions(
-        questions: List[Dict[str, Any]], inputs: List[Dict[str, Any]]
-    ) -> None:
-        """Require one project question and an exact question for every upload."""
-        from app.services.full_package_service import PlanValidationError
-
-        if not any(
-            str(question.get("question_key") or "") == "project"
-            for question in questions
-        ):
-            raise PlanValidationError("打包确认未覆盖目标项目")
-        input_question_ids = {
-            str(question.get("question_key") or "").removeprefix("input:")
-            for question in questions
-            if str(question.get("question_key") or "").startswith("input:")
-        }
-        expected_upload_ids = {str(item.get("upload_id") or "") for item in inputs}
-        if input_question_ids != expected_upload_ids:
-            raise PlanValidationError("打包确认问题与上传文件清单不一致")
-
-    @staticmethod
-    def _selected_project_answer(
-        questions: List[Dict[str, Any]], answers: List[Dict[str, Any]]
-    ) -> str:
-        """Resolve the project card's display label back to its catalog value."""
-        answer_by_key = {
-            str(answer.get("question_key") or ""): answer
-            for answer in answers
-            if isinstance(answer, dict)
-        }
-        project_question = next(
-            (
-                question
-                for question in questions
-                if str(question.get("question_key") or "") == "project"
-            ),
-            None,
-        )
-        if project_question is None:
-            return ""
-        answer = answer_by_key.get("project") or {}
-        labels = answer.get("selected_labels")
-        label = str(labels[0]).strip() if isinstance(labels, list) and labels else ""
-        if label:
-            for option in project_question.get("options") or []:
-                if (
-                    isinstance(option, dict)
-                    and str(option.get("label") or "").strip() == label
-                ):
-                    return str(option.get("value") or label).strip().casefold()
-        return str(answer.get("custom_text") or "").strip().casefold()
-
-    @staticmethod
-    def _raise_if_packaging_cancelled(
-        questions: List[Dict[str, Any]], answers: List[Dict[str, Any]]
-    ) -> None:
-        """A displayed cancellation option revokes the build before catalog lookup."""
-        by_key = {
-            str(answer.get("question_key") or ""): answer
-            for answer in answers
-            if isinstance(answer, dict)
-        }
-        for question in questions:
-            answer = by_key.get(str(question.get("question_key") or "")) or {}
-            labels = answer.get("selected_labels") or []
-            for option in question.get("options") or []:
-                if (
-                    isinstance(option, dict)
-                    and option.get("label") in labels
-                    and option.get("value") == "cancel"
-                ):
-                    raise MandatoryClarificationError(
-                        "cancelled", "打包确认已取消，未执行构建和发布。"
+            try:
+                if not persisted:
+                    answer = (job.result or {}).get("answer") or (
+                        "配置管理员任务失败 / Configuration Manager failed: " + str(job.error or "unknown error")
                     )
+                    job.answer = answer
+                    job.result = {
+                        **(job.result or {}), "answer": answer,
+                        "status": "cancelled" if job.cancel_requested or (job.result or {}).get("status") == "cancelled" else "error",
+                        "trace_events": list(job.trace_events), "artifacts": list(job.artifacts),
+                    }
+                    await self._persist_job_result(job, job.result, answer)
+                    self._touch_context(job.session_id, result=job.result, answer=answer)
+            except Exception:
+                logger.exception("Failed to save package conversation session_id=%s", job.session_id)
+            finally:
+                ctx.metadata.pop("packaging_publisher", None)
+                try:
+                    if packaging_requested:
+                        self._revoke_packaging_authority(ctx, run_id=job.run_id)
+                except Exception:
+                    logger.exception("Failed to clear package workspace task_id=%s", job.task_id)
+                # Disk/history failures must never leave a running conversation
+                # forever. No live publisher capability survives this point.
+                job.done = True
+                job.finished_at = time.monotonic()
+                await self._finalize_chat_run(job)
 
-    @staticmethod
-    def _registry_packaging_definition(
-        catalog: Any, project_code: str
+    async def _publish_agent_package(
+        self, job: AgentJob, ctx: WorkspaceContext,
+        plan_path: str, artifact_path: str, emit_trace: Any,
     ) -> Dict[str, Any]:
-        """Bind only an exact code or the catalog's explicit registry identity."""
-        from app.services.full_package_service import PlanValidationError
+        """Review and publish Agent-built bytes; no business-rule builder fallback."""
+        from app.services.agent_package_service import validate_agent_package, review_questions
+        from app.services.package_confirmation_service import sign_confirmed_plan
+        from app.services.raven_package_service import raven_package_service
+        from app.services.chat_run_service import chat_run_service
+        from app.services.full_package_service import canonical_json
 
-        code = project_code.strip().casefold()
-        definition = catalog.projects_by_code.get(code)
-        if definition is None:
-            matches = [
-                project
-                for project in catalog.get("projects") or []
-                if code in (project.get("registry_project_codes") or [])
-            ]
-            if len(matches) != 1:
-                raise PlanValidationError(
-                    f"项目 {project_code} 的有效 Skill catalog 缺少自身定义或显式注册映射"
-                )
-            definition = matches[0]
-        # The registry code is the repository/session/publication identity.
-        # Labels, component rules and all other catalog authority are retained.
-        bound = dict(definition)
-        bound["project_code"] = code
-        # Routing has been consumed: snapshots use exact registered identities.
-        # Retaining aliases here could duplicate a mapping when both the
-        # canonical code and an explicitly mapped code are registered.
-        bound["registry_project_codes"] = []
-        return bound
+        if job.cancel_requested or job.cancel_event.is_set():
+            raise MandatoryClarificationError("cancelled", "发布已取消 / Publication cancelled")
+        if job.artifacts:
+            return {"status": "published", "artifact": job.artifacts[0], "reused": True}
+        plan = await asyncio.to_thread(
+            validate_agent_package, ctx.temp_dir, plan_path, artifact_path,
+            inputs=list((job.input_manifest or {}).get("inputs") or []),
+            projects=job.project_catalog,
+        )
+        answers = await self._request_packaging_confirmation(
+            job, ctx, questions=review_questions(plan), draft=plan,
+            inputs=plan["inputs"], materialized=["full-package-build"],
+            emit_trace=emit_trace, chat_run_service=chat_run_service,
+        )
+        if any(a.get("selected_labels") != ["确认 / Confirm"] for a in answers):
+            self.cancel(job.session_id)
+            raise MandatoryClarificationError("cancelled", "用户取消发布 / Publication cancelled")
+        if job.cancel_requested or job.cancel_event.is_set():
+            raise MandatoryClarificationError("cancelled", "发布已取消 / Publication cancelled")
+        # Validate fresh bytes after the potentially long review. Keep the exact
+        # original snapshot, not a mutable file the Agent could replace.
+        current = await asyncio.to_thread(
+            validate_agent_package, ctx.temp_dir, plan_path, artifact_path,
+            inputs=list((job.input_manifest or {}).get("inputs") or []),
+            projects=job.project_catalog,
+        )
+        if current["plan_hash"] != plan["plan_hash"]:
+            raise ValueError("确认期间计划或产物改变，请重新确认 / Package changed during review")
+        plan.update({
+            "run_id": job.run_id, "session_id": job.session_id,
+            "user_id": str(job.user_id) if job.user_id is not None else job.owner_scope,
+            "confirmation_hash": hashlib.sha256(canonical_json(answers).encode()).hexdigest(),
+        })
+        signed = sign_confirmed_plan(plan)
+        if job.cancel_requested or job.cancel_event.is_set():
+            raise MandatoryClarificationError("cancelled", "发布已取消 / Publication cancelled")
+        publication_components = [{
+            "name": c["component_key"], "version": c["version"],
+            "fileAttr": c["file_attr"], "sha256": c["sha256"],
+        } for c in plan["components"]]
+        package = await asyncio.to_thread(
+            raven_package_service.publish_built_package, Path(plan["artifact_path"]),
+            confirmed_plan=signed, components=publication_components,
+            expected_sha256=plan["artifact_sha256"],
+            cancel_event=job.cancel_event,
+        )
+        artifact = {
+            "package_id": str(package["id"]), "name": package["name"],
+            "download_url": f"/raven/api/download/{package['id']}",
+            "size": package["size"], "sha256": package["metadata"]["sha256"],
+            "project_code": plan["project_code"], "version": plan["version"],
+            "components": publication_components,
+        }
+        # Record success before ancillary workspace persistence can fail.
+        job.confirmed_plan = signed
+        job.artifacts = [artifact]
+        task = json.loads(Path(ctx.task_json_path).read_text(encoding="utf-8"))
+        registry_project = next(p for p in job.project_catalog if p["project_code"] == plan["project_code"])
+        self._bind_confirmed_project(job, ctx, task, registry_project=registry_project, confirmed_plan=signed)
+        self._write_json_atomic(Path(ctx.task_json_path), task)
+        self._write_json_atomic(Path(ctx.temp_dir) / "output" / "published-package.json", {
+            "plan": plan, "artifact": artifact,
+        })
+        return {"status": "published", "artifact": artifact}
 
     async def _request_packaging_confirmation(
         self,
@@ -869,401 +857,6 @@ class PackageSearchChatService:
                 job.mandatory_broker = None
             broker.close()
 
-    async def _prepare_and_confirm_packaging(
-        self,
-        job: AgentJob,
-        ctx: WorkspaceContext,
-        emit_trace: Any,
-    ) -> Dict[str, Any]:
-        """Classify uploads, force complete human confirmation, and sign the plan."""
-        from app.services import skills_service
-        from app.services.chat_run_service import chat_run_service
-        from app.services.full_package_service import (
-            PlanValidationError,
-            build_confirmation_questions,
-            canonical_hash,
-            classify_inputs,
-            confirm_plan,
-            load_catalog,
-            validate_confirmed_plan,
-        )
-        from app.services.package_confirmation_service import (
-            sign_confirmed_plan,
-            verify_confirmed_plan,
-        )
-
-        if not job.input_manifest or not (job.input_manifest.get("inputs") or []):
-            raise PlanValidationError("整包制作没有可确认的上传文件")
-
-        project_hint = str(job.context_meta.get("project_code") or "").strip() or None
-        plan_dir = Path(ctx.temp_dir) / "package_plan" / job.run_id
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        # Materialise before classification so an uploaded Agent Skill (and a
-        # project override when the user supplied a candidate project) can
-        # replace the source-controlled catalog through normal Skill precedence.
-        materialized = await asyncio.to_thread(
-            skills_service.materialize_enabled_skills,
-            "package_search",
-            ctx.temp_dir,
-            project_code=project_hint,
-        )
-        catalog = await asyncio.to_thread(
-            load_catalog, self._packaging_catalog_source(ctx)
-        )
-        if project_hint and job.project_catalog:
-            # A pre-bound workspace can still classify other registered projects
-            # visible in its effective layer. Never expose canonical catalog
-            # names as publishable identities when the registry uses other codes.
-            self._registry_packaging_definition(catalog, project_hint)
-            bound_payload = catalog.to_dict()
-            bound_projects = []
-            for registry_project in job.project_catalog:
-                code = str(registry_project.get("project_code") or "").strip()
-                if not code:
-                    continue
-                try:
-                    bound_projects.append(
-                        self._registry_packaging_definition(catalog, code)
-                    )
-                except PlanValidationError:
-                    continue
-            bound_payload["projects"] = bound_projects
-            catalog = await asyncio.to_thread(load_catalog, bound_payload)
-        # For an unbound upload, inspect each registered project's effective
-        # Skill catalog in an isolated workspace and merge only that project's
-        # definition.  This lets a newly-added project-level Skill participate
-        # in the very first classification without leaking one project's
-        # overrides into another.  The catalog snapshot is immutable after the
-        # mandatory questions are shown.
-        if not project_hint and job.project_catalog:
-            merged_catalog = catalog.to_dict()
-            merged_projects: Dict[str, Dict[str, Any]] = {}
-            for registry_project in job.project_catalog:
-                project_code = str(registry_project.get("project_code") or "").strip()
-                if not project_code:
-                    continue
-                candidate_workspace = (
-                    plan_dir
-                    / "project-catalogs"
-                    / _SESSION_KEY_RE.sub("_", project_code)[:96]
-                )
-                try:
-                    candidate_skills = await asyncio.to_thread(
-                        skills_service.materialize_enabled_skills,
-                        "package_search",
-                        candidate_workspace,
-                        project_code=project_code,
-                    )
-                    candidate_source = (
-                        candidate_workspace
-                        / ".claude"
-                        / "skills"
-                        / "full-package-build"
-                        / "references"
-                        / "package-projects.json"
-                    )
-                    candidate_catalog = await asyncio.to_thread(
-                        load_catalog,
-                        candidate_source if candidate_source.is_file() else None,
-                    )
-                    project_override = self._registry_packaging_definition(
-                        candidate_catalog, project_code
-                    )
-                    merged_projects[project_code.casefold()] = dict(project_override)
-                    materialized = list(
-                        dict.fromkeys([*materialized, *candidate_skills])
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    # A broken higher-precedence project Skill must never
-                    # silently fall back to the built-in definition. Remove
-                    # that project from this run's choices and fail closed if
-                    # it leaves no valid project.
-                    merged_projects.pop(project_code.casefold(), None)
-                    logger.warning(
-                        "configuration-manager disabled invalid project catalog "
-                        "project_code=%s: %s",
-                        project_code,
-                        exc,
-                    )
-                    job.events.append(
-                        {
-                            "event": "package_search_status",
-                            "message": (
-                                f"项目 `{project_code}` 的打包 Skill catalog 无效，"
-                                "本次已将该项目从可选范围移除。"
-                            ),
-                            "project_code": project_code,
-                            "catalog_invalid": True,
-                        }
-                    )
-            merged_catalog["projects"] = list(merged_projects.values())
-            catalog = await asyncio.to_thread(load_catalog, merged_catalog)
-
-        ctx.metadata["materialized_packaging_skills"] = list(materialized)
-        seq_counter = ctx.metadata.get("trace_seq_counter")
-        if not isinstance(seq_counter, SeqCounter):
-            seq_counter = SeqCounter()
-            ctx.metadata["trace_seq_counter"] = seq_counter
-        emit_trace(
-            build_event(
-                RUN_START,
-                task_id=ctx.task_id,
-                seq_counter=seq_counter,
-                model="full-package-build",
-                provider="deterministic-skill-engine",
-                loaded_skills=list(materialized),
-            )
-        )
-        if materialized:
-            emit_trace(
-                build_event(
-                    SYSTEM_NOTICE,
-                    task_id=ctx.task_id,
-                    seq_counter=seq_counter,
-                    kind="skills_loaded",
-                    detail=", ".join(materialized),
-                    loaded_skills=list(materialized),
-                )
-            )
-
-        inputs = list(job.input_manifest.get("inputs") or [])
-        draft = await asyncio.to_thread(
-            classify_inputs,
-            catalog,
-            inputs,
-            project_hint=project_hint,
-            verify_hashes=True,
-        )
-        questions = build_confirmation_questions(draft, catalog)
-        self._validate_packaging_questions(questions, inputs)
-        catalog_path = plan_dir / "package-projects.json"
-        draft_path = plan_dir / "draft-plan.json"
-        confirmed_path = plan_dir / "confirmed-plan.json"
-        self._write_json_atomic(catalog_path, dict(catalog))
-        self._write_json_atomic(draft_path, dict(draft))
-
-        job.events.append(
-            {
-                "event": "package_search_status",
-                "message": (
-                    f"已通过 {', '.join(materialized) or 'full-package-build'} Skill 完成初判；"
-                    f"现在必须确认项目、整包参数和 {len(inputs)} 个文件的组件映射。"
-                ),
-                "mandatory_confirmation": True,
-                "plan_hash": draft.get("plan_hash"),
-            }
-        )
-
-        answers = await self._request_packaging_confirmation(
-            job,
-            ctx,
-            questions=questions,
-            draft=draft,
-            inputs=inputs,
-            materialized=materialized,
-            emit_trace=emit_trace,
-            chat_run_service=chat_run_service,
-        )
-
-        self._raise_if_packaging_cancelled(questions, answers)
-        selected_project = self._selected_project_answer(questions, answers)
-        if not selected_project:
-            raise PlanValidationError("未能解析用户确认的项目")
-
-        # Resolve the human-selected project's *own* effective Skill layer even
-        # when the classifier already proposed that project.  A session may be
-        # pre-bound to project A while evidence points to B; in that case the
-        # initial workspace contains A's layer and B's project override has not
-        # participated yet.  Comparing the selected project definition and the
-        # archive-safety limits tells us whether consent must be refreshed.
-        selected_workspace = (
-            plan_dir
-            / "selected-project-catalog"
-            / _SESSION_KEY_RE.sub("_", selected_project)[:96]
-        )
-        try:
-            selected_skills = await asyncio.to_thread(
-                skills_service.materialize_enabled_skills,
-                "package_search",
-                selected_workspace,
-                project_code=selected_project,
-            )
-            selected_source = (
-                selected_workspace
-                / ".claude"
-                / "skills"
-                / "full-package-build"
-                / "references"
-                / "package-projects.json"
-            )
-            selected_effective_catalog = await asyncio.to_thread(
-                load_catalog,
-                selected_source if selected_source.is_file() else None,
-            )
-            selected_definition = self._registry_packaging_definition(
-                selected_effective_catalog, selected_project
-            )
-        except PlanValidationError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise PlanValidationError(
-                f"项目 {selected_project} 的打包 Skill catalog 无效，已阻止构建"
-            ) from exc
-        materialized = list(dict.fromkeys([*materialized, *selected_skills]))
-
-        current_definition = catalog.projects_by_code.get(selected_project.casefold())
-        selected_rules_changed = current_definition is None or canonical_hash(
-            {
-                "project": current_definition,
-                "limits": catalog.get("limits"),
-            }
-        ) != canonical_hash(
-            {
-                "project": selected_definition,
-                "limits": selected_effective_catalog.get("limits"),
-            }
-        )
-        # Component options in the first card are based on the classifier's
-        # proposed project.  If the human corrects that project, load the
-        # selected project's catalog, reclassify, and force a second complete
-        # confirmation card.  Rules are never silently changed after consent.
-        if (
-            selected_project.casefold()
-            != str(draft.get("project_code") or "").casefold()
-            or selected_rules_changed
-        ):
-            selected_catalog_payload = selected_effective_catalog.to_dict()
-            selected_catalog_payload["projects"] = [dict(selected_definition)]
-            catalog = await asyncio.to_thread(load_catalog, selected_catalog_payload)
-            draft = await asyncio.to_thread(
-                classify_inputs,
-                catalog,
-                inputs,
-                project_hint=selected_project,
-                verify_hashes=True,
-            )
-            questions = build_confirmation_questions(draft, catalog)
-            self._validate_packaging_questions(questions, inputs)
-            self._write_json_atomic(catalog_path, dict(catalog))
-            self._write_json_atomic(draft_path, dict(draft))
-            job.events.append(
-                {
-                    "event": "package_search_status",
-                    "message": (
-                        f"已按人工选定的项目 `{selected_project}` 重新加载 Skill 规则并初判；"
-                        "项目和全部文件映射必须再次逐项确认。"
-                    ),
-                    "mandatory_confirmation": True,
-                    "reclassified": True,
-                    "plan_hash": draft.get("plan_hash"),
-                }
-            )
-            answers = await self._request_packaging_confirmation(
-                job,
-                ctx,
-                questions=questions,
-                draft=draft,
-                inputs=inputs,
-                materialized=materialized,
-                emit_trace=emit_trace,
-                chat_run_service=chat_run_service,
-            )
-            self._raise_if_packaging_cancelled(questions, answers)
-            confirmed_again = self._selected_project_answer(questions, answers)
-            if confirmed_again.casefold() != selected_project.casefold():
-                raise PlanValidationError("二次确认的项目再次变更，请重新发起打包")
-
-        # The selected project layer becomes the live workspace Skill layer
-        # only after the human has confirmed it.  Classification/build keep
-        # using the exact catalog snapshot persisted above.
-        selected_materialized = await asyncio.to_thread(
-            skills_service.materialize_enabled_skills,
-            "package_search",
-            ctx.temp_dir,
-            project_code=selected_project,
-        )
-        materialized = list(dict.fromkeys([*materialized, *selected_materialized]))
-        ctx.metadata["materialized_packaging_skills"] = list(materialized)
-
-        user_scope = (
-            str(job.user_id) if job.user_id is not None else str(job.owner_scope)
-        )
-        confirmed = await asyncio.to_thread(
-            confirm_plan,
-            draft,
-            answers,
-            session_id=job.session_id,
-            user_id=user_scope,
-            run_id=job.run_id,
-            catalog=catalog,
-            inputs=inputs,
-        )
-
-        registry_project = next(
-            (
-                project
-                for project in job.project_catalog
-                if str(project.get("project_code") or "").casefold()
-                == str(confirmed.get("project_code") or "").casefold()
-            ),
-            None,
-        )
-        if registry_project is None:
-            raise PlanValidationError(
-                "确认的项目未在项目注册表中启用配置管理员，不能发布整包"
-            )
-        confirmed["project_repo_id"] = registry_project.get("id")
-        confirmed["project_name"] = registry_project.get("project_name")
-        signed = sign_confirmed_plan(dict(confirmed))
-        verify_confirmed_plan(
-            signed,
-            expected_run_id=job.run_id,
-            expected_session_id=job.session_id,
-            expected_user_id=user_scope,
-        )
-        # Core hashes and current input bytes are checked once more before the
-        # signed authority is exposed to the Agent builder.
-        validate_confirmed_plan(
-            signed,
-            catalog,
-            inputs=inputs,
-            session_id=job.session_id,
-            user_id=user_scope,
-            verify_files=True,
-        )
-        self._write_json_atomic(confirmed_path, signed)
-
-        task_path = Path(ctx.task_json_path)
-        try:
-            task_data = json.loads(task_path.read_text(encoding="utf-8"))
-            if not isinstance(task_data, dict):
-                task_data = {}
-        except Exception:
-            task_data = {}
-        task_data.update(
-            {
-                "packaging_requested": True,
-                "package_mode": "packaging",
-                "run_id": job.run_id,
-                "session_id": job.session_id,
-                "user_id": user_scope,
-                "package_catalog_path": str(catalog_path.relative_to(ctx.temp_dir)),
-                "draft_plan_path": str(draft_path.relative_to(ctx.temp_dir)),
-                "confirmed_plan_path": str(confirmed_path.relative_to(ctx.temp_dir)),
-                "confirmed_plan": signed,
-            }
-        )
-        self._bind_confirmed_project(
-            job,
-            ctx,
-            task_data,
-            registry_project=registry_project,
-            confirmed_plan=signed,
-        )
-        self._write_json_atomic(task_path, task_data)
-        ctx.metadata["confirmed_plan"] = signed
-        return signed
-
     def _bind_confirmed_project(
         self,
         job: AgentJob,
@@ -1305,73 +898,6 @@ class PackageSearchChatService:
             }
         )
         self._save_context(job.session_id, job.context_meta)
-
-    async def _build_and_publish_package(
-        self, job: AgentJob, ctx: WorkspaceContext
-    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-        """Run the signed deterministic builder, then atomically publish once."""
-        from app.agents.package_search.package_builder_mcp import (
-            build_confirmed_full_package,
-        )
-        from app.services.package_confirmation_service import verify_confirmed_plan
-        from app.services.raven_package_service import raven_package_service
-
-        if not job.confirmed_plan:
-            raise ValueError("整包构建缺少已确认计划")
-        user_scope = (
-            str(job.user_id) if job.user_id is not None else str(job.owner_scope)
-        )
-        verify_confirmed_plan(
-            job.confirmed_plan,
-            expected_run_id=job.run_id,
-            expected_session_id=job.session_id,
-            expected_user_id=user_scope,
-        )
-        build_result_obj = await asyncio.to_thread(
-            build_confirmed_full_package,
-            ctx,
-            expected_run_id=job.run_id,
-            expected_session_id=job.session_id,
-            expected_user_id=user_scope,
-        )
-        build_result = (
-            build_result_obj.to_dict()
-            if hasattr(build_result_obj, "to_dict")
-            else dict(build_result_obj)
-        )
-        if job.cancel_requested or job.cancel_event.is_set():
-            raise MandatoryClarificationError(
-                "cancelled", "整包已经构建，但发布前任务被取消；仓库未发生变更。"
-            )
-        publication_components = [
-            {
-                "name": component.get("component_key"),
-                "label": component.get("label"),
-                "version": component.get("version"),
-                "fileAttr": component.get("file_attr"),
-                "sha256": component.get("sha256"),
-            }
-            for component in build_result.get("components") or []
-            if isinstance(component, dict)
-        ]
-        package = await asyncio.to_thread(
-            raven_package_service.publish_built_package,
-            Path(str(build_result.get("artifact_path") or "")),
-            confirmed_plan=job.confirmed_plan,
-            components=publication_components,
-        )
-        metadata = package.get("metadata") or {}
-        artifact = {
-            "package_id": str(package.get("id") or ""),
-            "name": str(package.get("name") or ""),
-            "download_url": f"/raven/api/download/{package.get('id')}",
-            "size": int(package.get("size") or 0),
-            "sha256": str(metadata.get("sha256") or ""),
-            "project_code": str(package.get("projectCode") or ""),
-            "version": str(package.get("version") or ""),
-            "components": publication_components,
-        }
-        return build_result, package, artifact
 
     async def _register_chat_run(self, job: AgentJob, ctx: WorkspaceContext) -> None:
         """Create a ``chat_agent_runs`` row and register a ChatRunJob shadow."""
@@ -1469,7 +995,7 @@ class PackageSearchChatService:
             agent_status = str(job.result.get("status") or "")
         if agent_status == "cancelled" or (job.cancel_requested and not job.answer):
             terminal_status = RUN_STATUS_CANCELLED
-        elif job.error:
+        elif job.error or agent_status in {"error", "failed"}:
             terminal_status = RUN_STATUS_FAILED
         else:
             terminal_status = RUN_STATUS_SUCCEEDED
@@ -2245,12 +1771,27 @@ class PackageSearchChatService:
             if isinstance(artifact, dict)
         ]
         is_packaging = bool(artifacts or result.get("packaging"))
+        if status == "cancelled":
+            notice = (
+                "打包已取消，未发布整包。上传件已保留，可在当前对话继续重试。 / "
+                "Packaging cancelled; nothing was published. Continue this conversation to retry with the retained uploads."
+                if is_packaging
+                else "任务已取消，可在当前对话继续提问。 / Task cancelled; you can continue this conversation."
+            )
+            answer = notice + ("\n\n" + answer if answer else "")
+        elif not answer and status != "ok":
+            answer = (
+                "配置管理员任务失败，可在当前对话补充信息后重试。 / "
+                "Configuration Manager failed; continue this conversation to retry. "
+                + str(result.get("error_kind") or status)
+            )
 
         lines: List[str] = [
             (
-                "**配置管理员 Agent** 已完成本轮打包。"
-                if is_packaging
-                else "**配置管理员 Agent** 已完成本轮检索。"
+                "**配置管理员 Agent** 已完成本轮处理。"
+                if status != "ok"
+                else "**配置管理员 Agent** 已完成本轮打包。"
+                if is_packaging else "**配置管理员 Agent** 已完成本轮检索。"
             ),
             "",
             f"- 项目：`{project}`",

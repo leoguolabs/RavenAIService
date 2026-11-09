@@ -416,8 +416,8 @@ def test_agent_materializes_skills_layers_prompts_and_reuses_trace_seq(
     assert "`full-package-build`：分类并构建已确认的软件升级整包" in (
         captured["user_prompt"]
     )
-    assert "整包打包安全边界（最高优先级）" in captured["system_prompt"]
-    assert "Bash（包括 shell、curl）" in captured["system_prompt"]
+    assert "Agent 执行打包（替代旧 catalog 流程）" in captured["system_prompt"]
+    assert "Bash/Python" in captured["system_prompt"]
     assert "未关联代码仓库" in captured["system_prompt"]
 
     run_start = next(event for event in result["trace_events"] if event["type"] == "run_start")
@@ -436,7 +436,7 @@ def test_agent_materializes_skills_layers_prompts_and_reuses_trace_seq(
     assert shared_counter.value == max(event["seq"] for event in result["trace_events"])
 
 
-def test_packaging_options_explicitly_disallow_side_effect_bypasses(
+def test_packaging_options_enable_code_execution_and_bound_publication(
     monkeypatch,
     tmp_path,
 ):
@@ -445,7 +445,7 @@ def test_packaging_options_explicitly_disallow_side_effect_bypasses(
         ALLOWED_TOOLS,
         PACKAGING_DISALLOWED_TOOLS,
     )
-    from app.agents.package_search.package_builder_mcp import SDK_TOOL_NAME
+    from app.agents.package_search.agent_package_mcp import SDK_TOOL_NAME
 
     Path(tmp_path / "task.json").write_text(
         json.dumps(
@@ -479,7 +479,7 @@ def test_packaging_options_explicitly_disallow_side_effect_bypasses(
     )
     monkeypatch.setattr(
         "app.agents.log_analysis.mcp_tools.get_mcp_server",
-        lambda: object(),
+        lambda **kwargs: object(),
     )
     package_builder_server = object()
     get_package_builder_server = MagicMock(return_value=package_builder_server)
@@ -488,7 +488,7 @@ def test_packaging_options_explicitly_disallow_side_effect_bypasses(
         lambda _project_code: object(),
     )
     monkeypatch.setattr(
-        "app.agents.package_search.package_builder_mcp.get_mcp_server",
+        "app.agents.package_search.agent_package_mcp.get_mcp_server",
         get_package_builder_server,
     )
     endpoint = SimpleNamespace(
@@ -502,6 +502,7 @@ def test_packaging_options_explicitly_disallow_side_effect_bypasses(
         project_code=PROJECT,
         cwd=str(tmp_path),
         endpoint=endpoint,
+        packaging_publisher=sentinel,
     )
 
     assert options is sentinel
@@ -511,15 +512,11 @@ def test_packaging_options_explicitly_disallow_side_effect_bypasses(
     assert "Skill" in captured["allowed_tools"]
     assert SDK_TOOL_NAME in captured["allowed_tools"]
     assert "Bash" in ALLOWED_TOOLS  # ordinary package search keeps Git access
-    assert {"Bash", "Write"} <= set(captured["disallowed_tools"])
+    assert {"Bash", "Write", "Edit"} <= set(captured["allowed_tools"])
+    assert {"Bash", "Write", "Edit"}.isdisjoint(captured["disallowed_tools"])
     assert captured["setting_sources"] == ["project"]
-    assert captured["mcp_servers"]["package_builder"] is package_builder_server
-    get_package_builder_server.assert_called_once_with(
-        str(tmp_path),
-        expected_run_id="run-1",
-        expected_session_id="session-1",
-        expected_user_id="user-1",
-    )
+    assert captured["mcp_servers"]["agent_package"] is package_builder_server
+    get_package_builder_server.assert_called_once_with(sentinel)
 
 
 @pytest.mark.parametrize(
@@ -574,3 +571,12 @@ def test_stream_yields_events_and_final(stub_service, stub_options, tmp_path):
     final = events[-1]
     assert final["data"]["recommended_package_ids"] == ["pkg-real-1"]
     assert final["data"]["relevant_package_ids"] == []
+
+
+def test_packaging_prompts_skip_metadata_first_and_commit_history_gate():
+    from app.agents.package_search.prompts import get_prompts
+    system, user = get_prompts(locale="zh", packaging=True)
+    assert "亲自调查并执行软件打包" in system
+    assert "PublishPackage" in system
+    assert "仅当提交记录不足以回答时才读源码" not in system
+    assert "先判断问题是否仅凭包元数据工具即可回答" not in user

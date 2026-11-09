@@ -985,7 +985,9 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
    *
    * Caller should pass `force=true` after sending a new message to refresh.
    */
-  const loadSession = async (
+  const sessionLoads = new Map<string, Promise<ConversationState>>()
+
+  const restoreSession = async (
     sessionId: string,
     opts: { authToken?: string | null; isLoggedIn?: boolean; force?: boolean } = {},
   ) => {
@@ -1035,10 +1037,12 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
       }
 
       // Query active-run regardless of auth state — backend handles owner_scope.
+      const snapshotController = new AbortController()
+      const snapshotTimeout = setTimeout(() => snapshotController.abort(), 15000)
       try {
         const resp = await fetch(
           getServiceUrl(`/api/v1/ai-chat/chat/sessions/${encodeURIComponent(sessionId)}/active-run`),
-          { headers: buildAuthHeaders(opts.authToken), credentials: 'include' },
+          { headers: buildAuthHeaders(opts.authToken), credentials: 'include', signal: snapshotController.signal },
         )
         if (resp.ok) {
           const snapshot = await resp.json()
@@ -1056,6 +1060,8 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
         if ((err as any)?.name !== 'AbortError') {
           console.debug('active-run query skipped', err)
         }
+      } finally {
+        clearTimeout(snapshotTimeout)
       }
 
       state.loaded = true
@@ -1066,6 +1072,19 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
       void subscribeRun(sessionId, subscribeRunId, { authToken: opts.authToken })
     }
     return state
+  }
+
+  // Sidebar selection and route watchers can request the same history at once.
+  // Share that request so an older response cannot erase the restored trace.
+  const loadSession = (
+    sessionId: string,
+    opts: { authToken?: string | null; isLoggedIn?: boolean; force?: boolean } = {},
+  ): Promise<ConversationState> => {
+    const pending = sessionLoads.get(sessionId)
+    if (pending) return pending
+    const promise = restoreSession(sessionId, opts).finally(() => sessionLoads.delete(sessionId))
+    sessionLoads.set(sessionId, promise)
+    return promise
   }
 
   const subscribeRun = async (

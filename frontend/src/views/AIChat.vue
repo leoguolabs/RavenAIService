@@ -361,6 +361,9 @@ const loadMessages = async (id: string) => {
       isLoggedIn: isLoggedIn.value,
       force: true,
     })
+    // A slow history request from the previous selection must not change the
+    // current conversation's Agent/project after the user has navigated away.
+    if (loadedSessionId.value !== id) return
     const state = runsStore.ensureState(id)
     restoreAgentSelectionFromState(state)
   } catch (error) {

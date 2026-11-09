@@ -30,6 +30,11 @@ Missing upstream terminal events and provider failures remain errors.
 - Python source of truth: [app/agents/log_analysis/trace.py](../app/agents/log_analysis/trace.py)
 - TypeScript mirror: [frontend/src/types/agentTrace.ts](../frontend/src/types/agentTrace.ts)
 
+Credential masking covers both HTTP and HTTPS URL userinfo (preserving the
+scheme) and bare GitLab PATs. Workspace-bound cloning also removes remote URL
+credentials before handing a checkout to code tools; trace masking is a second
+boundary, not a substitute for keeping credentials out of tool results.
+
 ## Event shape
 
 Every event is a flat object with at minimum:

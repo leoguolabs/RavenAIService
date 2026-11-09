@@ -251,3 +251,31 @@ def test_search_long_chinese_excerpt_and_stable_order(client_with_db) -> None:
         rows.extend(response.json()["data"]["items"])
     assert [r["id"] for r in rows] == ["c", "b", "a"]
     assert all("遥测检索关键字" in r["snippet"] and len(r["snippet"]) <= 282 for r in rows)
+
+
+@pytest.mark.parametrize('trace_json', [None, '[]'])
+def test_legacy_failed_package_run_restores_without_message_rows(client_with_db, trace_json):
+    client, factory = client_with_db
+    token, user_id = _register(client)
+    session_id, run_id = str(uuid.uuid4()), str(uuid.uuid4())
+    async def seed():
+        async with factory() as db:
+            db.add(ChatSession(id=session_id, user_id=user_id, title='打包失败', message_count=0,
+                               last_message_at=datetime.utcnow()))
+            db.add(ChatAgentRun(id=run_id, session_id=session_id, user_id=user_id,
+                               owner_scope=f'user:{user_id}', agent_kind='package_search', status='failed',
+                               user_message='请打包灵犀07A', error="package version does not match project catalog",
+                               trace_events_json=trace_json, started_at=datetime.utcnow(), finished_at=datetime.utcnow()))
+            await db.commit()
+    asyncio.run(seed())
+    response = client.get(f'/api/v1/users/chat-sessions/{session_id}/messages',
+                          headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 200, response.text
+    rows = response.json()['data']
+    assert [m['role'] for m in rows] == ['user', 'ai']
+    assert rows[1]['run_status'] == 'failed'
+    assert rows[1]['run_agent_kind'] == 'package_search'
+    assert 'does not match project catalog' in rows[1]['content']
+    second = client.get(f'/api/v1/users/chat-sessions/{session_id}/messages',
+                        headers={'Authorization': f'Bearer {token}'})
+    assert second.json()['data'] == rows

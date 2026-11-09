@@ -147,7 +147,7 @@ _build_clone_url = build_clone_url  # backward-compat alias
 
 
 def _mask_clone_url(url: str) -> str:
-    return re.sub(r"https://[^@]+@", "https://***@", url)
+    return re.sub(r"(https?://)[^/@\s]+@", r"\1***@", url, flags=re.IGNORECASE)
 
 
 def _tool_content(payload: dict) -> dict:
@@ -186,7 +186,7 @@ def _sanitize_git_error(
     for secret in (clone_url, repo_url, token):
         if secret:
             sanitized = sanitized.replace(secret, "***")
-    sanitized = re.sub(r"https://[^@\s]+@", "https://***@", sanitized)
+    sanitized = _mask_clone_url(sanitized)
     sanitized = " ".join(sanitized.split())
     return sanitized[:800] or "git clone failed without diagnostic output"
 
@@ -220,6 +220,28 @@ def _git_checkout_identity(target: Path) -> tuple[str, str]:
     if commit_result.returncode != 0:
         raise RuntimeError("unable to read cloned repository commit")
     return branch_result.stdout.strip(), commit_result.stdout.strip()
+
+
+def _remove_checkout_credentials(target: Path) -> None:
+    """Git clone stores its authenticated URL; never hand that to code tools."""
+    result = subprocess.run(
+        ["git", "-C", str(target), "config", "--local", "--get-regexp", r"^remote\..*\.(url|pushurl)$"],
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError("Unable to inspect checkout remote configuration")
+    for line in result.stdout.splitlines():
+        key, url = line.split(None, 1)
+        parsed = urlparse(url)
+        if parsed.scheme.lower() not in {"http", "https"} or "@" not in parsed.netloc:
+            continue
+        clean = urlunparse(parsed._replace(netloc=parsed.netloc.rsplit("@", 1)[1]))
+        update = subprocess.run(
+            ["git", "-C", str(target), "config", "--local", "--fixed-value", "--replace-all", key, clean, url],
+            capture_output=True, text=True, check=False, timeout=30,
+        )
+        if update.returncode:
+            raise RuntimeError("Unable to remove checkout remote credentials")
 
 
 def _persist_related_repo_manifest(
@@ -297,6 +319,7 @@ def _clone_project_repo_sync(
 
     if (target / ".git").is_dir():
         try:
+            _remove_checkout_credentials(target)
             branch, commit_sha = _git_checkout_identity(target)
             if not is_primary:
                 _persist_related_repo_manifest(
@@ -380,6 +403,7 @@ def _clone_project_repo_sync(
                 "exit_code": result.returncode,
             }
 
+        _remove_checkout_credentials(partial)
         branch, commit_sha = _git_checkout_identity(partial)
         if target.exists():
             target.rmdir()  # only the empty placeholder created by workspace setup
@@ -440,7 +464,7 @@ async def clone_project_repo_payload(
     code = (project_code or "").strip()
     if not code:
         return {"error": "invalid_input", "message": "project_code is required"}
-    if agent_key not in {"project_expert", "log_analysis"}:
+    if agent_key not in {"project_expert", "log_analysis", "package_search"}:
         return {"error": "agent_not_allowed", "project_code": code}
 
     async with db_manager.session_factory() as db:
@@ -674,7 +698,9 @@ def get_mcp_server(
     return create_sdk_mcp_server(
         name="project_repo",
         version="1.2.0",
-        tools=[*_base_tools, _clone_project_repo],
+        # Configuration Manager uses server-side cloning exclusively. The
+        # legacy lookup returns an authenticated URL and must not be visible.
+        tools=[*[t for t in _base_tools if agent_key != "package_search" or t.name != "lookup_project_repo"], _clone_project_repo],
     )
 
 

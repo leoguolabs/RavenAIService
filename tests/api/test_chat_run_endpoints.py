@@ -189,6 +189,38 @@ def test_run_snapshot_404_for_other_owner(client, clean_registry):
 # ─────────────────────── stream replay ──────────────────────────────
 
 
+@pytest.mark.asyncio
+async def test_replay_stream_releases_auth_connection(tmp_path, clean_registry, monkeypatch):
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from starlette.requests import Request
+
+    engine = create_async_engine(f'sqlite+aiosqlite:///{tmp_path}/pool.db',
+                                 pool_size=1, max_overflow=0, pool_timeout=0.1)
+    sessions = async_sessionmaker(engine)
+    job = _register_running_job(session_id='pool-replay')
+    checked = False
+
+    async def subscribe(*args, **kwargs):
+        nonlocal checked
+        async with sessions() as other_browser:
+            assert (await other_browser.execute(text('SELECT 1'))).scalar() == 1
+        checked = True
+        yield 'data: {"event":"done"}\n\n'
+
+    monkeypatch.setattr(chat_run_service, 'subscribe', subscribe)
+    request = Request({'type': 'http', 'headers': [(b'x-client-scope', _CLIENT_SCOPE_TOKEN.encode())]})
+    try:
+        async with sessions() as db:
+            await db.execute(text('SELECT 1'))
+            response = await ai_chat_api.chat_run_stream_endpoint(job.run_id, request, db, None, 'en')
+            async for _ in response.body_iterator:
+                pass
+            assert checked
+    finally:
+        await engine.dispose()
+
+
 def test_run_stream_replays_buffered_events_and_done(client, clean_registry):
     """Stream endpoint must replay the full buffer then emit the run's
     ``done`` frame once the job is terminal."""

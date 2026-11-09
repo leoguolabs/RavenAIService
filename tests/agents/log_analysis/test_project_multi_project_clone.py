@@ -139,6 +139,48 @@ def test_primary_project_clone_keeps_repo_compatibility(tmp_path):
     assert "related_repos" not in manifest
 
 
+def test_clone_and_reuse_never_expose_auth_in_git_config(tmp_path, monkeypatch):
+    from app.agents.log_analysis import mcp_tools
+    source = tmp_path / 'source'
+    _init_git_repo(source)
+    workspace = _workspace(tmp_path / 'workspace')
+    secret_url = 'http://oauth2:fixture-secret@git.example/repo.git'
+    project = {**_project(source), 'clone_url': secret_url}
+    real_run = subprocess.run
+
+    def clone_locally(command, **kwargs):
+        if command[:2] == ['git', 'clone']:
+            result = real_run([*command[:-2], str(source), command[-1]], **kwargs)
+            real_run(['git', '-C', command[-1], 'remote', 'set-url', 'origin', secret_url], check=True)
+            return result
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(mcp_tools.subprocess, 'run', clone_locally)
+    for attempt in range(2):
+        if attempt:
+            real_run(['git', '-C', str(workspace / 'related_repos/secondary'), 'remote', 'set-url', 'origin', secret_url], check=True)
+        result = mcp_tools._clone_project_repo_sync(
+            project=project, workspace_dir=str(workspace), primary_project_code='primary',
+            max_related_repos=2, timeout_seconds=30,
+        )
+        assert result['status'] == 'ok'
+        checkout = Path(result['absolute_path'])
+        assert 'fixture-secret' not in (checkout / '.git/config').read_text()
+        remote = real_run(['git', '-C', str(checkout), 'remote', '-v'], check=True, capture_output=True, text=True).stdout
+        assert 'http://git.example/repo.git' in remote
+        assert 'fixture-secret' not in remote
+
+
+def test_package_server_exposes_only_discovery_and_safe_clone(tmp_path, monkeypatch):
+    from app.agents.log_analysis import mcp_tools
+    import claude_agent_sdk
+    monkeypatch.setattr(mcp_tools, '_get_servers', lambda: (None, None))
+    monkeypatch.setattr(mcp_tools, '_base_tools', [SimpleNamespace(name='discover_projects'), SimpleNamespace(name='lookup_project_repo')])
+    monkeypatch.setattr(claude_agent_sdk, 'create_sdk_mcp_server', lambda **kwargs: kwargs)
+    server = mcp_tools.get_mcp_server(workspace_dir=str(tmp_path), agent_key='package_search')
+    assert [t.name for t in server['tools']] == ['discover_projects', 'clone_project_repo']
+
+
 def test_related_repo_limit_and_conflict_preserve_existing_data(tmp_path):
     from app.agents.log_analysis import mcp_tools
 
@@ -228,7 +270,8 @@ def test_containment_rejects_paths_outside_workspace(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_clone_payload_requires_agent_binding(monkeypatch, tmp_path):
+@pytest.mark.parametrize("agent_key", ["project_expert", "package_search"])
+async def test_clone_payload_requires_agent_binding(monkeypatch, tmp_path, agent_key):
     from app.agents.log_analysis import mcp_tools
     from app.models.database import db_manager
     from app.services import project_repo_service
@@ -267,12 +310,12 @@ async def test_clone_payload_requires_agent_binding(monkeypatch, tmp_path):
         project_code="secondary",
         workspace_dir=str(workspace),
         primary_project_code="primary",
-        agent_key="project_expert",
+        agent_key=agent_key,
     )
 
     assert payload == {
         "error": "agent_not_enabled",
         "project_code": "secondary",
-        "agent_key": "project_expert",
+        "agent_key": agent_key,
     }
     assert not (workspace / "related_repos").exists()

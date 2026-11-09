@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 # Regex to scrub token-injected URLs (e.g. https://abc123@host/repo.git)
 # from any text that may flow into a trace event.
-_TOKEN_URL_RE = re.compile(r"https://[^@\s]+@")
+_TOKEN_URL_RE = re.compile(r"(https?://)[^/@\s]+@", re.IGNORECASE)
+_GITLAB_TOKEN_RE = re.compile(r"\bglpat-[A-Za-z0-9_-]{8,}\b")
 
 
 EventType = Literal[
@@ -157,7 +158,7 @@ class SeqCounter:
 
 def mask_tokens(text: str) -> str:
     """Strip the credential portion from a token-bearing URL."""
-    return _TOKEN_URL_RE.sub("https://***@", text)
+    return _GITLAB_TOKEN_RE.sub("***", _TOKEN_URL_RE.sub(r"\1***@", text))
 
 
 def runtime_metadata(events: Iterable[dict]) -> dict:

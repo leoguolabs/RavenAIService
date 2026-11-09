@@ -614,7 +614,6 @@ async def get_chat_messages(
         .where(
             ChatAgentRun.user_id == current_user.id,
             ChatAgentRun.session_id == session_id,
-            ChatAgentRun.trace_events_json.is_not(None),
         )
         .order_by(ChatAgentRun.finished_at.asc(), ChatAgentRun.started_at.asc())
     )
@@ -646,6 +645,36 @@ async def get_chat_messages(
                 message.run_agent_kind = run.agent_kind
                 message.trace_events = trace_events
         messages.append(message)
+    # Older packaging failures only wrote a terminal run row, leaving an empty
+    # conversation. Recover those turns without a migration or duplicate writes.
+    for run in unmatched_runs:
+        if run.agent_kind != "package_search" or run.status not in {"failed", "cancelled", "stale"}:
+            continue
+        if limit and messages and run.started_at < messages[0].created_at:
+            continue
+        try:
+            trace = json.loads(run.trace_events_json or "[]")
+        except (TypeError, ValueError):
+            trace = []
+        common = {"session_id": session_id, "created_at": run.started_at,
+                  "updated_at": run.finished_at or run.started_at}
+        if run.user_message and not any(
+            m.role == "user" and m.content == run.user_message and m.created_at >= run.started_at
+            for m in messages
+        ):
+            messages.append(ChatMessageRecord(
+                **common, id=f"run:{run.id}:user", role="user", content=run.user_message,
+            ))
+        messages.append(ChatMessageRecord(
+            **common, id=f"run:{run.id}:assistant", role="ai",
+            content=run.answer or (
+                "配置管理员任务未完成 / Configuration Manager did not complete: "
+                + (run.error or run.status)
+            ),
+            run_id=run.id, run_status=run.status, run_agent_kind=run.agent_kind,
+            trace_events=trace if isinstance(trace, list) else [],
+        ))
+    messages.sort(key=lambda item: item.created_at)
     # fetch_messages 已校验会话归属；仅返回当前用户 Fork 的可恢复选择，不暴露目录。
     from app.services.log_analysis_chat_service import log_analysis_chat_service
 
@@ -657,6 +686,16 @@ async def get_chat_messages(
             "project_repo_id": loaded[1].get("project_repo_id"),
             "has_log_workspace": True,
         }
+    if workspace_context is None:
+        from app.services.package_search_chat_service import package_search_chat_service
+
+        package_context = package_search_chat_service._load_context(session_id, user=current_user)
+        if package_context is not None:
+            workspace_context = {
+                "agent_kind": "package_search",
+                "project_repo_id": package_context[1].get("project_repo_id"),
+                "has_log_workspace": False,
+            }
     return ChatMessagesResponse(
         message="ok",
         data=messages,

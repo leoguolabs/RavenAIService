@@ -39,7 +39,7 @@ def _load_config() -> Dict[str, Any]:
     return _PROMPTS_CACHE
 
 
-def get_prompts(locale: Optional[str] = None) -> Tuple[str, str]:
+def get_prompts(locale: Optional[str] = None, *, packaging: bool = False) -> Tuple[str, str]:
     """Return the generic (system_prompt, user_prompt_template) for ``locale``.
 
     ``locale`` selects the per-language body, falling back to the default
@@ -48,7 +48,14 @@ def get_prompts(locale: Optional[str] = None) -> Tuple[str, str]:
     """
     config = _load_config()
     agent_config: Dict[str, Any] = config.get("claude_agent_package_search", {})
-    variant = agent_config.get("generic") or {}
+    variant_key = "packaging" if packaging else "generic"
+    variant = agent_config.get(variant_key) or {}
+    if packaging and not variant:
+        # Older administrator-saved prompt files have only the search variant.
+        # Never reintroduce its metadata-first workflow into package execution.
+        from pathlib import Path
+        bundled = Path(__file__).resolve().parents[2] / "prompts" / "prompts_config.yaml"
+        variant = yaml.safe_load(bundled.read_text(encoding="utf-8"))["claude_agent_package_search"]["packaging"]
 
     system_prompt = select_localized_body(variant.get("system_prompt"), locale)
     user_prompt_template = select_localized_body(
