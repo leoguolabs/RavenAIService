@@ -108,6 +108,7 @@ async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
 
     from claude_agent_sdk import ResultMessage, SystemMessage
     from app.agents.magpie_bridge import GatewayConfig, gateway_bridge
+    from app.services.agent_runtime_service import get_config
 
     executor = env.get("RAVEN_EXECUTOR", "claude_sdk")
     agent_kind = env.get("RAVEN_AGENT_KIND", "")
@@ -124,7 +125,8 @@ async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
 
     config = GatewayConfig(base_url=env["ANTHROPIC_BASE_URL"], api_key=env["ANTHROPIC_API_KEY"],
         model=options.model, executor=executor, session_id=str(uuid.uuid4()), agent_kind=agent_kind,
-        timeout_seconds=float(env.get("API_TIMEOUT_MS", "3600000")) / 1000)
+        timeout_seconds=float(env.get("API_TIMEOUT_MS", "3600000")) / 1000,
+        task_routing=get_config().task_routing)
     yield SystemMessage(subtype="raven_executor", data={"executor": executor, "agent_key": agent_kind,
         "requested_model": options.model})
     async with gateway_bridge(config, on_route, on_error) as (base_url, token):

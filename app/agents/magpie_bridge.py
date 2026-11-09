@@ -1,7 +1,8 @@
 """Per-run authenticated transport to Magpie, with authoritative route events.
 
-No upstream routing is implemented here. Magpie chooses the provider and this
-bridge observes its response headers, including changes between tool turns.
+Magpie owns initial selection and provider protocols. An opt-in task policy pins
+its actual choice and moves a slow local model to a cloud backup without ever
+restarting the Agent or replaying committed inference.
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.agents.openai_bridge import _LoopbackServer
+from app.agents.magpie_task_routing import TaskRoute, inference_path
+from app.services.magpie_routing_policy import TaskRoutingPolicy
 
 
 class GatewayRequestError(RuntimeError):
@@ -53,6 +56,7 @@ class GatewayConfig:
     session_id: str
     agent_kind: str = ""
     timeout_seconds: float = 3600
+    task_routing: TaskRoutingPolicy = field(default_factory=TaskRoutingPolicy)
 
 
 def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncClient,
@@ -60,6 +64,9 @@ def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncCli
                        on_error: Callable[[GatewayRequestError | None], None] | None = None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     last_route: tuple[str, str] | None = None
+    policy = config.task_routing
+    task_route = TaskRoute(config.base_url, client, policy) if (
+        policy.enabled and config.model == policy.entry_group) else None
 
     @app.api_route("/{path:path}", methods=["GET", "POST"])
     async def forward(path: str, request: Request):
@@ -86,10 +93,16 @@ def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncCli
             if name in request.headers:
                 headers[name] = request.headers[name]
         params = [(key, value) for key, value in request.query_params.multi_items() if key != "key"]
-        outgoing = client.build_request(request.method, f"{config.base_url.rstrip('/')}/{path}",
-            content=await request.body(), headers=headers, params=params)
+        body = await request.body()
+        prepared = None
         try:
-            response = await client.send(outgoing, stream=True)
+            if task_route and request.method == "POST" and inference_path(path):
+                prepared = await task_route.prepare(request.method, path, body, headers, params)
+                response = prepared.response
+            else:
+                outgoing = client.build_request(request.method, f"{config.base_url.rstrip('/')}/{path}",
+                    content=body, headers=headers, params=params)
+                response = await client.send(outgoing, stream=True)
         except httpx.HTTPError:
             if on_error:
                 on_error(gateway_error(config, 502))
@@ -109,7 +122,10 @@ def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncCli
                 except httpx.HTTPError:
                     pass  # The HTTP status remains useful even if the error body is truncated.
                 finally:
-                    await response.aclose()
+                    if prepared:
+                        await prepared.close()
+                    else:
+                        await response.aclose()
                 error = gateway_error(config, response.status_code, bytes(body))
                 on_error(error)
                 # Both CLIs understand their native error envelopes. Do not expose raw bodies.
@@ -124,17 +140,29 @@ def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncCli
                                              if key.lower() == "retry-after"})
         provider = response.headers.get("x-magpie-provider", "")
         model = response.headers.get("x-magpie-model", "")
-        if response.is_success and provider and model and (provider, model) != last_route:
-            last_route = (provider, model)
-            await on_route({"executor": config.executor, "provider": provider, "model": model,
-                      "requested_model": config.model, "agent_key": config.agent_kind})
+        if (response.is_success and provider and model and (provider, model) != last_route
+                and (not task_route or inference_path(path))):
+            try:
+                await on_route({"executor": config.executor, "provider": provider, "model": model,
+                          "requested_model": config.model, "agent_key": config.agent_kind})
+                last_route = (provider, model)
+            except BaseException:
+                if prepared:
+                    await prepared.close()
+                else:
+                    await response.aclose()
+                raise
 
         async def chunks():
             try:
-                async for chunk in response.aiter_bytes():
+                stream = prepared.chunks() if prepared else response.aiter_bytes()
+                async for chunk in stream:
                     yield chunk
             finally:
-                await response.aclose()
+                if prepared:
+                    await prepared.close()
+                else:
+                    await response.aclose()
 
         safe_headers = {key: value for key, value in response.headers.items() if key.lower() in {
             "content-type", "cache-control", "x-magpie-provider", "x-magpie-model", "retry-after",

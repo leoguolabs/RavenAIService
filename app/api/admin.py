@@ -333,6 +333,7 @@ class AgentRuntimeUpdate(BaseModel):
     api_key: Optional[str] = Field(default=None, repr=False)
     model: Optional[str] = None
     agent_overrides: Optional[Dict[str, Any]] = None
+    task_routing: Optional[Dict[str, Any]] = None
 
 
 @router.get("/agent-runtime")

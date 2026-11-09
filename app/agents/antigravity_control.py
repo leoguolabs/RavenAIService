@@ -31,11 +31,22 @@ TOOL_NAMES = {
 }
 
 
+def _mcp_arguments(args):
+    # Some local models encode call_mcp_tool.Arguments as a JSON string.
+    # Normalize before permission hooks, using the same value for tool IDs.
+    if isinstance(args, str):
+        try:
+            return json.loads(args)
+        except ValueError:
+            pass
+    return args
+
+
 def normalize_tool(name: str, args: dict, mcp_names: dict[str, str] | None = None):
     if name == "call_mcp_tool":
         canonical = f"mcp__{args.get('ServerName', '')}__{args.get('ToolName', '')}"
         if canonical in (mcp_names or {}):
-            return canonical, args.get("Arguments", {})
+            return canonical, _mcp_arguments(args.get("Arguments", {}))
     canonical = (mcp_names or {}).get(name, TOOL_NAMES.get(name, name))
     converted = dict(args)
     if canonical == "Bash":
@@ -100,6 +111,9 @@ class Control:
         return True, args, ""
 
     async def call(self, server, name, args):
+        args = _mcp_arguments(args)
+        if not isinstance(args, dict):
+            return {"content": [{"type": "text", "text": "Tool arguments must be a JSON object"}], "isError": True}
         canonical = f"mcp__{server}__{name}"
         key = (canonical, json.dumps(args, sort_keys=True))
         pending = self.pending_tool_ids.get(key, [])

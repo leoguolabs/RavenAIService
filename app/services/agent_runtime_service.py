@@ -16,6 +16,7 @@ from pydantic import (
 
 from app.config import settings
 from app.services import runtime_settings_service
+from app.services.magpie_routing_policy import TaskRoutingPolicy
 
 STORE_KEY = "agent_runtime"
 CATALOG_KEY = "agent_runtime_catalog"
@@ -39,6 +40,7 @@ class RuntimeConfig(BaseModel):
     api_key: str = Field(default="", repr=False, max_length=4096)
     model: str = Field(default="", max_length=256)
     agent_overrides: dict[str, AgentSelection] = Field(default_factory=dict)
+    task_routing: TaskRoutingPolicy = Field(default_factory=TaskRoutingPolicy)
 
     @field_validator("base_url")
     @classmethod

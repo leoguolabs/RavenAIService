@@ -1,3 +1,6 @@
+import json
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, create_sdk_mcp_server, tool
@@ -34,7 +37,8 @@ def test_skill_activation_and_incremental_text():
 
 
 @pytest.mark.asyncio
-async def test_real_memory_mcp_bridge_enforces_denial_and_post_hooks():
+@pytest.mark.parametrize("encoded", [False, True])
+async def test_real_memory_mcp_bridge_enforces_denial_and_post_hooks(encoded):
     called = []
 
     @tool("read", "Read a fixture", {"value": str})
@@ -60,14 +64,29 @@ async def test_real_memory_mcp_bridge_enforces_denial_and_post_hooks():
         async with httpx.AsyncClient() as client:
             assert (await client.post(url + "/mcp/fixture", json={})).status_code == 401
             for value in ("denied", "allowed"):
+                args = {"value": value}
+                if encoded:
+                    args = json.dumps(args)
                 response = await client.post(url + "/mcp/fixture", headers={"Authorization": "Bearer " + token},
-                    json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "read", "arguments": {"value": value}}})
+                    json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "read", "arguments": args}})
                 body = response.json()["result"]
                 if value == "denied":
                     assert body["isError"]
                 else:
                     assert body["content"][0]["text"] == "validated"
     assert called == [{"value": "allowed"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args", ["not json", "[]", "null", [1]])
+async def test_malformed_mcp_arguments_never_reach_permissions_or_tools(args):
+    permission = AsyncMock()
+    control = Control(ClaudeAgentOptions(cwd="/tmp", can_use_tool=permission))
+    client = AsyncMock()
+    control.clients["fixture"] = client
+    assert (await control.call("fixture", "read", args))["isError"]
+    permission.assert_not_called()
+    client.call_tool.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -88,7 +107,8 @@ async def test_system_prompt_and_turn_limit_use_invocation_hook():
 
 
 @pytest.mark.asyncio
-async def test_mcp_permission_id_matches_visible_step():
+@pytest.mark.parametrize("args", [{}, "{}"])
+async def test_mcp_permission_id_matches_visible_step(args):
     observed = []
     async def deny(name, args, context):
         observed.append(context.tool_use_id)
@@ -96,9 +116,9 @@ async def test_mcp_permission_id_matches_visible_step():
     control = Control(ClaudeAgentOptions(cwd="/tmp", can_use_tool=deny))
     control.mcp_names["mcp__fixture__write"] = "mcp__fixture__write"
     reply = await control.native_hook("PreToolUse", {"conversationId": "run", "stepIdx": 3,
-        "toolCall": {"name": "call_mcp_tool", "args": {"ServerName": "fixture", "ToolName": "write", "Arguments": {}}}})
+        "toolCall": {"name": "call_mcp_tool", "args": {"ServerName": "fixture", "ToolName": "write", "Arguments": args}}})
     assert reply["decision"] == "auto_approve"
-    assert (await control.call("fixture", "write", {}))["isError"]
+    assert (await control.call("fixture", "write", args))["isError"]
     assert observed == ["agy-run-3"]
 
 

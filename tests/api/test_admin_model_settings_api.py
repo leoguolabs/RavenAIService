@@ -85,6 +85,20 @@ def test_agent_runtime_requires_admin():
             assert response.status_code in (401, 403)
 
 
+def test_task_routing_policy_round_trip_and_validation(client):
+    policy = {'enabled': True, 'entry_group': 'group/intent', 'degraded_group': 'group/cloud',
+        'local_group': 'group/local', 'local_model': 'yinhe/model', 'backup_model': 'cloud/model',
+        'min_tokens_per_second': 12}
+    response = client.put('/admin/agent-runtime', json={'task_routing': policy})
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['task_routing']['min_tokens_per_second'] == 12
+    response = client.put('/admin/agent-runtime', json={'task_routing': {**policy, 'probe_seconds': 0}})
+    assert response.status_code == 400
+    # Updating an unrelated setting does not silently disable the task policy.
+    response = client.put('/admin/agent-runtime', json={'model': 'group/intent'})
+    assert response.json()['data']['task_routing']['enabled']
+
+
 def test_router_policy_is_exposed_as_its_own_group(client):
     """The Admin form renders by group; a mislabelled field lands nowhere."""
     fields = client.get("/admin/model-settings").json()["data"]["fields"]
