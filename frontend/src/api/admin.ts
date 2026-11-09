@@ -38,7 +38,7 @@ export interface RegistrationEmailSettings {
   email_validation_message: string
 }
 
-export type AgentExecutor = 'claude_sdk' | 'antigravity_cli'
+export type AgentExecutor = 'claude_sdk' | 'antigravity_cli' | 'openai_agents'
 export interface AgentRuntimeSettings {
   enabled: boolean
   executor: AgentExecutor

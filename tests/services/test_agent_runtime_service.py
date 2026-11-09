@@ -31,7 +31,8 @@ def test_describe_exposes_only_a_credential_free_magpie_admin_url(monkeypatch, c
     assert runtime.describe()["magpie_admin_url"] == expected
 
 
-@pytest.mark.parametrize("patch", [{"executor": "antigravity_cli"}, {"base_url": "http://user:pass@gateway"},
+@pytest.mark.parametrize("patch", [{"executor": "antigravity_cli"}, {"executor": "openai_agents"},
+    {"agent_overrides": {"general_agent": {"executor": "openai_agents"}}}, {"base_url": "http://user:pass@gateway"},
     {"agent_overrides": {"unknown": {}}}, {"enabled": True}, {"executor": "shell"}])
 def test_invalid_runtime_configuration(patch):
     with pytest.raises(ValidationError):
@@ -104,3 +105,17 @@ async def test_bootstrap_imports_key_pool_and_refreshes_catalog(monkeypatch):
     assert saved[0]['api_key'] == 'caller-secret'
     assert catalog_calls == [True]
     assert 'caller-secret' not in json.dumps(result)
+
+
+def test_switching_executor_preserves_secret_model_and_unrelated_overrides(monkeypatch):
+    store = {runtime.STORE_KEY: runtime.RuntimeConfig(enabled=True, api_key="private-key", model="group/test",
+        agent_overrides={"device_agent": {"executor": "antigravity_cli"}}).model_dump()}
+    monkeypatch.setattr(runtime.runtime_settings_service, "get_all", lambda: store)
+    monkeypatch.setattr(runtime.runtime_settings_service, "update", store.update)
+    for executor in ("openai_agents", "claude_sdk", "openai_agents"):
+        result = runtime.save({"executor": executor, "api_key": ""})
+        assert result["executor"] == executor and result["model"] == "group/test"
+        assert result["executors"]["openai_agents"] == "OpenAI Agents SDK"
+        assert runtime.get_config().api_key == "private-key"
+        assert runtime.get_config().selection("device_agent").executor == "antigravity_cli"
+        assert runtime.get_config().selection("general_agent").executor == executor

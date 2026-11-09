@@ -116,7 +116,7 @@ export interface AnswerDeltaEvent extends BaseTraceEvent {
 }
 
 export interface SystemNoticeEvent extends BaseTraceEvent {
-  executor?: 'claude_sdk' | 'antigravity_cli'
+  executor?: 'claude_sdk' | 'antigravity_cli' | 'openai_agents'
   provider?: string
   model?: string
   requested_model?: string

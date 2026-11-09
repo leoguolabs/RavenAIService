@@ -176,7 +176,8 @@ def runtime_metadata(events: Iterable[dict]) -> dict:
             if route and (not routes or routes[-1] != route):
                 routes.append(route)
     if metadata:
-        metadata["engine"] = "antigravity-cli" if metadata.get("executor") == "antigravity_cli" else "claude-agent-sdk"
+        metadata["engine"] = {"claude_sdk": "claude-agent-sdk", "antigravity_cli": "antigravity-cli",
+                              "openai_agents": "openai-agents-sdk"}.get(metadata.get("executor"), "claude-agent-sdk")
         metadata["routes"] = routes
     return metadata
 

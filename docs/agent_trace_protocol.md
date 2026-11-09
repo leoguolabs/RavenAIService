@@ -335,3 +335,7 @@ Optional evidence-progress checkpoints travel as SDK PostToolUse.additionalConte
 Named-attachment component observations remain internal verification evidence. They do not fabricate tool steps, observed frames/events, answer deltas or completion events. The authoritative final result remains the atomically edited public answer.
 
 Suppressing unused SDK nonessential traffic does not suppress Raven application title events or primary tool/thinking/answer traces. Only unused SDK session metadata/background traffic is targeted; normal completion, error and cancellation contracts remain.
+
+### OpenAI Agents SDK executor
+
+`raven_executor` / `raven_route` notices also accept `executor=openai_agents`. Persisted runtime metadata uses `engine=openai-agents-sdk`; the UI displays OpenAI Agents SDK. Requested models and actual Magpie routes retain their existing meanings. Official Responses text deltas map to the same answer-delta contract, function calls retain their call IDs across permission requests and tool results, and final usage separates cached input from uncached input. The SDK runs with tracing disabled; Raven remains the trace store.

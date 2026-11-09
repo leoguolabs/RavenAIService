@@ -27,6 +27,7 @@ openpyxl>=3.1.2
 xlrd>=2.0.1
 
 # Agent framework and LLM clients
+openai-agents==0.24.0  # Official Agents SDK, validated with Magpie Responses
 claude-agent-sdk>=0.2  # >=0.2.82 provides include_partial_messages / StreamEvent for answer_delta streaming
 
 # Optional bounded C function context; older images fall back to native windows.

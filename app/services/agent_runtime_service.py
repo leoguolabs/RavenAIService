@@ -20,7 +20,8 @@ from app.services.magpie_routing_policy import TaskRoutingPolicy
 
 STORE_KEY = "agent_runtime"
 CATALOG_KEY = "agent_runtime_catalog"
-EXECUTORS = {"claude_sdk": "Claude Agent SDK", "antigravity_cli": "Antigravity CLI"}
+EXECUTORS = {"claude_sdk": "Claude Agent SDK", "antigravity_cli": "Antigravity CLI",
+             "openai_agents": "OpenAI Agents SDK"}
 AGENTS = ("general_agent", "log_analysis", "device_agent", "project_expert", "package_search", "bug_fix")
 _ADMIN_URL = TypeAdapter(HttpUrl)
 runtime_settings_service.register_allowed_keys([STORE_KEY, CATALOG_KEY])
@@ -28,14 +29,14 @@ runtime_settings_service.register_allowed_keys([STORE_KEY, CATALOG_KEY])
 
 class AgentSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    executor: Literal["claude_sdk", "antigravity_cli"] | None = None
+    executor: Literal["claude_sdk", "antigravity_cli", "openai_agents"] | None = None
     model: str | None = Field(default=None, max_length=256)
 
 
 class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     enabled: bool = False
-    executor: Literal["claude_sdk", "antigravity_cli"] = "claude_sdk"
+    executor: Literal["claude_sdk", "antigravity_cli", "openai_agents"] = "claude_sdk"
     base_url: str = "http://magpie:3425"
     api_key: str = Field(default="", repr=False, max_length=4096)
     model: str = Field(default="", max_length=256)
@@ -62,9 +63,9 @@ class RuntimeConfig(BaseModel):
         if self.enabled and (not self.api_key.strip() or not self.model.strip()):
             raise ValueError("启用 Magpie 需要网关密钥和模型 / Gateway key and model are required")
         if not self.enabled and (self.executor != "claude_sdk" or any(
-            item.executor == "antigravity_cli" for item in self.agent_overrides.values()
+            item.executor not in (None, "claude_sdk") for item in self.agent_overrides.values()
         )):
-            raise ValueError("Antigravity 执行器需要启用 Magpie / Antigravity requires Magpie")
+            raise ValueError("所选执行器需要启用 Magpie / Selected executor requires Magpie")
         return self
 
     def selection(self, agent_kind: str = "") -> AgentSelection:

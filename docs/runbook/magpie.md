@@ -1,6 +1,6 @@
 # Magpie 与 Agent 执行器
 
-管理员在「模型设置 → Agent 执行与模型路由」选择默认执行器、默认模型和六类 Agent 的覆盖配置。支持 `claude_sdk` 与 `antigravity_cli`；普通用户仍使用原来的聊天、日志分析和任务入口。自动选择执行器不在本阶段范围。
+管理员在「模型设置 → Agent 执行与模型路由」选择默认执行器、默认模型和六类 Agent 的覆盖配置。支持 `claude_sdk`、`antigravity_cli` 与 `openai_agents`（OpenAI 官方 Agents SDK）；普通用户仍使用原来的聊天、日志分析和任务入口。自动选择执行器不在本阶段范围。
 
 ## 启动
 
@@ -33,15 +33,25 @@ Admin API 为 `GET/PUT /admin/agent-runtime` 和 `GET /admin/agent-runtime/model
 
 执行器和模型分别继承。例如项目专家仅设置 `executor=antigravity_cli`、`model=null`，仍使用全局默认模型；选择 Antigravity 不需要 OpenAI 供应商。测试某个模型后应恢复测试前的配置，交付时不要残留验收专用的模型覆盖。
 
+## OpenAI Agents SDK
+
+选择「OpenAI Agents SDK」后，由官方 Python `openai-agents==0.24.0` 的 `Agent` / `Runner.run_streamed` 执行工具循环，经当前 Magpie 的 `/v1/responses` 请求所选模型或路由组。这个选择与 OpenAI 供应商独立：仍可选择银河、DeepSeek 等 Magpie 模型。必须启用 Magpie 并安装依赖；只更新前端不会安装 SDK。
+
+全局默认与单 Agent 覆盖均支持 `openai_agents`，保留各自的模型继承。保存影响下一次 invocation，正在运行的任务保留原执行器与模型。使用后台列表可以切回 Claude Agent SDK 或 Antigravity CLI。
+
+执行器使用独立客户端及本次 loopback token，关闭 SDK 云端 tracing 和 HTTP 自动重试。Raven 的 MCP handler、权限 broker、PreToolUse/PostToolUse/Stop hook、工作区 Skill 和多模态图片输入继续生效。原生工具提供 Read、Glob、Grep、Bash、Write、Edit、Skill，以 Agent 已配置且未禁用的工具为准；原生文件操作限定在工作区及 add_dirs，启动前物化的 Skill 符号链接目标额外获得只读访问，运行中新增链接不能扩大访问范围。Bash 仍需已有 Agent 的授权。未实现的 CLI 专用工具不会被宣称可用。工具回传保留 call ID、MCP 图片和附加上下文，达到轮次上限返回失败；取消会结束 SDK 任务、MCP 会话和本次 shell 进程。
+
+运行轨迹 `executor=openai_agents`、`engine=openai-agents-sdk`，前端显示 **OpenAI Agents SDK**；实际 provider/model 仍只取自 Magpie 响应头。工具、流式文本、usage 和最终结果沿用原协议。模型在 Magpie 中列出不保证其上游健康或具备工具/图片能力；使用下面的实际调用矩阵验证具体部署。
+
 ## 运行与验收
 
-两种执行器共享工作区、项目提示词、materialized Skills 和 Raven MCP handler。Antigravity 使用独立临时 HOME、结构化 stdin/stdout、PreInvocation/PreToolUse/Stop hook；工具权限及澄清仍由 Raven 管理。未知原生工具默认拒绝，避免 CLI 升级绕过现有权限规则。第三方 stdio/HTTP MCP 配置暂不直接透传，只桥接 Raven 拥有的 SDK MCP server。模型能力来自 Magpie 模型目录；改变模型能力后刷新目录。
+三种执行器共享工作区、项目提示词、materialized Skills 和 Raven MCP handler。Antigravity 使用独立临时 HOME、结构化 stdin/stdout、PreInvocation/PreToolUse/Stop hook；工具权限及澄清仍由 Raven 管理。未知原生工具默认拒绝，避免 CLI 升级绕过现有权限规则。第三方 stdio/HTTP MCP 配置暂不直接透传，只桥接 Raven 拥有的 SDK MCP server。模型能力来自 Magpie 模型目录；改变模型能力后刷新目录。
 
 Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema，使设备 Agent 无需先通过 Read/Bash 查找 CLI 内部工具说明。真正的 MCP 调用、原生文件读写和 shell 权限仍经过原有 Raven 审批；这不会把任意文件或命令自动放行。
 
 设备结果校验兼容 Claude SDK 的 content 列表与 Antigravity 的完整 MCP 结果对象。Claude 的 `allowed_tools` 仅自动批准已判定为 read 的设备工具；write/destructive/未知工具必须进入 Raven broker，回传决策会转成 SDK 所需的类型。`--deny` / `--approve-write` 可用本地设备桩交叉检查拒绝后零执行、批准后仅执行一次。
 
-至少验收：两种执行器分别使用银河、DeepSeek、OpenAI；读取含随机证据编号的日志、激活同一个 Skill、调用 MCP；浏览器检查工具卡片、实际执行器与模型，刷新后回放；取消一个会话并确认另一个并发会话正常完成；制造不可用主端点并确认实际备用模型出现在回答及 trace 中。只收到模型文本或容器 healthy 不算完整验收。
+至少验收：三种执行器分别使用银河、DeepSeek、OpenAI；读取含随机证据编号的日志、激活同一个 Skill、调用 MCP；浏览器检查工具卡片、实际执行器与模型，刷新后回放；取消一个会话并确认另一个并发会话正常完成；制造不可用主端点并确认实际备用模型出现在回答及 trace 中。只收到模型文本或容器 healthy 不算完整验收。
 
 模型切换由 Magpie 按单次请求处理。Raven 不会在工具已执行后重跑整个 Agent。实际模型取自 `X-Magpie-Provider` / `X-Magpie-Model`，请求的路由组保存在 `requested_model`；两者可能不同。取消会关闭本次代理与 CLI 进程组，历史 trace 和取消终态继续保留。BugFix 完成后的详情也使用同一 trace 组件。
 
@@ -49,7 +59,7 @@ Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema�
 
 若 Magpie 中关闭了 OpenAI，但某个 Agent 的模型覆盖仍为 `raven-openai/gpt-6.1-terra`，请求会被 Magpie 拒绝（HTTP 404，`provider switched off`）。显式模型 ID 不表示自动选其他供应商。清除该 Agent 的模型覆盖即可继承默认模型；需要自动切换时，在 Magpie 创建含多个模型的路由组，并在 Raven 选择 `group/<id>`。仅停用供应商不会自动修改 Raven 已保存的模型覆盖。
 
-两种执行器均应报告 HTTP 状态、执行器、请求模型及可识别的停用原因。桥接层仅输出自有的双语诊断，不持久化原始上游错误正文或 CLI stderr；结构化 CLI 错误终态也不会被后续的 exit code 覆盖。成功重试会清除之前的网关失败，避免把后续工具错误误归因于旧请求。
+三种执行器均应报告 HTTP 状态、执行器、请求模型及可识别的停用原因。桥接层仅输出自有的双语诊断，不持久化原始上游错误正文或 CLI stderr；结构化 CLI 错误终态也不会被后续的 exit code 覆盖。成功重试会清除之前的网关失败，避免把后续工具错误误归因于旧请求。
 
 ### 按任务选型、固定模型与银河慢速保护
 
@@ -102,7 +112,7 @@ magpie provider set raven-openai \
 | 维度 | 用例与断言 |
 | --- | --- |
 | Agent | 通用、日志分析、设备、项目专家、配置管理员、BugFix 六种实际入口 |
-| 执行器 | `claude_sdk`、`antigravity_cli` |
+| 执行器 | `claude_sdk`、`antigravity_cli`、`openai_agents` |
 | 启用模型 | 遍历 `/v1/models` 的全部目标模型；必须有实际路由、真实工具步骤及随机证据回读，结构化 Agent 还必须解析成功 |
 | 已停用模型 | 加 `--disabled`；必须指出供应商停用，没有实际路由，也不执行模型驱动的工具 |
 | 路由组 | 已停用 OpenAI 放首位、启用模型放后位；`--actual-model` 指定备用模型，断言 requested 与 actual 分别正确 |
@@ -119,9 +129,20 @@ PYTHONPATH=/app RUNTIME_SETTINGS_PATH=/run/runtime.private.json \
 
 运行配置副本包含 caller key，应只读挂载、限制文件权限，不提交。矩阵运行时保持已停用供应商关闭，不能把预期失败列计作模型成功调用。新增供应商/模型后扩展目标列表重跑，不能用三家现有模型的结果推定所有未来模型都支持工具或图片输入。
 
+### OpenAI Agents SDK 本地验收（2026-11-09）
+
+在 ARM64 本地 `raven-magpie-local` 栈完成以下验证，未部署生产：
+
+- 六类 Agent × 银河、DeepSeek、OpenAI 三个模型入口，18 项均取得工具执行和随机证据结果。15 项全程使用指定模型；OpenAI 入口的项目专家、配置管理员和 BugFix 三项因现有余额来源查询不可用，经既有 Magpie 策略转到 DeepSeek。原始严格模型断言保留为失败，另行核对实际备用路由及结果，不将它们计作 GPT 全程成功。
+- 设备权限拒绝时零执行，批准后执行一次；使用本地设备桩，没有向真实设备下发命令。
+- Ego Lite 验证全局及单 Agent 执行器保存、刷新、真实调用、历史回放和三个执行器的切换。OpenAI 项目专家通过 Skill → Read → MCP 取得正确日志证据；一个会话取消时另一个 Claude 会话正常完成，取消后可继续追问，再切回 Antigravity 成功。验收后恢复原有全部执行器/模型选择。
+- 后端针对执行器、桥接、路由和运行配置的 208 项回归通过；前端运行归属 2 项测试、类型检查和生产构建通过。Skill 链接回归覆盖只读加载、拒绝共享包写入和拒绝新增越界链接；取消回归还覆盖 shell 已退出但子进程仍持有输出管道的清理。
+
+这些结果验证当前 Magpie 部署的接入与生命周期，不等同于所有上游模型能力、完整业务质量或 AMD64 执行验收。
+
 ## 回滚与边界
 
-先把默认执行器改为 Claude SDK，并清除 Antigravity 覆盖，再关闭「通过 Magpie 路由模型」；可以同一次保存。新任务恢复原有端点配置，正在运行的任务保持原选择。不要删除 `magpie_data`，否则 OAuth 与路由状态会丢失。
+先把默认执行器改为 Claude SDK，并清除 Antigravity / OpenAI Agents SDK 覆盖，再关闭「通过 Magpie 路由模型」；可以同一次保存。新任务恢复原有端点配置，正在运行的任务保持原选择。不要删除 `magpie_data`，否则 OAuth 与路由状态会丢失。
 
 独立部署用不同 Compose project、端口、数据卷和管理员配置；不要复用运行中的实验卷。此功能不修改默认关闭的 Claude SDK 性能实验开关，不构成该性能实验的验收。生产升级需要另行部署授权。
 

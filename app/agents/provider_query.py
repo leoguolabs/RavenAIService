@@ -139,6 +139,8 @@ async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
         adapted = replace(options, env=env)
         if executor == "antigravity_cli":
             from app.agents.antigravity_executor import query as run
+        elif executor == "openai_agents":
+            from app.agents.openai_agents_executor import query as run
         elif executor == "claude_sdk":
             run = _claude_query
         else:

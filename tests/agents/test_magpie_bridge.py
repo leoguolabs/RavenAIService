@@ -87,7 +87,7 @@ async def test_successful_retry_clears_previous_gateway_error():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("executor", ["claude_sdk", "antigravity_cli"])
+@pytest.mark.parametrize("executor", ["claude_sdk", "antigravity_cli", "openai_agents"])
 @pytest.mark.parametrize("terminal", [False, True, "assistant"])
 async def test_executor_preserves_gateway_error_instead_of_generic_exit(monkeypatch, executor, terminal):
     from contextlib import asynccontextmanager
@@ -112,6 +112,8 @@ async def test_executor_preserves_gateway_error_instead_of_generic_exit(monkeypa
     monkeypatch.setattr(magpie_bridge, 'gateway_bridge', bridge)
     monkeypatch.setattr(provider_query, '_claude_query', run)
     monkeypatch.setattr(antigravity_executor, 'query', run)
+    from app.agents import openai_agents_executor
+    monkeypatch.setattr(openai_agents_executor, "query", run)
     options = ClaudeAgentOptions(cwd='/tmp', model='disabled/model', env={
         'RAVEN_GATEWAY': 'magpie', 'RAVEN_EXECUTOR': executor,
         'ANTHROPIC_BASE_URL': 'http://gateway', 'ANTHROPIC_API_KEY': 'private-key'})

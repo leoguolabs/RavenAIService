@@ -170,7 +170,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--agent", required=True, choices=["general_agent", "device_agent", "log_analysis",
         "project_expert", "package_search", "bug_fix"])
-    parser.add_argument("--executor", required=True, choices=["claude_sdk", "antigravity_cli"])
+    parser.add_argument("--executor", required=True, choices=["claude_sdk", "antigravity_cli", "openai_agents"])
     parser.add_argument("--model", required=True)
     parser.add_argument("--actual-model", help="Expected served model when --model is a routing group")
     parser.add_argument("--disabled", action="store_true")

@@ -3,6 +3,14 @@ import { collectRuntime } from './agentRuntime'
 import type { AgentTraceEvent } from '@/types/agentTrace'
 
 describe('runtime attribution', () => {
+  it('identifies the official OpenAI SDK in live and replayed routes', () => {
+    const events: AgentTraceEvent[] = [{ task_id: 'openai', timestamp: 1, seq: 0,
+      type: 'system_notice', kind: 'raven_route', executor: 'openai_agents', agent_key: 'general_agent',
+      provider: 'deepseek', model: 'served-model', requested_model: 'group/intent' }]
+    expect(collectRuntime(JSON.parse(JSON.stringify(events)))).toEqual({
+      executor: 'OpenAI Agents SDK', agentKey: 'general_agent', routes: [{ provider: 'deepseek', model: 'served-model' }],
+    })
+  })
   it('uses actual route notices and retains fallback history on replay', () => {
     const base = { task_id: 'one', timestamp: 1 }
     const events: AgentTraceEvent[] = [
