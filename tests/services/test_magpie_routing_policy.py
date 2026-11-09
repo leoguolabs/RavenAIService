@@ -46,7 +46,9 @@ async def test_cooldown_shared_then_local_when_redis_unavailable(monkeypatch):
 def test_intent_groups_have_cloud_classifier_and_safe_default():
     script = runpy.run_path(str(Path(__file__).parents[2] / "scripts/configure-magpie-task-routing.py"))
     local, fallback, main, cloud = script["routing_groups"]("local/model", "cloud/strong", "cloud/light")
-    assert local["firstToken"] == 3 and local["affinity"] == "session"
+    defaults = policy.TaskRoutingPolicy()
+    assert local["firstToken"] == defaults.first_token_seconds == defaults.probe_seconds == 1
+    assert local["affinity"] == "session"
     assert local["members"] == ["local/model"]
     assert fallback["members"] == ["group/raven-task-yinhe", "cloud/strong"]
     assert "firstToken" not in fallback

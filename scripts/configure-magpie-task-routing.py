@@ -27,8 +27,8 @@ def routing_groups(local: str, strong: str, light: str) -> list[dict]:
     complex_task = ("复杂任务：根因未知的故障定位、多文件代码修改、架构与算法设计、性能与并发问题、"
                     "网络或设备配置变更、需要多步推理的方案；不确定难度时也归此类")
     local_ref = "group/raven-task-yinhe"
-    groups = [{"id": "raven-task-yinhe", "name": "Raven · 仅银河首 token 3 秒",
-        "members": [local], "routing": "order", "affinity": "session", "firstToken": 3},
+    groups = [{"id": "raven-task-yinhe", "name": "Raven · 仅银河首 token 1 秒",
+        "members": [local], "routing": "order", "affinity": "session", "firstToken": 1},
         {"id": "raven-task-local", "name": "Raven · 银河慢速转 GPT · 任务内保持",
          "members": [local_ref, strong], "routing": "order", "affinity": "session"}]
     for degraded in (False, True):

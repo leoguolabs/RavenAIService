@@ -18,8 +18,8 @@ class TaskRoutingPolicy(BaseModel):
     local_model: str = ""
     local_group: str = ""
     backup_model: str = ""
-    first_token_seconds: float = Field(default=3, ge=0.05, le=120)
-    probe_seconds: float = Field(default=3, ge=0.05, le=30)
+    first_token_seconds: float = Field(default=1, ge=0.05, le=120)
+    probe_seconds: float = Field(default=1, ge=0.05, le=30)
     min_tokens_per_second: float = Field(default=10, ge=0.1, le=1000)
     idle_seconds: float = Field(default=5, ge=0.05, le=120)
     cooldown_seconds: int = Field(default=60, ge=1, le=3600)
