@@ -1736,7 +1736,7 @@ export default {
     capabilities: {
       package: {
         label: 'Configuration Manager',
-        desc: 'Search package versions, or upload components to confirm, build, and publish a software upgrade package.',
+        desc: 'Search package versions, or upload components so the agent can verify them and build a package for publication review.',
         prompt1: 'Help me find a baseband package. My requirement is...',
         prompt2: 'I want to search for a rebuild package with these filters...',
         prompt3: 'Help me locate a package for a specific version. Requirements...',
