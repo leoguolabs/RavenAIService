@@ -57,4 +57,23 @@ describe('ClarificationCard', () => {
       html.indexOf('Map component-2.bin'),
     )
   })
+
+  it('labels the package plan as a publication review', async () => {
+    setI18nLocale('en')
+    const pending = pendingWithQuestions(1)
+    pending.purpose = 'package_build_confirmation'
+    pending.questions[0] = {
+      question: 'Patch | PacketAttr=1002\nsource.tgz → payload, FileAttr=405',
+      allow_custom: false,
+      options: [{ label: 'Confirm' }, { label: 'Cancel' }],
+    }
+    const app = createSSRApp({ render: () => h(ClarificationCard, { pending }) })
+    app.use(i18n)
+
+    const html = await renderToString(app)
+    expect(html).toContain('aria-label="Software package publication review"')
+    expect(html).toContain('Submit publication decision')
+    expect(html).toContain('PacketAttr=1002\nsource.tgz')
+    expect(html).not.toContain('rw-clarify-custom')
+  })
 })

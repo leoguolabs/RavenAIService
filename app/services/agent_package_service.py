@@ -237,22 +237,22 @@ def _validate_archive(path: Path, plan: dict[str, Any]) -> None:
 
 
 def review_questions(plan: dict[str, Any]) -> list[dict[str, Any]]:
-    """Review Agent decisions, never generate business decisions ourselves."""
+    """Present the whole validated plan for one publication decision."""
     overview = (f"{plan['project_name']} ({plan['project_code']}) | {plan['version']} | "
                 f"{plan['mode']} | PacketAttr={plan['packet_attr']} | Publisher={plan['publisher']}")
-    descriptions = [("发布计划 / Publication", overview + "\n" + "\n".join(plan["evidence"]))]
+    sections = ["\n".join([overview, *plan["evidence"]])]
     for item in plan["inputs"]:
         mapped = [c for c in plan["components"] if c["upload_id"] == item["upload_id"]]
         detail = "\n".join(
             f"{c['component_key']} → {c['output_name']}, FileAttr={c['file_attr']}, "
             f"version={c['version']}\n" + "\n".join(c["evidence"]) for c in mapped
         ) if mapped else "排除 / Exclude: " + item["reason"]
-        descriptions.append((item["original_name"], detail))
+        sections.append(f"{item['original_name']}\n{detail}")
     return [{
-        "question": title + "\n" + detail,
+        "question": "\n\n".join(sections),
         "header": "发布确认", "multiSelect": False, "allow_custom": False,
         "options": [
             {"label": "确认 / Confirm", "description": "按上述 Agent 方案发布 / Publish this Agent plan"},
             {"label": "取消 / Cancel", "description": "不发布 / Do not publish"},
         ],
-    } for title, detail in descriptions]
+    }]

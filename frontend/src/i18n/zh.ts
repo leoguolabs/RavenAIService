@@ -690,7 +690,7 @@ export default {
         section: 'Agent 澄清提问',
         description: '设置 Agent 的普通澄清提问与超时处理方式。配置管理员执行整包打包时的强制确认不受这些偏好影响。',
         enabledLabel: '指令不清晰时允许 Agent 向我提问',
-        enabledHint: '关闭后普通澄清不会暂停提问；配置管理员打包时仍必须确认项目及每个文件的组件映射。',
+        enabledHint: '关闭后 Agent 不会暂停等待普通澄清；软件包入库前仍需审核发布。',
         maxRoundsLabel: '每轮最多提问次数',
         onTimeoutLabel: '我未及时回答时',
         onTimeoutCancel: '取消本轮',
@@ -1237,7 +1237,7 @@ export default {
           claude_agent_package_search: {
             generic: {
               name: '配置管理员',
-              description: '面向软件升级整包构建与包仓库检索，按需加载 Skills 并要求人工确认打包映射',
+              description: '按需加载 Skills，构建软件升级包并提交发布审核，也可检索包仓库',
             },
           },
           claude_agent_general: {
@@ -1813,8 +1813,11 @@ export default {
       },
     },
     clarification: {
-      title: '继续前需要先确认几个问题',
-      subtitle: '请回答每个问题。配置管理员打包时，项目和每个文件的组件映射都必须在此确认。',
+      title: '继续前需要补充信息',
+      subtitle: '请补充以下信息。',
+      publicationTitle: '软件包发布审核',
+      publicationSubtitle: '请查看完整方案，决定是否发布。',
+      publicationSubmit: '提交发布决定',
       questionsLabel: '{count} 个待确认问题',
       customPlaceholder: '或自行输入答案…',
       submit: '提交回答',

@@ -156,6 +156,7 @@ export interface ClarificationRequestEvent extends BaseTraceEvent {
   type: 'clarification_request'
   request_id: string
   questions: ClarificationQuestion[]
+  purpose?: string
   run_id?: string
   session_id?: string
 }
@@ -182,6 +183,7 @@ export interface ClarificationAnswer {
 export interface PendingClarification {
   request_id: string
   questions: ClarificationQuestion[]
+  purpose?: string
   session_id?: string
   run_id?: string
   // Per-question working state for the card UI (selected labels + free text).

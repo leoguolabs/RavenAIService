@@ -224,10 +224,11 @@ const normalizeClarificationQuestions = (raw: unknown): ClarificationQuestion[] 
 const makePendingClarification = (
   requestId: string,
   questions: ClarificationQuestion[],
-  meta: { session_id?: string; run_id?: string },
+  meta: { session_id?: string; run_id?: string; purpose?: string },
 ): PendingClarification => ({
   request_id: requestId,
   questions,
+  ...(meta.purpose ? { purpose: meta.purpose } : {}),
   session_id: meta.session_id,
   run_id: meta.run_id,
   draftSelected: questions.map(() => []),
@@ -464,6 +465,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
           makePendingClarification(requestId, questions, {
             session_id: payload?.session_id || state.sessionId,
             run_id: payload?.run_id || state.activeRunId || undefined,
+            purpose: payload?.purpose,
           }),
         )
       }
@@ -797,6 +799,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
         makePendingClarification(requestId, questions, {
           session_id: c?.session_id || state.sessionId,
           run_id: c?.run_id || runId,
+          purpose: c?.purpose,
         }),
       )
     }
@@ -1615,8 +1618,8 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
 
   /**
    * Start a Configuration Manager run. Pure search stays project-bound while
-   * component-bearing packaging may start unbound and enter mandatory project
-   * and per-file confirmation before any build side effect.
+   * component-bearing packaging may start unbound and establish the project
+   * from evidence before submitting the built package for publication review.
    */
   const startPackageSearchRun = (
     sessionId: string,

@@ -3,8 +3,10 @@
     <div class="rw-clarify-head">
       <HelpCircle class="rw-clarify-icon" aria-hidden="true" />
       <div>
-        <h3 class="rw-clarify-title">{{ t('aiChat.clarification.title') }}</h3>
-        <p class="rw-clarify-sub">{{ t('aiChat.clarification.subtitle') }}</p>
+        <h3 class="rw-clarify-title">{{ title }}</h3>
+        <p class="rw-clarify-sub">
+          {{ t(publicationReview ? 'aiChat.clarification.publicationSubtitle' : 'aiChat.clarification.subtitle') }}
+        </p>
       </div>
     </div>
 
@@ -12,7 +14,7 @@
       class="rw-clarify-body"
       role="group"
       tabindex="0"
-      :aria-label="t('aiChat.clarification.questionsLabel', { count: pending.questions.length })"
+      :aria-label="publicationReview ? title : t('aiChat.clarification.questionsLabel', { count: pending.questions.length })"
     >
       <div
         v-for="(q, qi) in pending.questions"
@@ -60,13 +62,14 @@
         :disabled="pending.submitting"
         @click="$emit('submit')"
       >
-        {{ pending.submitting ? t('aiChat.clarification.submitting') : t('aiChat.clarification.submit') }}
+        {{ t(pending.submitting ? 'aiChat.clarification.submitting' : submitLabel) }}
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { HelpCircle } from 'lucide-vue-next'
 import type { PendingClarification } from '@/types/agentTrace'
@@ -75,6 +78,14 @@ const { t } = useI18n()
 
 const props = defineProps<{ pending: PendingClarification }>()
 defineEmits<{ (e: 'submit'): void }>()
+
+const publicationReview = computed(() => props.pending.purpose === 'package_build_confirmation')
+const title = computed(() =>
+  t(publicationReview.value ? 'aiChat.clarification.publicationTitle' : 'aiChat.clarification.title'),
+)
+const submitLabel = computed(() =>
+  publicationReview.value ? 'aiChat.clarification.publicationSubmit' : 'aiChat.clarification.submit',
+)
 
 const isSelected = (qi: number, label: string): boolean =>
   (props.pending.draftSelected[qi] || []).includes(label)
@@ -131,7 +142,14 @@ const toggleOption = (qi: number, label: string, multi?: boolean): void => {
   padding: 2px 8px; border-radius: 999px;
   background: var(--rw-accent-soft, #eef2ff); color: var(--rw-accent, #4f46e5);
 }
-.rw-clarify-q-text { font-size: 14px; font-weight: 500; color: var(--rw-ink, #171717); }
+.rw-clarify-q-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--rw-ink, #171717);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
 .rw-clarify-options { display: flex; flex-direction: column; gap: 8px; }
 .rw-clarify-option {
   display: flex; flex-direction: column; gap: 2px;

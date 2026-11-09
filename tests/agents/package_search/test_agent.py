@@ -404,8 +404,11 @@ def test_agent_materializes_skills_layers_prompts_and_reuses_trace_seq(
         )
 
     agent._run_sdk_loop = fake_loop.__get__(agent, PackageSearchAgent)  # type: ignore[method-assign]
-    result = asyncio.run(agent.run(ctx))
+    clarification_binding = MagicMock()
+    clarification_binding.setup.return_value = None
+    result = asyncio.run(agent.run(ctx, clarification_binding=clarification_binding))
 
+    assert clarification_binding.setup.call_args.kwargs["workflow_agent"] is False
     materialize.assert_called_once()
     assert materialize.call_args.args == ("package_search", ctx.temp_dir)
     assert materialize.call_args.kwargs["project_code"] == PROJECT

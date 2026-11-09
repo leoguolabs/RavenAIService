@@ -691,7 +691,7 @@ export default {
         section: 'Agent clarification',
         description: 'Choose how ordinary agent clarification and timeouts work. Mandatory Configuration Manager packaging confirmation is not affected by these preferences.',
         enabledLabel: 'Let the agent ask me when instructions are unclear',
-        enabledHint: 'When off, ordinary clarification does not pause; Configuration Manager packaging still requires project and per-file mapping confirmation.',
+        enabledHint: 'When off, the agent proceeds without ordinary clarification. Software packages still require review before publication.',
         maxRoundsLabel: 'Max questions per run',
         onTimeoutLabel: 'If I don’t answer in time',
         onTimeoutCancel: 'Cancel this run',
@@ -1242,7 +1242,7 @@ export default {
           claude_agent_package_search: {
             generic: {
               name: 'Configuration Manager',
-              description: 'Builds software upgrade packages and searches the package repository with Skills and mandatory human mapping confirmation',
+              description: 'Uses Skills to build software upgrade packages for publication review and search the package repository',
             },
           },
           claude_agent_general: {
@@ -1818,8 +1818,11 @@ export default {
       },
     },
     clarification: {
-      title: 'A few questions before continuing',
-      subtitle: 'Answer every question. For Configuration Manager packaging, the project and every file-to-component mapping must be confirmed here.',
+      title: 'More information needed',
+      subtitle: 'Please provide the details below.',
+      publicationTitle: 'Software package publication review',
+      publicationSubtitle: 'Review the complete plan and decide whether to publish.',
+      publicationSubmit: 'Submit publication decision',
       questionsLabel: '{count} confirmation questions',
       customPlaceholder: 'Or type your own answer…',
       submit: 'Submit answers',

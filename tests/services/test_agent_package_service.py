@@ -163,7 +163,12 @@ async def test_agent_invokes_publication_tool_and_records_real_model(package_cas
     service._touch_context = lambda *args, **kwargs: None
     service._save_context = lambda *args, **kwargs: None
     async def confirm(job, ctx, **kwargs):
-        return [{'selected_labels': ['确认 / Confirm'], 'question_index': i} for i, _ in enumerate(kwargs['questions'])]
+        question, = kwargs['questions']
+        assert 'PacketAttr=4242' in question['question']
+        assert 'source.bin\nnew-type → new-payload, FileAttr=909' in question['question']
+        assert 'repo/updater.c:14 ID=909;' in question['question']
+        assert question['allow_custom'] is False
+        return [{'selected_labels': ['确认 / Confirm'], 'question_index': 0}]
     service._request_packaging_confirmation = confirm
     from app.services.raven_package_service import raven_package_service
     monkeypatch.setattr(raven_package_service, 'uploads_dir', c.root / 'published')

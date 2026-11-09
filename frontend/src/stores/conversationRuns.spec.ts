@@ -987,10 +987,14 @@ describe('conversationRuns store', () => {
     store.applyEventToState(state, traceEvent('run-a', 'session-a', 1, 'run_start'))
     store.applyEventToState(
       state,
-      wrappedClarificationRequest('run-a', 'session-a', 2, 'req-1'),
+      {
+        ...wrappedClarificationRequest('run-a', 'session-a', 2, 'req-1'),
+        purpose: 'package_build_confirmation',
+      },
     )
     expect(state.pendingClarifications.map((c) => c.request_id)).toEqual(['req-1'])
     expect(state.pendingClarifications[0].run_id).toBe('run-a')
+    expect(state.pendingClarifications[0].purpose).toBe('package_build_confirmation')
 
     store.applyEventToState(state, {
       event: 'agent_trace',
@@ -1045,17 +1049,19 @@ describe('conversationRuns store', () => {
       run_id: 'run-a',
       session_id: 'session-a',
       status: 'running',
-      agent_kind: 'device',
+      agent_kind: 'package_search',
       pending_clarifications: [
         {
           request_id: 'req-a',
           run_id: 'run-a',
           session_id: 'session-a',
+          purpose: 'package_build_confirmation',
           questions: [{ question: 'pick?', options: [{ label: 'x' }, { label: 'y' }] }],
         },
       ],
     })
     expect(sessionA.pendingClarifications.map((c) => c.request_id)).toEqual(['req-a'])
+    expect(sessionA.pendingClarifications[0].purpose).toBe('package_build_confirmation')
   })
 
   it('submits clarification answers and removes the card on success', async () => {

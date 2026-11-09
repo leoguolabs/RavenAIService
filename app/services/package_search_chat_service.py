@@ -280,9 +280,8 @@ class PackageSearchChatService:
             loaded = self._load_context(effective_session_id, user=user)
 
             if loaded is None:
-                # Pure search remains project-scoped.  A packaging turn may
-                # start unbound because project identity is one of the fields
-                # the server must infer and then force the human to confirm.
+                # Search requires a project. A packaging turn can start
+                # unbound and let the Agent establish the project from evidence.
                 if project_repo_id is None and not packaging_requested:
                     yield self._sse_event(
                         {

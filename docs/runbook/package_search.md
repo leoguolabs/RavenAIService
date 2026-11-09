@@ -17,6 +17,9 @@ Skill. Bash/Python, Read/Grep/Glob and Write/Edit are available. The workspace-b
 putting Git credentials in prompts or task files. Project source, archive
 manifests and user instructions provide the business evidence for package type,
 PacketAttr, FileAttr, target name, component version and whole-release version.
+The Agent cross-checks these values against source and the current release's
+archives, including companion version scripts when available. It asks for only
+the required values that remain unresolved after those checks.
 The Agent writes and executes its own build script, then produces a flat TGZ and
 `review-plan.json` using the schema in the Skill.
 
@@ -49,9 +52,9 @@ Agent-authored result before asking for publication confirmation:
 
 These are integrity checks, not project business classifiers. They do not prove
 that the Agent interpreted code correctly; the full mapping and its evidence
-are displayed for human review. Ordinary clarification preferences cannot skip
-this publication review. The tool is idempotent within a run and returns the
-real package ID, SHA-256 and `/raven/api/download/<id>` URL. Shell writes belong
+are displayed together for one publication decision. Ordinary clarification
+preferences cannot skip this publication review. The tool is idempotent within
+a run and returns the real package ID, SHA-256 and `/raven/api/download/<id>` URL. Shell writes belong
 in the workspace, never directly in repository storage.
 
 The service derives download links from the authoritative published artifact,
