@@ -69,6 +69,32 @@ Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema�
 
 银河真实调用还可能把 Antigravity 的 MCP `Arguments` 编码为 JSON 字符串。控制桥接层只将合法 JSON 对象解析后交给原有权限检查；畸形 JSON、数组或空值返回工具错误，不触发工具执行，拒绝权限和调用 ID 的关联保持不变。
 
+### OpenAI 真实余额门槛
+
+可选层 `docker-compose.magpie-balance.yml` 在 Magpie 与 OpenAI 之间运行内部 `openai-balance-guard`，不发布宿主端口。每次新请求先查询同一组织的真实剩余额度，低于 **15 USD** 返回 402；恰好 15 USD 允许请求。余额缺失、无效、查询失败或超过 2 秒均停止转发，不使用历史成功值或本地消费估算。已开始的推理继续原流，不重放工具；后续请求重新检查。供应商的 DeepSeek fallback 接收拒绝后的请求，启用了任务固定策略的 invocation 记录实际备用模型并继续使用它。
+
+余额来源是登录后账单页实际使用的 `https://api.openai.com/v1/dashboard/billing/credit_grants` 的 `total_available`，已与页面余额核对。`wallet.balance` 不含所有赠送额度，不能代替它；公开 Costs API 给的是消费金额，也不是余额。这个 dashboard 接口不是稳定的公开 API，登录凭据失效或接口变化时会暂停 OpenAI，直到重新接入有效来源。这是严格模式的预期行为。
+
+私有 JSON 文件含 `authorization`（账单来源的 Bearer 凭据）、`organization`（匹配 API key 的组织）和 `api_key_sha256`（该推理 key 的完整 SHA-256 摘要）。文件权限 0600，父目录 0700，放在仓库之外；不要输出、提交或粘贴到聊天。账单凭据只发送到固定账单端点，推理 key 只发送到固定 OpenAI API 源站，二者都不跟随重定向。新增或轮换推理 key 时必须同步指纹及组织校验，不能只更改 Magpie key。
+
+设置 `RAVEN_BALANCE_GUARD_IMAGE` 为包含 `app/services/openai_balance_guard.py` 的后端镜像，`OPENAI_BALANCE_SOURCE_FILE` 为私有 JSON 的绝对路径。在**现有部署的完整 Compose 参数后**追加本层，只启动 `openai-balance-guard`；保留已有部署的镜像及覆盖层。服务使用移除全部 capabilities、只读文件系统的 root 身份读取 0600 secret。`/health` 只表示进程健康，并给出最后余额检查时间与决策；它不表示余额仍可用。
+
+确认服务健康后，先在 Magpie 自己的私有数据卷备份 `providers.json`，再执行：
+
+```sh
+magpie provider fallback raven-openai raven-deepseek/deepseek-v4-flash
+magpie provider set raven-openai \
+  responses=http://openai-balance-guard:8099/v1 \
+  balance=http://openai-balance-guard:8099/balance \
+  'balance.path=$balance' additional-tools=on
+```
+
+这里保留原有模型、key、压缩策略及其他供应商设置；`additional-tools=on` 显式保留 OpenAI 原域名下默认支持的动态工具。确认该供应商没有仍直连 OpenAI 的其他协议入口。`/balance` 也需要匹配的推理 key，低余额时仍返回真实金额供管理页显示，推理是否放行由独立的逐请求检查决定。不要把管理页余额缓存当作门禁依据。
+
+刷新凭据后，原地写入文件会在下次请求生效；如果用原子替换更新文件，需要仅重建此服务，使 Compose secret 的文件挂载指向新文件。Magpie 的配额休息可能延迟恢复；已经转到备用模型的任务保持原选择。回滚需恢复私有备份中的供应商入口及 fallback；这样也会撤销余额保护，不能以恢复调用为由自动绕过门槛。
+
+此规则按上游最新报告余额决定是否接收新请求，不为在途请求预留费用。并发消费、其他客户端消费或账单更新延迟仍可能让最终余额低于 15 USD。每次余额检查也会增加一次网络往返。
+
 ### 六类 Agent 交叉用例
 
 `scripts/verify-agent-model-matrix.py` 是显式运行的真实调用用例。每个单元使用独立进程/容器及私有运行配置副本，不保存管理员配置。覆盖真实 Agent 类入口、模型选择、真实 CLI 与网关、工具执行、结果解析和 trace；采用短合成提示词及本地只读设备/项目目录桩，因此不代表完整日志分析、真实设备操作或修复质量验收。

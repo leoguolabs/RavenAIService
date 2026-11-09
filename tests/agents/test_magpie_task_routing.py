@@ -185,6 +185,28 @@ async def test_missing_route_identity_fails_without_selecting_another_model():
 
 
 @pytest.mark.asyncio
+async def test_native_balance_fallback_replaces_cloud_pin_without_replaying_tools():
+    sent = []
+
+    async def upstream(request):
+        sent.append(json.loads(request.content))
+        # Magpie refuses the now-ineligible cloud key before inference, then
+        # returns its fallback's actual identity for this one continuation.
+        return reply("cloud/strong" if len(sent) == 1 else "deepseek/flash")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+        route = TaskRoute("http://gateway", client, policy())
+        for n in range(3):
+            body = {"model": "group/intent", "messages": [
+                {"role": "tool", "tool_call_id": "once", "content": f"result-{n}"}]}
+            prepared = await route.prepare("POST", "v1/messages", json.dumps(body).encode(), {}, [])
+            _ = [chunk async for chunk in prepared.chunks()]
+            assert sent[-1]["messages"] == body["messages"]
+        assert [row["model"] for row in sent] == ["group/intent", "cloud/strong", "deepseek/flash"]
+        assert route.pinned == "deepseek/flash"
+
+
+@pytest.mark.asyncio
 async def test_concurrent_requests_wait_until_chosen_response_closes():
     sent = []
 

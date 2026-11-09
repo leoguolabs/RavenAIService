@@ -1,0 +1,30 @@
+# Optional layer after docker-compose.yml and docker-compose.magpie.yml.
+# Configure the provider only after this service is healthy; see the runbook.
+services:
+  openai-balance-guard:
+    image: ${RAVEN_BALANCE_GUARD_IMAGE:?Set a backend image containing openai_balance_guard.py}
+    command: ["python", "-m", "uvicorn", "app.services.openai_balance_guard:app", "--host", "0.0.0.0", "--port", "8099", "--no-access-log"]
+    environment:
+      OPENAI_BALANCE_MIN_USD: "15"
+      PYTHONDONTWRITEBYTECODE: "1"
+    # Read a 0600 bind-mounted secret without making it world-readable on the host.
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    init: true
+    secrets:
+      - openai_balance_source
+    expose:
+      - "8099"
+    restart: unless-stopped
+    stop_grace_period: 2m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+secrets:
+  openai_balance_source:
+    file: ${OPENAI_BALANCE_SOURCE_FILE:?Set the private dashboard balance credential file}
