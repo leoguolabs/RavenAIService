@@ -10,14 +10,18 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter, ValidationError, field_validator, model_validator,
+)
 
+from app.config import settings
 from app.services import runtime_settings_service
 
 STORE_KEY = "agent_runtime"
 CATALOG_KEY = "agent_runtime_catalog"
 EXECUTORS = {"claude_sdk": "Claude Agent SDK", "antigravity_cli": "Antigravity CLI"}
 AGENTS = ("general_agent", "log_analysis", "device_agent", "project_expert", "package_search", "bug_fix")
+_ADMIN_URL = TypeAdapter(HttpUrl)
 runtime_settings_service.register_allowed_keys([STORE_KEY, CATALOG_KEY])
 
 
@@ -74,11 +78,23 @@ def get_config() -> RuntimeConfig:
     return RuntimeConfig.model_validate(raw)
 
 
+def _magpie_admin_url() -> str | None:
+    try:
+        url = _ADMIN_URL.validate_python(settings.magpie_admin_url)
+    except ValidationError:
+        return None
+    # Magpie 的登录密钥可放在查询参数中，管理入口只能返回无凭据地址。
+    if any(part is not None for part in (url.username, url.password, url.query, url.fragment)):
+        return None
+    return str(url)
+
+
 def describe() -> dict:
     config = get_config()
     return {
         **config.model_dump(exclude={"api_key"}),
         "api_key_set": bool(config.api_key),
+        "magpie_admin_url": _magpie_admin_url(),
         "executors": EXECUTORS,
         "agents": list(AGENTS),
     }

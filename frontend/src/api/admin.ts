@@ -44,6 +44,7 @@ export interface AgentRuntimeSettings {
   executor: AgentExecutor
   base_url: string
   api_key_set: boolean
+  magpie_admin_url?: string | null
   model: string
   agent_overrides: Record<string, { executor?: AgentExecutor | null; model?: string | null }>
   executors: Record<AgentExecutor, string>

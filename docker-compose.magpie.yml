@@ -2,6 +2,8 @@
 # Create the private web key once; see docs/runbook/magpie.md.
 services:
   backend:
+    environment:
+      MAGPIE_ADMIN_URL: ${MAGPIE_ADMIN_URL:-http://127.0.0.1:${MAGPIE_ADMIN_PORT:-3430}/}
     secrets:
       - magpie_web_key
   magpie:

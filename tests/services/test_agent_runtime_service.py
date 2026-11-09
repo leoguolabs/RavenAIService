@@ -17,6 +17,20 @@ def test_config_is_redacted_and_selection_is_independent(monkeypatch):
     assert runtime.gateway_endpoint("device_agent").executor == "claude_sdk"
 
 
+@pytest.mark.parametrize(("configured", "expected"), [
+    ("http://127.0.0.1:3430/", "http://127.0.0.1:3430/"),
+    ("https://magpie.example.test", "https://magpie.example.test/"),
+    ("https://magpie.example.test/?k=web-key", None),
+    ("https://magpie.example.test/#web-key", None),
+    ("https://admin:web-key@magpie.example.test/", None),
+    ("javascript:alert(1)", None),
+])
+def test_describe_exposes_only_a_credential_free_magpie_admin_url(monkeypatch, configured, expected):
+    monkeypatch.setattr(runtime, "get_config", runtime.RuntimeConfig)
+    monkeypatch.setattr(runtime.settings, "magpie_admin_url", configured)
+    assert runtime.describe()["magpie_admin_url"] == expected
+
+
 @pytest.mark.parametrize("patch", [{"executor": "antigravity_cli"}, {"base_url": "http://user:pass@gateway"},
     {"agent_overrides": {"unknown": {}}}, {"enabled": True}, {"executor": "shell"}])
 def test_invalid_runtime_configuration(patch):

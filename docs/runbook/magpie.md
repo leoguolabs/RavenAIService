@@ -27,6 +27,8 @@ Bootstrap 从现有主模型、备用模型和 BugFix 模型配置读取端点�
 
 默认管理页只绑定宿主 `127.0.0.1:3430`（可用 `MAGPIE_ADMIN_PORT` 更改）；网关 `3425` 仅在 Compose 网络开放。后台仅持有 caller key，子进程只拿到本次运行的 loopback token。远程主机通过 SSH 转发访问管理页。OAuth 账户需要在 Magpie 中按对应提供商完成登录；使用现有 API Key 不需要 Antigravity Google 登录。
 
+「模型设置 → Agent 执行与模型路由 → 打开 Magpie 后台」会在新标签页打开管理页。Compose 默认使用 `http://127.0.0.1:<MAGPIE_ADMIN_PORT>/`。通过 SSH 转发时，将本机转发端口设为该地址的端口。如果已经有浏览器可访问的管理地址，可在 RavenAIService 的 `.env` 中设置 `MAGPIE_ADMIN_URL`，填写不含凭据、查询参数或片段的 HTTP(S) URL。首次打开时在 Magpie 页面输入 Web 管理密钥。
+
 Admin API 为 `GET/PUT /admin/agent-runtime` 和 `GET /admin/agent-runtime/models`，需要管理员认证。密钥只写不回显，空密钥保留原值。更改只影响新任务。模型目录中的完整 ID（如 `raven-yinhe/yinhe-thinking`）或 Magpie 路由组 ID 均可填写；单个 Agent 留空即继承默认配置。
 
 执行器和模型分别继承。例如项目专家仅设置 `executor=antigravity_cli`、`model=null`，仍使用全局默认模型；选择 Antigravity 不需要 OpenAI 供应商。测试某个模型后应恢复测试前的配置，交付时不要残留验收专用的模型覆盖。

@@ -316,6 +316,8 @@ class Settings(BaseSettings):
 
     # 运行期可由 Admin 调整的轻量级模型设置持久化文件
     runtime_settings_path: str = "data/runtime_settings.json"
+    # 浏览器访问的 Magpie 管理页地址（不含管理密钥）。
+    magpie_admin_url: str = "http://127.0.0.1:3430/"
 
     # Metrics 成本估算价格配置（可选）。默认空表示不估价，成本字段返回 null。
     # 格式：{"<provider>": {"<model>": {"input_per_million": 3.0,
