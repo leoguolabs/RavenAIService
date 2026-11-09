@@ -11,11 +11,13 @@ import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import math
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import httpx
@@ -25,10 +27,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 BALANCE_URL = "https://api.openai.com/v1/dashboard/billing/credit_grants"
 UPSTREAM = "https://api.openai.com/v1/"
 SOURCE_PATH = "/run/secrets/openai_balance_source"
+RETRYABLE_BALANCE_STATUSES = {408, 429, 500, 502, 503, 504}
+logger = logging.getLogger("uvicorn.error").getChild("openai_balance_guard")
 
 
 class BalanceUnavailable(Exception):
-    """Never expose a source exception or upstream body to the caller."""
+    """Carries only a locally generated diagnostic code."""
 
 
 def read_source(path: Path) -> dict:
@@ -43,7 +47,7 @@ def read_source(path: Path) -> dict:
             raise ValueError("Invalid source")
         return source
     except (OSError, ValueError, TypeError, AttributeError) as exc:
-        raise BalanceUnavailable from exc
+        raise BalanceUnavailable("invalid_source") from exc
 
 
 def credit_balance(body: bytes) -> Decimal:
@@ -58,7 +62,22 @@ def credit_balance(body: bytes) -> Decimal:
             raise ValueError("Invalid balance currency or value")
         return amount
     except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError) as exc:
-        raise BalanceUnavailable from exc
+        raise BalanceUnavailable("invalid_payload") from exc
+
+
+def retry_after_seconds(response: httpx.Response) -> float | None:
+    value = response.headers.get("Retry-After", "").strip()
+    if value.isascii() and value.isdecimal():
+        delay = float(value)
+        return delay if math.isfinite(delay) else None
+    if value:
+        try:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is not None:
+                return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            pass
+    return None
 
 
 def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal("15"),
@@ -80,59 +99,94 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
     application.state.upstream = client
     state = {"decision": "unverified", "balance_usd": None, "checked_at": None,
              "forwarded": 0, "blocked": 0}
+    retry_source, retry_until = None, 0.0
 
-    def refusal(reason: str):
+    def unavailable(error: BalanceUnavailable):
+        if str(error) != "http_429_backoff":
+            logger.warning("OpenAI balance verification failed (%s)", error)
+        state.update(decision="balance_source_unavailable", balance_usd=None)
+        state["blocked"] += 1
+        # Magpie also classifies credit-related words in 5xx response bodies.
+        return JSONResponse({"error": {"type": "service_unavailable", "code": "verification_unavailable",
+            "message": "OpenAI 暂时无法核验 / OpenAI admission verification unavailable"}}, status_code=503)
+
+    def below_floor():
+        reason = "balance_below_floor"
         state["decision"] = reason
         state["blocked"] += 1
         return JSONResponse({"error": {"type": "insufficient_quota", "code": reason,
-            "message": ("OpenAI 余额保护已暂停新请求 / OpenAI balance guard paused new requests: "
-                        "balance is below the configured floor or cannot be verified")}}, status_code=402)
+            "message": "OpenAI 余额低于门槛 / OpenAI balance is below the configured floor"}}, status_code=402)
 
     @application.get("/health")
     async def health():
         # Liveness remains healthy when the financial guard is intentionally shut.
-        return {"status": "ok", "minimum_usd": str(minimum), **state}
+        wait = max(0, math.ceil(retry_until - asyncio.get_running_loop().time()))
+        return {"status": "ok", "minimum_usd": str(minimum), **state, "retry_after_seconds": wait}
 
     async def verified_balance(source: dict) -> Decimal:
-        state["balance_usd"] = None
+        nonlocal retry_source, retry_until
+        loop = asyncio.get_running_loop()
+        identity = (source["organization"], hashlib.sha256(source["authorization"].encode()).digest())
+        if retry_source != identity:
+            retry_source, retry_until = identity, 0.0
+        deadline = loop.time() + balance_timeout
+        request = httpx.Request("GET", BALANCE_URL, headers={
+            "Authorization": source["authorization"],
+            "OpenAI-Organization": source["organization"], "Accept": "application/json",
+            "User-Agent": f"python-httpx/{httpx.__version__}",
+        })
         try:
-            async with asyncio.timeout(balance_timeout):
-                request = httpx.Request("GET", BALANCE_URL, headers={
-                    "Authorization": source["authorization"],
-                    "OpenAI-Organization": source["organization"], "Accept": "application/json",
-                    "User-Agent": f"python-httpx/{httpx.__version__}",
-                })
-                response = await application.state.upstream.send(request, follow_redirects=False)
-                if response.status_code != 200 or len(response.content) > 1024 * 1024:
-                    raise BalanceUnavailable
-                value = credit_balance(response.content)
+            async with asyncio.timeout_at(deadline):
+                for attempt in range(2):
+                    if retry_source == identity and retry_until > loop.time():
+                        raise BalanceUnavailable("http_429_backoff")
+                    try:
+                        response = await application.state.upstream.send(request, follow_redirects=False)
+                    except httpx.TransportError as exc:
+                        error = BalanceUnavailable(type(exc).__name__)
+                        delay = 0.25
+                    else:
+                        if response.status_code == 200:
+                            if len(response.content) > 1024 * 1024:
+                                raise BalanceUnavailable("oversized_payload")
+                            value = credit_balance(response.content)
+                            state.update(balance_usd=str(value), checked_at=datetime.now(timezone.utc).isoformat())
+                            return value
+                        error = BalanceUnavailable(f"http_{response.status_code}")
+                        if response.status_code not in RETRYABLE_BALANCE_STATUSES:
+                            raise error
+                        wait = retry_after_seconds(response)
+                        delay = 0.25 if wait is None else wait
+                        if response.status_code == 429 and wait is not None and retry_source == identity:
+                            retry_until = max(retry_until, loop.time() + wait)
+                    if attempt or delay >= deadline - loop.time():
+                        raise error
+                    logger.warning("Retrying OpenAI balance verification (%s)", error)
+                    await asyncio.sleep(delay)
         except (httpx.HTTPError, TimeoutError) as exc:
-            raise BalanceUnavailable from exc
-        state.update(balance_usd=str(value), checked_at=datetime.now(timezone.utc).isoformat())
-        return value
+            raise BalanceUnavailable(type(exc).__name__) from exc
 
     @application.api_route("/balance", methods=["GET"])
     @application.api_route("/v1/{path:path}", methods=["GET", "POST", "DELETE"])
     async def forward(request: Request, path: str = ""):
         try:
             source = read_source(source_path)
-        except BalanceUnavailable:
-            state["balance_usd"] = None
-            return refusal("balance_source_unavailable")
+        except BalanceUnavailable as exc:
+            return unavailable(exc)
         auth = request.headers.get("authorization", "")
         key = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
         if not key or not hmac.compare_digest(hashlib.sha256(key.encode()).hexdigest(), source["api_key_sha256"]):
             return JSONResponse({"error": {"message": "Unauthorized"}}, status_code=401)
         try:
             amount = await verified_balance(source)
-        except BalanceUnavailable:
-            return refusal("balance_source_unavailable")
+        except BalanceUnavailable as exc:
+            return unavailable(exc)
         if request.url.path == "/balance":
             state["decision"] = "balance_below_floor" if amount < minimum else "available"
             return {"balance": float(amount), "currency": "usd", "minimum": float(minimum),
                     "allowed": amount >= minimum, "checked_at": state["checked_at"]}
         if amount < minimum:
-            return refusal("balance_below_floor")
+            return below_floor()
         if not path or any(part in {".", ".."} for part in path.split("/")):
             return JSONResponse({"error": {"message": "Unsupported route"}}, status_code=404)
 

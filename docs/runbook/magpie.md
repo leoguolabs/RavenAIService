@@ -81,7 +81,7 @@ Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema�
 
 ### OpenAI 真实余额门槛
 
-可选层 `docker-compose.magpie-balance.yml` 在 Magpie 与 OpenAI 之间运行内部 `openai-balance-guard`，不发布宿主端口。每次新请求先查询同一组织的真实剩余额度，低于 **15 USD** 返回 402；恰好 15 USD 允许请求。余额缺失、无效、查询失败或超过 2 秒均停止转发，不使用历史成功值或本地消费估算。已开始的推理继续原流，不重放工具；后续请求重新检查。供应商的 DeepSeek fallback 接收拒绝后的请求，启用了任务固定策略的 invocation 记录实际备用模型并继续使用它。
+可选层 `docker-compose.magpie-balance.yml` 在 Magpie 与 OpenAI 之间运行内部 `openai-balance-guard`，不发布宿主端口。每次转发前都需要核验同一组织的真实剩余额度，低于 **15 USD** 返回 402，恰好 15 USD 允许请求。账单查询遭遇限流、暂时性服务错误或连接异常时，在同一个 2 秒预算内最多重试一次。收到 429 和有效的 `Retry-After` 后，同一账单凭据在等待期内暂停查询，`/health` 显示剩余等待秒数。无法核验余额时，门禁返回 503，Magpie 使用普通故障退避。只有核验到余额低于门槛才触发额度退避。门禁不使用历史成功值或本地消费估算。已开始的推理继续原流，不重放工具。供应商的 DeepSeek fallback 接收拒绝后的请求，启用了任务固定策略的 invocation 记录实际备用模型并继续使用它。
 
 余额来源是登录后账单页实际使用的 `https://api.openai.com/v1/dashboard/billing/credit_grants` 的 `total_available`，已与页面余额核对。`wallet.balance` 不含所有赠送额度，不能代替它；公开 Costs API 给的是消费金额，也不是余额。这个 dashboard 接口不是稳定的公开 API，登录凭据失效或接口变化时会暂停 OpenAI，直到重新接入有效来源。这是严格模式的预期行为。
 

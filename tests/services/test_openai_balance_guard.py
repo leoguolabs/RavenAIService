@@ -85,13 +85,15 @@ async def test_unknown_balance_never_forwards_or_leaks_source(source, payload, s
 
     async def upstream(request):
         calls.append(str(request.url))
-        return httpx.Response(status, content=payload, headers={"Location": "https://other.invalid"})
+        return httpx.Response(status, content=payload, headers={
+            "Location": "https://other.invalid", "Retry-After": "60"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as external:
         app = create_app(source, client=external)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://guard") as client:
             response = await client.post("/v1/responses", json={}, headers=AUTH)
-            assert response.status_code == 402
+            assert response.status_code == 503
+            assert response.json()["error"]["code"] == "verification_unavailable"
             assert "do not leak" not in response.text and "fixture-billing" not in response.text
             assert calls == [BALANCE_URL]
 
@@ -106,7 +108,7 @@ async def test_timeout_stops_request(source):
     async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as external:
         app = create_app(source, client=external, balance_timeout=0.02)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://guard") as client:
-            assert (await client.post("/v1/responses", json={}, headers=AUTH)).status_code == 402
+            assert (await client.post("/v1/responses", json={}, headers=AUTH)).status_code == 503
             assert calls == [BALANCE_URL]
 
 
@@ -127,10 +129,75 @@ async def test_no_cached_allowance_after_error_or_missing_secret(source):
             data = json.loads(source.read_text())
             data["authorization"] = "Bearer replaced-session"
             source.write_text(json.dumps(data))
-            assert (await client.post("/v1/responses", json={}, headers=AUTH)).status_code == 402
+            assert (await client.post("/v1/responses", json={}, headers=AUTH)).status_code == 503
             source.unlink()
-            assert (await client.post("/v1/responses", json={}, headers=AUTH)).status_code == 402
+            assert (await client.post("/v1/responses", json={}, headers=AUTH)).status_code == 503
             assert len(calls) == 1 and reads[-1] == "Bearer replaced-session"
+
+
+@pytest.mark.parametrize("recover", [True, False])
+async def test_rate_limited_balance_retries_before_inference(source, recover, caplog):
+    calls = []
+
+    async def upstream(request):
+        calls.append(str(request.url))
+        if str(request.url) != BALANCE_URL:
+            return httpx.Response(200, stream=Stream())
+        if recover and len(calls) == 2:
+            return httpx.Response(200, json={"total_available": 15})
+        return httpx.Response(429, content=b"private upstream detail", headers={"Retry-After": "0"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as external:
+        app = create_app(source, client=external)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://guard") as client:
+            response = await client.post("/v1/responses?test=retry", json={}, headers=AUTH)
+            assert response.status_code == (200 if recover else 503)
+            assert calls[:2] == [BALANCE_URL, BALANCE_URL]
+            assert calls[2:] == (["https://api.openai.com/v1/responses?test=retry"] if recover else [])
+            assert "Retrying OpenAI balance verification (http_429)" in caplog.text
+            assert "private upstream detail" not in caplog.text + response.text
+
+
+async def test_retries_a_dropped_balance_connection(source):
+    attempts = 0
+
+    async def upstream(request):
+        nonlocal attempts
+        assert str(request.url) == BALANCE_URL
+        attempts += 1
+        if attempts == 1:
+            raise httpx.RemoteProtocolError("private transport detail")
+        return httpx.Response(200, json={"total_available": 15})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as external:
+        app = create_app(source, client=external)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://guard") as client:
+            assert (await client.get("/balance", headers=AUTH)).status_code == 200
+    assert attempts == 2
+
+
+async def test_rate_limit_window_skips_queries_for_the_same_credential(source):
+    reads = []
+
+    async def upstream(request):
+        assert str(request.url) == BALANCE_URL
+        reads.append(request.headers["authorization"])
+        if len(reads) == 1:
+            return httpx.Response(429, headers={"Retry-After": "60"})
+        return httpx.Response(200, json={"total_available": 15})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as external:
+        app = create_app(source, client=external)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://guard") as client:
+            assert (await client.post("/v1/responses", json={}, headers=AUTH)).status_code == 503
+            assert (await client.get("/balance", headers=AUTH)).status_code == 503
+            assert (await client.get("/health")).json()["retry_after_seconds"] > 0
+            assert reads == ["Bearer fixture-billing-session"]
+            data = json.loads(source.read_text())
+            data["authorization"] = "Bearer replaced-session"
+            source.write_text(json.dumps(data))
+            assert (await client.get("/balance", headers=AUTH)).status_code == 200
+            assert reads == ["Bearer fixture-billing-session", "Bearer replaced-session"]
 
 
 async def test_wrong_caller_never_contacts_balance_or_inference(source):

@@ -11,10 +11,10 @@ The public Costs API returns expenditure, not remaining credits. The signed-in b
 ## Decisions
 
 - Put a small authenticated reverse proxy between Magpie and the fixed `https://api.openai.com` origin. This covers routing groups, direct model requests and explicit overrides without patching Magpie's provider protocol implementation.
-- Read the verified credit-grants endpoint before each inference; no positive balance cache. A 2-second timeout or any invalid response denies forwarding. Decimal arithmetic enforces `< 15`, so exactly 15 is admitted.
+- Require a fresh reading from the verified credit-grants endpoint for each inference without a positive balance cache. Retry a transient HTTP or transport failure once within the same 2-second deadline. For HTTP 429 with `Retry-After`, suppress further lookups for the same billing credential until that window ends. Without a valid reading, deny forwarding. Decimal arithmetic enforces `< 15`, so exactly 15 is admitted.
 - A private read-only secret contains the dashboard authorization, organization and SHA-256 fingerprint of the accepted Raven API key. Read it each time so in-place updates take effect without restart; atomic file replacement requires recreating the Compose secret mount. Never send the dashboard credential or cookies on inference requests or print upstream balance errors.
 - Use the matching organization for both balance and inference. Fixed origins and no HTTP redirects prevent credential leakage. Host ports are not published.
-- Return a sanitized HTTP 402 on low/unknown balance so Magpie's native fallback selects DeepSeek. Accepted streams finish without replays. Existing Raven pinning records and retains the actual fallback provider.
+- Return HTTP 402 for verified low balance and HTTP 503 when verification is unavailable. Both trigger Magpie's fallback, but only verified low balance triggers credit backoff. Log sanitized diagnostic codes without upstream bodies or credentials. Accepted streams finish without replays. Existing Raven pinning records and retains the actual fallback provider.
 - Preserve OpenAI Responses capabilities explicitly when changing its hostname to the internal proxy; verify real tool continuation after deployment.
 
 ## Risks / Trade-offs
