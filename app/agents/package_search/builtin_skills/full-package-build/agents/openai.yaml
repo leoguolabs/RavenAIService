@@ -1,4 +1,4 @@
 interface:
-  display_name: "整包打包"
-  short_description: "核对源码与归档，构建并提交软件升级包审核"
-  default_prompt: "使用 $full-package-build 根据源码和归档核对这些组件，制包后提交摘要供一次发布确认。"
+  display_name: "软件升级包打包"
+  short_description: "核对源码和归档，判断完整包或补丁包，构建产物并提交发布确认"
+  default_prompt: "使用 $full-package-build 核对组件覆盖范围，构建对应的软件升级包并提交发布确认。"

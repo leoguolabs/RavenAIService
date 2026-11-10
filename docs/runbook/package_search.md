@@ -17,9 +17,12 @@ Skill. Bash/Python, Read/Grep/Glob and Write/Edit are available. The workspace-b
 putting Git credentials in prompts or task files. Project source, archive
 manifests and user instructions provide the business evidence for package type,
 PacketAttr, FileAttr, target name, component version and whole-release version.
-The Agent cross-checks these values against source and the current release's
-archives, including companion version scripts when available. It asks for only
-the required values that remain unresolved after those checks.
+The Agent determines package type before asking for a release version. A full
+package requires evidence that the payload covers every component required for
+the release target. A supported subset uses the project's patch type, such as
+PacketAttr 1002 for the Lingxi 07a base station. The Agent cross-checks versions
+against source and current release archives, including companion version scripts
+when available. It asks only for the required values that remain unresolved.
 The Agent writes and executes its own build script, then produces a flat TGZ and
 `review-plan.json` using the schema in the Skill.
 

@@ -14,6 +14,11 @@ The system SHALL invoke the configured Agent for packaging, enable workspace cod
 - **WHEN** an input has version `1.2.30.12.202609170917`
 - **THEN** the Agent separates component and requested release versions using evidence without catalog rejection
 
+#### Scenario: Uploaded components cover only part of the release target
+- **WHEN** a Lingxi 07a base station packaging request supplies OAM, CUCP, CUUP and DU as a supported subset of a full release
+- **THEN** the Agent selects patch mode with PacketAttr 1002 before resolving the release version
+- **AND** if Packet_Ver is still needed, it asks for the patch package version without proposing example values
+
 ### Requirement: Validate and confirm publication
 The system SHALL validate artifact structure, hashes, input accounting and project scope, retain evidence in the audit plan, and publish only the confirmed artifact. The publication summary SHALL contain the project, release version and type, component names and versions, and any release warnings or excluded uploads. It MUST reject unsafe archives, changed bytes, cancellation and duplicate publication.
 

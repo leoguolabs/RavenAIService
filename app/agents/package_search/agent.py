@@ -493,7 +493,7 @@ class PackageSearchAgent:
                 "clone_project_repo 获取已注册项目源码（凭据由工具管理）。"
                 "从升级器源码、si.ini、构建脚本等证据确定 PacketAttr、FileAttr、版本、目标名称和提取方式；"
                 "旧 package-projects.json 仅为历史线索，不是约束或唯一依据。"
-                "组件版本与用户要求的整包版本分别处理，不用正则猜测。"
+                "先按 Skill 核对组件覆盖范围并确定完整包或补丁包，再分别确定发布包版本和组件版本。"
                 "在当前工作区编写并运行脚本生成 TGZ 和 review-plan.json，"
                 "再调用 mcp__agent_package__PublishPackage 进行校验、用户确认和入库。"
                 "每个上传件必须纳入或有明确排除理由。源码和本次归档能确定的属性、类型和映射直接采用，"

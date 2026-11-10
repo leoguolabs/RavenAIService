@@ -87,9 +87,7 @@ class TestHappyPath:
     async def test_multi_question_and_custom_text(self):
         broker = PermissionBroker()
         proxy, events = _make(broker)
-        q2 = {"header": "范围", "question": "范围？", "options": [
-            {"label": "全部", "description": ""}, {"label": "单台", "description": ""},
-        ]}
+        q2 = {"header": "范围", "question": "范围？", "options": []}
 
         async def resolver():
             for _ in range(50):
@@ -106,6 +104,7 @@ class TestHappyPath:
         result = await proxy({"questions": [_QUESTION, q2]})
         text = _text(result)
         assert events[0]["questions"][1]["question"] == "范围？"
+        assert events[0]["questions"][1]["options"] == []
         assert "先看日志再决定" in text
 
 

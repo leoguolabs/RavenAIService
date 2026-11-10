@@ -170,8 +170,9 @@ _CLARIFICATION_GUIDANCE: Dict[str, str] = {
         "必须使用完整工具名 `mcp__ask__AskUserQuestion`；不要调用 Claude CLI 内置的"
         "同名 `AskUserQuestion` 工具，后者未接入本产品的提问卡片。\n"
         "能够根据上下文合理推断时，不要打断用户，直接继续。\n"
-        "提问时：把需要澄清的点尽量在一次调用里问全（每个问题给 2–4 个预设选项，"
-        "并配简短说明）；本轮最多可提问 {max_rounds} 次，达上限后请基于已知信息自行决断。"
+        "提问时，把需要澄清的点尽量在一次调用里问全。仅为有依据的候选提供简短选项说明；"
+        "需要用户输入未知的具体值时，传空的 options 数组。本轮最多可提问 {max_rounds} 次，"
+        "达到上限后基于已知信息继续。"
     ),
     "en": (
         "## When to ask the user (mcp__ask__AskUserQuestion)\n"
@@ -182,9 +183,10 @@ _CLARIFICATION_GUIDANCE: Dict[str, str] = {
         "Always use the full name `mcp__ask__AskUserQuestion`; never use Claude CLI's "
         "built-in `AskUserQuestion`, which is not connected to RavenAI's clarification card.\n"
         "If you can reasonably infer intent from context, do NOT interrupt — just proceed.\n"
-        "When you do ask, batch everything you need into a single call (2–4 preset options "
-        "with short descriptions per question). You may ask at most {max_rounds} time(s) this "
-        "run; once the cap is hit, decide using the information you have."
+        "When you do ask, batch everything you need into one call. Give short descriptions for "
+        "options supported by the available information. Use an empty options array when the user "
+        "must supply an unknown value. You may ask at most {max_rounds} time(s) this run. "
+        "Once the cap is hit, proceed using the information you have."
     ),
 }
 
@@ -288,9 +290,8 @@ _INPUT_SCHEMA: Dict[str, Any] = {
                     },
                     "options": {
                         "type": "array",
-                        "minItems": 2,
                         "maxItems": 4,
-                        "description": "2–4 个预设选项；用户也可不选预设、自行输入。",
+                        "description": "最多 4 个有依据的预设选项。仅需用户输入具体值时传空数组。",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -316,7 +317,7 @@ _INPUT_SCHEMA: Dict[str, Any] = {
 
 _TOOL_DESCRIPTION = (
     "当用户指令不清晰（缺少关键参数、存在多种合理解读、目标对象/范围不明确）时，"
-    "向用户提出一个或多个澄清问题，每个问题给出 2–4 个预设选项；用户也可自行输入。"
+    "向用户提出一个或多个澄清问题。有依据时提供预设选项，需要用户输入具体值时传空的 options 数组。"
     "能够合理推断时不要调用本工具。调用会阻塞，直到用户作答后返回其选择。"
 )
 
