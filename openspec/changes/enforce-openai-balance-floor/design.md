@@ -4,14 +4,15 @@ The public Costs API returns expenditure, not remaining credits. The signed-in b
 
 ## Goals / Non-Goals
 
-**Goals:** Enforce a strict USD 15 admission floor on every new request to this Magpie provider, including direct requests from pinned tasks. Unknown balance must fail closed. Preserve transparent protocol bytes and streaming.
+**Goals:** Enforce a strict USD 15 admission floor at the start of each eligible Raven task. Unknown balance must fail closed. Preserve transparent protocol bytes and streaming.
 
 **Non-Goals:** Local cost estimates, changing the organization's billing settings, replaying committed inference, preserving an exact minimum against already-running requests or upstream accounting delay.
 
 ## Decisions
 
 - Put a small authenticated reverse proxy between Magpie and the fixed `https://api.openai.com` origin. This covers routing groups, direct model requests and explicit overrides without patching Magpie's provider protocol implementation.
-- Require a fresh reading from the verified credit-grants endpoint for each inference without a positive balance cache. Retry a transient HTTP or transport failure once within the same 2-second deadline. For HTTP 429 with `Retry-After`, suppress further lookups for the same billing credential until that window ends. Without a valid reading, deny forwarding. Decimal arithmetic enforces `< 15`, so exactly 15 is admitted.
+- With task mode configured, authenticate the Raven gateway caller by its key fingerprint on the internal admission endpoint. Make one lookup within the 2-second deadline and issue a signed, expiring decision bound to the billing source and inference credential. The loopback bridge passes the decision to the guard through Magpie's provider header allowlist. The guard consumes that header locally.
+- For HTTP 429 with `Retry-After`, suppress lookups for the same billing credential until that window ends. Without a valid decision, deny forwarding. Decimal arithmetic enforces `< 15`, so exactly 15 is admitted. The display reads the latest verified snapshot and does not authorize any inference. Deployments that have not enabled task mode retain per-request checks during migration.
 - A private read-only secret contains the dashboard authorization, organization and SHA-256 fingerprint of the accepted Raven API key. Read it each time so in-place updates take effect without restart; atomic file replacement requires recreating the Compose secret mount. Never send the dashboard credential or cookies on inference requests or print upstream balance errors.
 - Use the matching organization for both balance and inference. Fixed origins and no HTTP redirects prevent credential leakage. Host ports are not published.
 - Return HTTP 402 for verified low balance and HTTP 503 when verification is unavailable. Both trigger Magpie's fallback, but only verified low balance triggers credit backoff. Log sanitized diagnostic codes without upstream bodies or credentials. Accepted streams finish without replays. Existing Raven pinning records and retains the actual fallback provider.
@@ -20,7 +21,7 @@ The public Costs API returns expenditure, not remaining credits. The signed-in b
 ## Risks / Trade-offs
 
 - Dashboard login expiry or endpoint changes stop OpenAI until the private source is refreshed. This is intentional fail-closed behavior.
-- Every new inference adds a balance lookup. Queries time out after 2 seconds rather than delaying fallback indefinitely.
+- Eligible tasks add one startup balance lookup, including tasks that ultimately finish on the primary local model. Queries time out after 2 seconds. Subsequent requests reuse the task decision.
 - In-flight consumption and upstream billing delay can take the balance below the threshold after admission; this gate rejects based on the latest upstream reading, not a reservation system.
 - Magpie can rest a refused key using its normal quota/backoff rules. Recovery can wait for that rest; already switched tasks remain on their fallback.
 

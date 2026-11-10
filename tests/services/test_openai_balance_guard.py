@@ -8,6 +8,7 @@ import pytest
 from starlette.requests import Request
 
 from app.services.openai_balance_guard import BALANCE_URL, create_app
+from app.services.openai_task_admission import ADMISSION_HEADER
 
 
 KEY = "fixture-inference-key"
@@ -250,6 +251,60 @@ async def test_balance_display_is_actual_even_when_below_floor(source):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://guard") as client:
             result = (await client.get("/balance", headers=AUTH)).json()
             assert result["balance"] == 14 and result["allowed"] is False
+
+
+async def test_task_mode_checks_once_before_inference_and_preserves_task_decisions(source):
+    calls = []
+    amounts = iter((15, 14.99, 85))
+
+    async def upstream(request):
+        if str(request.url) == BALANCE_URL:
+            calls.append("balance")
+            return httpx.Response(200, json={"total_available": next(amounts)})
+        calls.append("inference")
+        assert ADMISSION_HEADER not in request.headers
+        await request.aread()
+        return httpx.Response(200, stream=httpx.ByteStream(b'{"ok": true}'))
+
+    caller_key = "raven-caller-key"
+    caller = {"Authorization": f"Bearer {caller_key}"}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as external:
+        app = create_app(source, client=external, task_caller_sha256=hashlib.sha256(caller_key.encode()).hexdigest())
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://guard") as client:
+            assert (await client.get("/balance", headers=AUTH)).status_code == 503
+            assert (await client.post("/task-admission", headers=AUTH)).status_code == 401
+            assert (await client.post("/v1/responses", headers=AUTH)).status_code == 503
+            assert not calls
+            allowed = (await client.post("/task-admission", headers=caller)).json()["admission"]
+            denied = (await client.post("/task-admission", headers=caller)).json()["admission"]
+            allowed_headers = {**AUTH, ADMISSION_HEADER: allowed}
+            denied_headers = {**AUTH, ADMISSION_HEADER: denied}
+            for _ in range(3):
+                assert (await client.post("/v1/responses", headers=allowed_headers, json={})).status_code == 200
+                assert (await client.post("/v1/responses", headers=denied_headers, json={})).status_code == 402
+                assert (await client.get("/balance", headers=AUTH)).json()["balance"] == 14.99
+            forged = {**AUTH, ADMISSION_HEADER: allowed + "x"}
+            assert (await client.post("/v1/responses", headers=forged)).status_code == 503
+            assert calls == ["balance"] * 2 + ["inference"] * 3
+            assert (await client.post("/task-admission", headers=caller)).is_success
+            assert (await client.get("/balance", headers=AUTH)).json()["balance"] == 85
+
+
+async def test_failed_task_admission_never_retries_mid_task(source):
+    calls = []
+
+    async def upstream(request):
+        calls.append(str(request.url))
+        return httpx.Response(503)
+
+    caller_key = "raven-caller-key"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as external:
+        app = create_app(source, client=external, task_caller_sha256=hashlib.sha256(caller_key.encode()).hexdigest())
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://guard") as client:
+            assert (await client.post("/task-admission", headers={"Authorization": f"Bearer {caller_key}"})).status_code == 503
+            for _ in range(2):
+                assert (await client.post("/v1/responses", headers=AUTH)).status_code == 503
+            assert calls == [BALANCE_URL]
 
 
 def test_invalid_floor_is_not_silently_disabled(source):

@@ -14,6 +14,8 @@ import json
 import logging
 import math
 import os
+import secrets
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -23,6 +25,8 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+
+from app.services.openai_task_admission import ADMISSION_HEADER
 
 BALANCE_URL = "https://api.openai.com/v1/dashboard/billing/credit_grants"
 UPSTREAM = "https://api.openai.com/v1/"
@@ -81,9 +85,14 @@ def retry_after_seconds(response: httpx.Response) -> float | None:
 
 
 def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal("15"),
-               client: httpx.AsyncClient | None = None, balance_timeout: float = 2) -> FastAPI:
+               client: httpx.AsyncClient | None = None, balance_timeout: float = 2,
+               task_caller_sha256: str = "") -> FastAPI:
     if not minimum.is_finite() or minimum < 0:
         raise ValueError("Balance floor must be a nonnegative USD amount")
+    if task_caller_sha256 and (len(task_caller_sha256) != 64
+                              or any(c not in "0123456789abcdef" for c in task_caller_sha256)):
+        raise ValueError("Invalid task caller fingerprint")
+    signing_key = secrets.token_bytes(32)
 
     @asynccontextmanager
     async def lifespan(application):
@@ -98,17 +107,36 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
     application = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     application.state.upstream = client
     state = {"decision": "unverified", "balance_usd": None, "checked_at": None,
-             "forwarded": 0, "blocked": 0}
+             "forwarded": 0, "blocked": 0, "balance_lookups": 0}
+    display_balance = None
     retry_source, retry_until = None, 0.0
+
+    def source_identity(source: dict) -> bytes:
+        return json.dumps([source["organization"], source["api_key_sha256"], source["authorization"]]).encode()
+
+    def sign(source: dict, payload: str) -> str:
+        return hmac.digest(signing_key, source_identity(source) + payload.encode(), "sha256").hex()
+
+    def verdict(source: dict, proof: str) -> str:
+        payload, _, signature = proof.rpartition(".")
+        expires, _, decision = payload.partition(".")
+        decision, _, _ = decision.partition(".")
+        if (len(proof) <= 160 and proof.isascii() and expires.isdecimal()
+                and int(expires) > time.time() and hmac.compare_digest(signature, sign(source, payload))):
+            return decision
+        return ""
+
+    def refused():
+        state["blocked"] += 1
+        # Magpie also classifies credit-related words in 5xx response bodies.
+        return JSONResponse({"error": {"type": "service_unavailable", "code": "verification_unavailable",
+            "message": "OpenAI 暂时无法核验 / OpenAI admission verification unavailable"}}, status_code=503)
 
     def unavailable(error: BalanceUnavailable):
         if str(error) != "http_429_backoff":
             logger.warning("OpenAI balance verification failed (%s)", error)
         state.update(decision="balance_source_unavailable", balance_usd=None)
-        state["blocked"] += 1
-        # Magpie also classifies credit-related words in 5xx response bodies.
-        return JSONResponse({"error": {"type": "service_unavailable", "code": "verification_unavailable",
-            "message": "OpenAI 暂时无法核验 / OpenAI admission verification unavailable"}}, status_code=503)
+        return refused()
 
     def below_floor():
         reason = "balance_below_floor"
@@ -123,7 +151,7 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
         wait = max(0, math.ceil(retry_until - asyncio.get_running_loop().time()))
         return {"status": "ok", "minimum_usd": str(minimum), **state, "retry_after_seconds": wait}
 
-    async def verified_balance(source: dict) -> Decimal:
+    async def verified_balance(source: dict, attempts: int = 2) -> Decimal:
         nonlocal retry_source, retry_until
         loop = asyncio.get_running_loop()
         identity = (source["organization"], hashlib.sha256(source["authorization"].encode()).digest())
@@ -137,10 +165,11 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
         })
         try:
             async with asyncio.timeout_at(deadline):
-                for attempt in range(2):
+                for attempt in range(attempts):
                     if retry_source == identity and retry_until > loop.time():
                         raise BalanceUnavailable("http_429_backoff")
                     try:
+                        state["balance_lookups"] += 1
                         response = await application.state.upstream.send(request, follow_redirects=False)
                     except httpx.TransportError as exc:
                         error = BalanceUnavailable(type(exc).__name__)
@@ -159,12 +188,31 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
                         delay = 0.25 if wait is None else wait
                         if response.status_code == 429 and wait is not None and retry_source == identity:
                             retry_until = max(retry_until, loop.time() + wait)
-                    if attempt or delay >= deadline - loop.time():
+                    if attempt + 1 == attempts or delay >= deadline - loop.time():
                         raise error
                     logger.warning("Retrying OpenAI balance verification (%s)", error)
                     await asyncio.sleep(delay)
         except (httpx.HTTPError, TimeoutError) as exc:
             raise BalanceUnavailable(type(exc).__name__) from exc
+
+    @application.post("/task-admission")
+    async def task_admission(request: Request):
+        nonlocal display_balance
+        auth = request.headers.get("authorization", "")
+        key = auth.removeprefix("Bearer ")
+        if not auth.startswith("Bearer ") or not task_caller_sha256 or not hmac.compare_digest(
+                hashlib.sha256(key.encode()).hexdigest(), task_caller_sha256):
+            return JSONResponse({"error": {"message": "Unauthorized"}}, status_code=401)
+        try:
+            source = read_source(source_path)
+            amount = await verified_balance(source, attempts=1)
+        except BalanceUnavailable as exc:
+            return unavailable(exc)
+        display_balance = (hashlib.sha256(source_identity(source)).digest(), amount, state["checked_at"])
+        decision = "below" if amount < minimum else "allow"
+        state["decision"] = "balance_below_floor" if decision == "below" else "available"
+        payload = f"{int(time.time()) + 6 * 3600}.{decision}.{secrets.token_hex(16)}"
+        return {"admission": f"{payload}.{sign(source, payload)}"}
 
     @application.api_route("/balance", methods=["GET"])
     @application.api_route("/v1/{path:path}", methods=["GET", "POST", "DELETE"])
@@ -177,16 +225,31 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
         key = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
         if not key or not hmac.compare_digest(hashlib.sha256(key.encode()).hexdigest(), source["api_key_sha256"]):
             return JSONResponse({"error": {"message": "Unauthorized"}}, status_code=401)
-        try:
-            amount = await verified_balance(source)
-        except BalanceUnavailable as exc:
-            return unavailable(exc)
-        if request.url.path == "/balance":
-            state["decision"] = "balance_below_floor" if amount < minimum else "available"
-            return {"balance": float(amount), "currency": "usd", "minimum": float(minimum),
-                    "allowed": amount >= minimum, "checked_at": state["checked_at"]}
-        if amount < minimum:
-            return below_floor()
+        display = request.url.path == "/balance"
+        if task_caller_sha256 and not display:
+            decision = verdict(source, request.headers.get(ADMISSION_HEADER, ""))
+            if decision == "below":
+                return below_floor()
+            if decision != "allow" and not (request.method == "GET" and path == "models"):
+                return refused()
+        else:
+            if task_caller_sha256:
+                if not display_balance or display_balance[0] != hashlib.sha256(source_identity(source)).digest():
+                    return refused()
+                _, amount, checked_at = display_balance
+            else:
+                try:
+                    amount = await verified_balance(source)
+                except BalanceUnavailable as exc:
+                    return unavailable(exc)
+                checked_at = state["checked_at"]
+                if display:
+                    state["decision"] = "balance_below_floor" if amount < minimum else "available"
+            if display:
+                return {"balance": float(amount), "currency": "usd", "minimum": float(minimum),
+                        "allowed": amount >= minimum, "checked_at": checked_at}
+            if amount < minimum:
+                return below_floor()
         if not path or any(part in {".", ".."} for part in path.split("/")):
             return JSONResponse({"error": {"message": "Unsupported route"}}, status_code=404)
 
@@ -228,4 +291,5 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
 
 
 app = create_app(Path(os.environ.get("OPENAI_BALANCE_SOURCE_FILE", SOURCE_PATH)),
-                 Decimal(os.environ.get("OPENAI_BALANCE_MIN_USD", "15")))
+                 Decimal(os.environ.get("OPENAI_BALANCE_MIN_USD", "15")),
+                 task_caller_sha256=os.environ.get("OPENAI_BALANCE_TASK_CALLER_SHA256", ""))

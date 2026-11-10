@@ -20,6 +20,7 @@ from app.models.chat import ChatMessage, ChatRequest, ChatResponse
 from app.models.user import User
 from app.services.base import BaseService
 from app.services.chat_history_service import chat_history_service
+from app.services.openai_task_admission import admission_scope
 from app.services.title_generator_service import (
     generate_session_title as _generate_title_external,
 )
@@ -247,6 +248,7 @@ class AIChatService(BaseService):
 
     # ──────────────── chat (non-streaming) ────────────────
 
+    @admission_scope()
     async def chat(
         self,
         payload: ChatRequest,

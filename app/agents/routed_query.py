@@ -93,6 +93,7 @@ from app.services.model_router import (
     OUTCOME_OK,
     OUTCOME_TIMEOUT,
 )
+from app.services.openai_task_admission import TaskAdmission, admission_scope, current_admission
 
 logger = logging.getLogger(__name__)
 
@@ -413,6 +414,7 @@ async def _pump(
     agen: Any,
     queue: "asyncio.Queue[Tuple[str, Any]]",
     credits: "asyncio.Queue[None]",
+    admission: TaskAdmission,
 ) -> None:
     """Own the SDK generator; the consumer only ever reads the queue.
 
@@ -428,13 +430,14 @@ async def _pump(
     """
     iterator = agen.__aiter__()
     try:
-        while True:
-            await credits.get()
-            try:
-                message = await iterator.__anext__()
-            except StopAsyncIteration:
-                break
-            await queue.put((_MSG, message))
+        async with admission_scope(admission):
+            while True:
+                await credits.get()
+                try:
+                    message = await iterator.__anext__()
+                except StopAsyncIteration:
+                    break
+                await queue.put((_MSG, message))
     except asyncio.CancelledError:
         # Abandonment. Let it unwind the generator's finally chain here, in the
         # task that owns the frame, rather than converting it into a queued
@@ -586,6 +589,7 @@ async def routed_query(
     failures: List[Tuple[str, BaseException]] = []
     rate_limit_key_retry_used = False
     deadline = _deadline_seconds()
+    admission = current_admission.get() or TaskAdmission()
     # Teardowns this call started. Reaped before we hand control back, because
     # the workspace agents run under ``asyncio.run`` in a Celery worker — the
     # loop is closed the moment the agent returns, and a still-pending cleanup
@@ -609,7 +613,7 @@ async def routed_query(
             credits: "asyncio.Queue[None]" = asyncio.Queue()
             agen = sdk_query(prompt=prompt, options=options)
             pump: "asyncio.Task[None]" = asyncio.ensure_future(
-                _pump(agen, queue, credits)
+                _pump(agen, queue, credits, admission)
             )
 
             started = _now()

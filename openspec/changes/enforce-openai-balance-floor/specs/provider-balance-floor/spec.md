@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Verified balance admission
-The protected provider SHALL obtain a fresh query of its actual USD credit-grants balance before forwarding each new upstream inference. It SHALL refuse forwarding below USD 15 and SHALL admit exactly USD 15. No local usage estimate SHALL substitute for a balance query.
+In task mode, Raven SHALL check the actual USD credit-grants balance once before starting an Agent task whose route may use the protected provider. Each protected inference SHALL use that task's authenticated decision. A task SHALL NOT query again during streaming, tool continuation, executor retries or fallback. The guard SHALL refuse forwarding below USD 15 and SHALL admit exactly USD 15. No local usage estimate SHALL substitute for a balance query.
 
 #### Scenario: Below threshold
 - **WHEN** the source reports 14.99
@@ -11,12 +11,16 @@ The protected provider SHALL obtain a fresh query of its actual USD credit-grant
 - **WHEN** the source reports 15.00
 - **THEN** the request may reach OpenAI
 
+#### Scenario: Tool continuation and display polling
+- **WHEN** one admitted task sends multiple requests, or Magpie polls the balance display
+- **THEN** the guard reuses the task's decision and displays the most recent verified reading without querying the upstream balance again
+
 ### Requirement: Unknown balance stops requests
-Missing credentials, authentication failure, timeout, malformed JSON, missing/non-finite balance or an unsuccessful source response SHALL deny forwarding. An earlier successful reading MUST NOT authorize a later request whose query fails.
+Missing credentials, authentication failure, timeout, malformed JSON, missing/non-finite balance or an unsuccessful source response SHALL deny forwarding. An earlier task's successful reading MUST NOT authorize a later task whose query fails.
 
 #### Scenario: Transient source failure
-- **WHEN** the first lookup receives a retryable response or transport error and its retry fits within the balance deadline
-- **THEN** the guard retries only the balance lookup once and admits inference only if it obtains a valid balance at or above the floor
+- **WHEN** a task's lookup receives a retryable response or transport error
+- **THEN** the task is denied OpenAI admission and no second lookup is sent for that task
 
 #### Scenario: Verification remains unavailable
 - **WHEN** no valid balance can be verified within the deadline
@@ -27,8 +31,8 @@ Missing credentials, authentication failure, timeout, malformed JSON, missing/no
 - **THEN** the guard SHALL suppress balance lookups for the same credential during that window and SHALL refuse inference without a fresh reading
 
 #### Scenario: Source fails after success
-- **WHEN** one request was allowed and the next balance query fails
-- **THEN** the second inference is not sent to OpenAI
+- **WHEN** one task was allowed and the next task's balance query fails
+- **THEN** inference from the second task is not sent to OpenAI
 
 ### Requirement: Secure transparent transport
 The guard SHALL authenticate the configured Raven key, keep billing authorization separate from inference authorization, restrict destinations to OpenAI, preserve accepted request bodies and streamed responses, and close responses on cancellation.

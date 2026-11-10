@@ -13,3 +13,8 @@
 
 - [x] 3.1 Retry transient balance lookups within the original deadline and distinguish unavailable verification from verified low balance.
 - [x] 3.2 Verify transient recovery, sustained fallback, low-balance refusal and a real RavenAI request.
+
+## 4. Task-scoped admission
+
+- [x] 4.1 Check the real balance once before the Agent starts, preserve the decision through model requests and tool continuations, and serve the display from the last verified reading.
+- [x] 4.2 Verify task isolation, fail-closed fallback and the scoped local deployment.

@@ -1,7 +1,11 @@
+import asyncio
+from types import SimpleNamespace
+
 import httpx
 import pytest
 
 from app.agents.magpie_bridge import GatewayConfig, create_gateway_app
+from app.services import openai_task_admission as admission
 
 
 @pytest.mark.asyncio
@@ -20,12 +24,13 @@ async def test_gateway_credentials_route_headers_and_stream():
 
     config = GatewayConfig("http://gateway", "upstream-secret", "group/auto", "claude_sdk", "session-1")
     async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as upstream_client:
-        app = create_gateway_app(config, "run-secret", upstream_client, on_route)
+        app = create_gateway_app(config, "run-secret", upstream_client, on_route, admission_proof="task-proof")
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://run") as client:
             assert (await client.post("/v1/messages")).status_code == 401
             assert (await client.post("/api/provider/save", headers={"x-api-key": "run-secret"})).status_code == 404
             for _ in range(2):
-                response = await client.post("/v1/messages?key=run-secret", json={"model": "group/auto"})
+                response = await client.post("/v1/messages?key=run-secret", json={"model": "group/auto"},
+                                             headers={admission.ADMISSION_HEADER: "spoofed"})
                 assert response.status_code == 200
                 assert 'requested-alias' in response.text
     assert len(routed) == 1
@@ -33,8 +38,42 @@ async def test_gateway_credentials_route_headers_and_stream():
     assert routed[0]["model"] == "backup/actual-model"
     assert routed[0]["requested_model"] == "group/auto"
     assert observed[0].headers["authorization"] == "Bearer upstream-secret"
+    assert [r.headers[admission.ADMISSION_HEADER] for r in observed] == ["task-proof"] * 2
     assert "key=" not in str(observed[0].url)
     assert "upstream-secret" not in repr(config)
+
+
+@pytest.mark.asyncio
+async def test_task_preflight_is_shared_with_continuations_but_not_the_next_task(monkeypatch):
+    requests = []
+    monkeypatch.setenv("RAVEN_OPENAI_TASK_BALANCE", "true")
+
+    async def guard(request):
+        requests.append(request)
+        await asyncio.sleep(0)
+        if len(requests) == 2:
+            return httpx.Response(503)
+        return httpx.Response(200, json={"admission": "task-proof"})
+
+    def client(**kwargs):
+        return httpx.AsyncClient(transport=httpx.MockTransport(guard), **kwargs)
+
+    monkeypatch.setattr(admission, "httpx", SimpleNamespace(AsyncClient=client, HTTPError=httpx.HTTPError))
+    async with admission.admission_scope():
+        scope = admission.current_admission.get()
+        assert await scope.prepare("key", "group/default", "title_generator") == ""
+        assert not requests
+        assert await asyncio.gather(*(scope.prepare("key", "group/default", "general_agent") for _ in range(2))) == [
+            "task-proof", "task-proof"]
+        assert await scope.prepare("key", "group/default", "title_generator") == "task-proof"
+        assert len(requests) == 1
+    async with admission.admission_scope():
+        scope = admission.current_admission.get()
+        assert await scope.prepare("key", "group/default", "general_agent") == ""
+        assert await scope.prepare("key", "group/default", "general_agent") == ""
+        assert len(requests) == 2
+    assert admission.current_admission.get() is None
+    assert all(str(r.url) == admission.ADMISSION_URL and r.headers["authorization"] == "Bearer key" for r in requests)
 
 
 @pytest.mark.asyncio

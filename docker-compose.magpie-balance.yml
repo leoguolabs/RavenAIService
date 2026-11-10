@@ -1,11 +1,21 @@
 # Optional layer after docker-compose.yml and docker-compose.magpie.yml.
 # Configure the provider only after this service is healthy; see the runbook.
 services:
+  backend:
+    environment:
+      RAVEN_OPENAI_TASK_BALANCE: "${OPENAI_BALANCE_TASK_CALLER_SHA256:+true}"
+  worker:
+    environment:
+      RAVEN_OPENAI_TASK_BALANCE: "${OPENAI_BALANCE_TASK_CALLER_SHA256:+true}"
+  worker-bugfix:
+    environment:
+      RAVEN_OPENAI_TASK_BALANCE: "${OPENAI_BALANCE_TASK_CALLER_SHA256:+true}"
   openai-balance-guard:
     image: ${RAVEN_BALANCE_GUARD_IMAGE:?Set a backend image containing openai_balance_guard.py}
     command: ["python", "-m", "uvicorn", "app.services.openai_balance_guard:app", "--host", "0.0.0.0", "--port", "8099", "--no-access-log"]
     environment:
       OPENAI_BALANCE_MIN_USD: "15"
+      OPENAI_BALANCE_TASK_CALLER_SHA256: "${OPENAI_BALANCE_TASK_CALLER_SHA256:-}"
       PYTHONDONTWRITEBYTECODE: "1"
     # Read a 0600 bind-mounted secret without making it world-readable on the host.
     user: "0:0"

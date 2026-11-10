@@ -34,6 +34,7 @@ from app.agents.log_analysis.trace import (
     CLARIFICATION_RESOLVED,
 )
 from app.models.user import ChatAgentRun, User
+from app.services.openai_task_admission import admission_scope
 
 logger = logging.getLogger(__name__)
 
@@ -597,6 +598,7 @@ class ChatRunService:
         )
         return job
 
+    @admission_scope()
     async def _run_device_job(
         self, job: ChatRunJob, ctx_kwargs: Dict[str, Any]
     ) -> None:
@@ -959,6 +961,7 @@ class ChatRunService:
         )
         return job
 
+    @admission_scope()
     async def _run_general_job(
         self, job: ChatRunJob, ctx_kwargs: Dict[str, Any]
     ) -> None:

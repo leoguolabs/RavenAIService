@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.agents.openai_bridge import _LoopbackServer
 from app.agents.magpie_task_routing import TaskRoute, inference_path
 from app.services.magpie_routing_policy import TaskRoutingPolicy
+from app.services.openai_task_admission import ADMISSION_HEADER, TaskAdmission, current_admission
 
 
 class GatewayRequestError(RuntimeError):
@@ -61,7 +62,8 @@ class GatewayConfig:
 
 def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncClient,
                        on_route: Callable[[dict], Awaitable[None]],
-                       on_error: Callable[[GatewayRequestError | None], None] | None = None) -> FastAPI:
+                       on_error: Callable[[GatewayRequestError | None], None] | None = None,
+                       admission_proof: str = "") -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     last_route: tuple[str, str] | None = None
     policy = config.task_routing
@@ -92,6 +94,8 @@ def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncCli
         for name in ("anthropic-version", "anthropic-beta", "accept"):
             if name in request.headers:
                 headers[name] = request.headers[name]
+        if admission_proof and request.method == "POST":
+            headers[ADMISSION_HEADER] = admission_proof
         params = [(key, value) for key, value in request.query_params.multi_items() if key != "key"]
         body = await request.body()
         prepared = None
@@ -175,13 +179,15 @@ def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncCli
 @asynccontextmanager
 async def gateway_bridge(config: GatewayConfig, on_route: Callable[[dict], Awaitable[None]],
                          on_error: Callable[[GatewayRequestError | None], None] | None = None):
+    admission = current_admission.get() or TaskAdmission()
+    proof = await admission.prepare(config.api_key, config.model, config.agent_kind)
     token = secrets.token_urlsafe(32)
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     sock.listen()
     port = sock.getsockname()[1]
     async with httpx.AsyncClient(timeout=httpx.Timeout(config.timeout_seconds, connect=15)) as client:
-        server = _LoopbackServer(uvicorn.Config(create_gateway_app(config, token, client, on_route, on_error),
+        server = _LoopbackServer(uvicorn.Config(create_gateway_app(config, token, client, on_route, on_error, proof),
             log_level="error", access_log=False, lifespan="off", timeout_graceful_shutdown=2))
         task = asyncio.create_task(server.serve(sockets=[sock]))
         try:

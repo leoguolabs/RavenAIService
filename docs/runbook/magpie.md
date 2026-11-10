@@ -81,13 +81,17 @@ Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema�
 
 ### OpenAI 真实余额门槛
 
-可选层 `docker-compose.magpie-balance.yml` 在 Magpie 与 OpenAI 之间运行内部 `openai-balance-guard`，不发布宿主端口。每次转发前都需要核验同一组织的真实剩余额度，低于 **15 USD** 返回 402，恰好 15 USD 允许请求。账单查询遭遇限流、暂时性服务错误或连接异常时，在同一个 2 秒预算内最多重试一次。收到 429 和有效的 `Retry-After` 后，同一账单凭据在等待期内暂停查询，`/health` 显示剩余等待秒数。无法核验余额时，门禁返回 503，Magpie 使用普通故障退避。只有核验到余额低于门槛才触发额度退避。门禁不使用历史成功值或本地消费估算。已开始的推理继续原流，不重放工具。供应商的 DeepSeek fallback 接收拒绝后的请求，启用了任务固定策略的 invocation 记录实际备用模型并继续使用它。
+可选层 `docker-compose.magpie-balance.yml` 在 Magpie 与 OpenAI 之间运行内部 `openai-balance-guard`，不发布宿主端口。设置 `OPENAI_BALANCE_TASK_CALLER_SHA256` 启用任务模式。可能使用该 OpenAI 供应商的 Agent 在启动执行器前查询一次同一组织的真实余额，预算为 **2 秒**。任务内的模型请求、工具续接、执行器重试和模型切换复用本次决定。收到 429 和有效的 `Retry-After` 后，同一账单凭据在等待期内暂停查询。
+
+核验低于 **15 USD** 时门禁返回 402，恰好 15 USD 允许请求；无有效准入决定时返回 503。Magpie 使用既有 DeepSeek fallback，Raven 固定实际备用模型并继续执行。只有本次任务的有效决定可以放行。未配置任务模式的部署继续采用逐请求校验。
 
 余额来源是登录后账单页实际使用的 `https://api.openai.com/v1/dashboard/billing/credit_grants` 的 `total_available`，已与页面余额核对。`wallet.balance` 不含所有赠送额度，不能代替它；公开 Costs API 给的是消费金额，也不是余额。这个 dashboard 接口不是稳定的公开 API，登录凭据失效或接口变化时会暂停 OpenAI，直到重新接入有效来源。这是严格模式的预期行为。
 
 私有 JSON 文件含 `authorization`（账单来源的 Bearer 凭据）、`organization`（匹配 API key 的组织）和 `api_key_sha256`（该推理 key 的完整 SHA-256 摘要）。文件权限 0600，父目录 0700，放在仓库之外；不要输出、提交或粘贴到聊天。账单凭据只发送到固定账单端点，推理 key 只发送到固定 OpenAI API 源站，二者都不跟随重定向。新增或轮换推理 key 时必须同步指纹及组织校验，不能只更改 Magpie key。
 
 设置 `RAVEN_BALANCE_GUARD_IMAGE` 为包含 `app/services/openai_balance_guard.py` 的后端镜像，`OPENAI_BALANCE_SOURCE_FILE` 为私有 JSON 的绝对路径。在**现有部署的完整 Compose 参数后**追加本层，只启动 `openai-balance-guard`；保留已有部署的镜像及覆盖层。服务使用移除全部 capabilities、只读文件系统的 root 身份读取 0600 secret。`/health` 只表示进程健康，并给出最后余额检查时间与决策；它不表示余额仍可用。
+
+启用任务模式时，将 `OPENAI_BALANCE_TASK_CALLER_SHA256` 设为 Raven 在 Magpie 中使用的 caller key 的完整 SHA-256 摘要。部署包含任务准入的 guard、backend、worker、worker-bugfix 镜像，并在 **Raven · OpenAI 官方** 供应商的请求头透传列表加入 `X-Raven-OpenAI-Admission-Token`。只给该内部转发供应商添加此请求头。变更 caller key 时同步更新摘要。上线后用 `/health` 的 `balance_lookups` 和 `forwarded` 验证多轮任务只增加一次账单请求。
 
 确认服务健康后，先在 Magpie 自己的私有数据卷备份 `providers.json`，再执行：
 
@@ -99,11 +103,11 @@ magpie provider set raven-openai \
   'balance.path=$balance' additional-tools=on
 ```
 
-这里保留原有模型、key、压缩策略及其他供应商设置；`additional-tools=on` 显式保留 OpenAI 原域名下默认支持的动态工具。确认该供应商没有仍直连 OpenAI 的其他协议入口。`/balance` 也需要匹配的推理 key，低余额时仍返回真实金额供管理页显示，推理是否放行由独立的逐请求检查决定。不要把管理页余额缓存当作门禁依据。
+这里保留原有模型、key、压缩策略及其他供应商设置；`additional-tools=on` 显式保留 OpenAI 原域名下默认支持的动态工具。确认该供应商没有仍直连 OpenAI 的其他协议入口。`/balance` 也需要匹配的推理 key。任务模式下它返回最近一次成功核验的真实金额和时间，管理页刷新与「Check balance」共用这份读数。保护服务重启后由下一次成功核验填充读数。
 
 刷新凭据后，原地写入文件会在下次请求生效；如果用原子替换更新文件，需要仅重建此服务，使 Compose secret 的文件挂载指向新文件。Magpie 的配额休息可能延迟恢复；已经转到备用模型的任务保持原选择。回滚需恢复私有备份中的供应商入口及 fallback；这样也会撤销余额保护，不能以恢复调用为由自动绕过门槛。
 
-此规则按上游最新报告余额决定是否接收新请求，不为在途请求预留费用。并发消费、其他客户端消费或账单更新延迟仍可能让最终余额低于 15 USD。每次余额检查也会增加一次网络往返。
+此规则按任务开始时核验到的余额决定是否准入。任务执行中产生的消费、其他客户端消费或账单更新延迟仍可能让最终余额低于 15 USD。
 
 ### 六类 Agent 交叉用例
 
