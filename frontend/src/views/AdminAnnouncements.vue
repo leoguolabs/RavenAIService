@@ -7,6 +7,7 @@ import {
   CircleStop,
   Clock3,
   Eye,
+  Image as ImageIcon,
   LogOut,
   Megaphone,
   Menu,
@@ -15,12 +16,15 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
+  Sparkles,
+  Type,
 } from 'lucide-vue-next'
 import { adminApi, adminToken } from '@/api/admin'
+import SystemAnnouncementDialog from '@/components/SystemAnnouncementDialog.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { useAdminScope } from '@/composables/useAdminScope'
 import { useAppStore } from '@/stores/app'
-import type { SystemAnnouncement } from '@/types'
+import type { AnnouncementDraft, SystemAnnouncement } from '@/types'
 import { resolveAdminNavKey, type AdminNavItem } from '@/utils/adminNav'
 import { renderAnnouncementMarkdown } from '@/utils/markdownRenderer'
 
@@ -35,11 +39,22 @@ const isLoggingIn = ref(false)
 const loading = ref(false)
 const publishing = ref(false)
 const deactivating = ref(false)
+const readingCover = ref(false)
 const current = ref<SystemAnnouncement | null>(null)
 const editorMode = ref<'write' | 'preview'>('write')
+const previewOpen = ref(false)
+const coverTypes = ['image/png', 'image/jpeg', 'image/webp']
+const maxCoverBytes = 2 * 1024 * 1024
 
 const authForm = reactive({ username: '', password: '' })
-const form = reactive({ title: '', content: '' })
+const form = reactive<Required<AnnouncementDraft>>({
+  title: '',
+  content: '',
+  layout: 'text',
+  cover_image: null,
+  cover_alt: '',
+  fireworks: false,
+})
 
 const navVisible = computed(() => appStore.adminSidebarVisible)
 const activeNavKey = computed(() => resolveAdminNavKey(route.path))
@@ -56,13 +71,59 @@ const canPublish = computed(() => (
   && form.content.trim().length > 0
   && form.title.trim().length <= 120
   && contentLength.value <= 4000
-  && !publishing.value
+  && (form.layout === 'text' || !!form.cover_image)
+  && !busy.value
 ))
+const busy = computed(() => loading.value || publishing.value || deactivating.value || readingCover.value)
 
 const parseErrorMessage = (error: any): string => {
   const detail = error?.response?.data?.detail || error?.response?.data?.message
   if (typeof detail === 'string') return detail
   return error?.message || t('admin.parseError')
+}
+
+const loadDraft = (announcement: SystemAnnouncement) => {
+  form.title = announcement.title
+  form.content = announcement.content
+  form.layout = announcement.layout ?? 'text'
+  form.cover_image = announcement.cover_image ?? null
+  form.cover_alt = announcement.cover_alt ?? ''
+  form.fireworks = announcement.fireworks ?? false
+}
+
+const selectCover = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || busy.value) return
+
+  readingCover.value = true
+  try {
+    if (!coverTypes.includes(file.type)) throw new Error(t('admin.announcements.coverInvalid'))
+    if (file.size > maxCoverBytes) throw new Error(t('admin.announcements.coverTooLarge'))
+    const source = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(new Error(t('admin.announcements.coverInvalid')))
+      reader.readAsDataURL(file)
+    })
+    const image = new Image()
+    image.src = source
+    try {
+      await image.decode()
+    } catch {
+      throw new Error(t('admin.announcements.coverInvalid'))
+    }
+    form.cover_image = source
+  } catch (error) {
+    appStore.showNotification({
+      title: t('admin.announcements.coverFailed'),
+      message: parseErrorMessage(error),
+      type: 'error',
+    })
+  } finally {
+    readingCover.value = false
+  }
 }
 
 const formatPublishedAt = (value?: string) => {
@@ -99,10 +160,7 @@ const loadAnnouncement = async () => {
     const resp = await adminApi.getCurrentAnnouncement()
     if (!resp?.success) throw new Error(resp?.message || t('admin.announcements.loadFailed'))
     current.value = resp.data ?? null
-    if (current.value) {
-      form.title = current.value.title
-      form.content = current.value.content
-    }
+    if (current.value) loadDraft(current.value)
   } catch (error: any) {
     appStore.showNotification({
       title: t('admin.announcements.loadFailed'),
@@ -164,13 +222,18 @@ const publishAnnouncement = async () => {
     const resp = await adminApi.publishAnnouncement({
       title: form.title.trim(),
       content: form.content.trim(),
+      layout: form.layout,
+      ...(form.layout === 'cover' && {
+        cover_image: form.cover_image,
+        cover_alt: form.cover_alt.trim(),
+        fireworks: form.fireworks,
+      }),
     })
     if (!resp?.success || !resp.data) {
       throw new Error(resp?.message || t('admin.announcements.publishFailed'))
     }
     current.value = resp.data
-    form.title = resp.data.title
-    form.content = resp.data.content
+    loadDraft(resp.data)
     appStore.showNotification({
       title: t('admin.announcements.publishSuccess'),
       type: 'success',
@@ -332,7 +395,7 @@ onMounted(() => bootstrap())
               <p>{{ t('admin.announcements.pageDesc') }}</p>
             </div>
           </div>
-          <button class="refresh-btn" :disabled="loading" @click="loadAnnouncement">
+          <button class="refresh-btn" :disabled="busy" @click="loadAnnouncement">
             <RefreshCw :size="15" :class="{ spin: loading }" />
             {{ t('common.refresh') }}
           </button>
@@ -349,6 +412,63 @@ onMounted(() => bootstrap())
             </div>
 
             <form class="editor-form" @submit.prevent="publishAnnouncement">
+              <fieldset class="layout-field" :disabled="busy">
+                <legend>{{ t('admin.announcements.layoutLabel') }}</legend>
+                <div class="layout-options">
+                  <label class="layout-option">
+                    <input v-model="form.layout" type="radio" name="announcement-layout" value="text" />
+                    <Type :size="17" aria-hidden="true" />
+                    <span>{{ t('admin.announcements.layoutText') }}</span>
+                  </label>
+                  <label class="layout-option">
+                    <input v-model="form.layout" type="radio" name="announcement-layout" value="cover" />
+                    <ImageIcon :size="17" aria-hidden="true" />
+                    <span>{{ t('admin.announcements.layoutCover') }}</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <div v-if="form.layout === 'cover'" class="cover-fields">
+                <img
+                  v-if="form.cover_image"
+                  :src="form.cover_image"
+                  :alt="form.cover_alt"
+                  class="cover-thumbnail"
+                />
+                <label class="cover-file-label">
+                  <span>{{ t('admin.announcements.coverLabel') }}</span>
+                  <input
+                    class="cover-file"
+                    type="file"
+                    :accept="coverTypes.join(',')"
+                    :disabled="busy"
+                    aria-describedby="announcement-cover-hint"
+                    @change="selectCover"
+                  />
+                </label>
+                <p id="announcement-cover-hint" class="cover-hint">
+                  {{ t('admin.announcements.coverHint') }}
+                </p>
+                <button
+                  v-if="form.cover_image"
+                  class="cover-remove"
+                  type="button"
+                  :disabled="busy"
+                  @click="form.cover_image = null"
+                >
+                  {{ t('admin.announcements.coverRemove') }}
+                </button>
+                <label>
+                  <span>{{ t('admin.announcements.coverAlt') }}</span>
+                  <input v-model="form.cover_alt" class="admin-input" type="text" maxlength="240" />
+                </label>
+                <label class="fireworks-field">
+                  <input v-model="form.fireworks" type="checkbox" />
+                  <Sparkles :size="15" aria-hidden="true" />
+                  <span>{{ t('admin.announcements.fireworks') }}</span>
+                </label>
+              </div>
+
               <label>
                 <span>{{ t('admin.announcements.titleLabel') }}</span>
                 <input
@@ -441,10 +561,21 @@ onMounted(() => bootstrap())
                 <span>{{ t('admin.announcements.replaceHint') }}</span>
               </div>
 
-              <button type="submit" class="publish-btn" :disabled="!canPublish">
-                <Send :size="16" />
-                {{ publishing ? t('admin.announcements.publishing') : t('admin.announcements.publish') }}
-              </button>
+              <div class="editor-actions">
+                <button
+                  type="button"
+                  class="preview-dialog-btn"
+                  :disabled="!canPublish"
+                  @click="previewOpen = true"
+                >
+                  <Eye :size="16" />
+                  {{ t('admin.announcements.previewDialog') }}
+                </button>
+                <button type="submit" class="publish-btn" :disabled="!canPublish">
+                  <Send :size="16" />
+                  {{ publishing ? t('admin.announcements.publishing') : t('admin.announcements.publish') }}
+                </button>
+              </div>
             </form>
           </article>
 
@@ -469,6 +600,12 @@ onMounted(() => bootstrap())
             </div>
             <div v-else class="current-card" :class="{ inactive: !current.active }">
               <div class="current-card-stripe"></div>
+              <img
+                v-if="current.layout === 'cover' && current.cover_image"
+                :src="current.cover_image"
+                :alt="current.cover_alt ?? ''"
+                class="current-cover"
+              />
               <h4>{{ current.title }}</h4>
               <div class="current-content" v-html="currentContentHtml"></div>
               <div class="current-meta">
@@ -478,7 +615,7 @@ onMounted(() => bootstrap())
               <button
                 v-if="current.active"
                 class="deactivate-btn"
-                :disabled="deactivating"
+                :disabled="busy"
                 @click="deactivateAnnouncement"
               >
                 <CircleStop :size="15" />
@@ -494,6 +631,7 @@ onMounted(() => bootstrap())
         </div>
       </section>
     </main>
+    <SystemAnnouncementDialog v-if="previewOpen" :preview="form" @close-preview="previewOpen = false" />
   </div>
 </template>
 
@@ -543,6 +681,76 @@ onMounted(() => bootstrap())
 .panel-heading h3 { margin: 0; color: var(--admin-ink); font-size: .98rem; font-weight: 750; }
 .editor-form { display: grid; gap: 1rem; padding: 1.15rem; }
 .editor-form label > span { color: var(--admin-body); font-size: .78rem; font-weight: 700; }
+.layout-field { min-width: 0; margin: 0; padding: 0; border: 0; }
+.layout-field legend { margin-bottom: .45rem; color: var(--admin-body); font-size: .78rem; font-weight: 700; }
+.layout-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.layout-option {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .65rem .55rem;
+  color: var(--admin-body);
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-hairline-strong);
+  border-radius: .65rem;
+  cursor: pointer;
+}
+.layout-option:has(:checked) {
+  color: var(--admin-accent-soft-ink);
+  background: var(--admin-accent-soft-bg);
+  border-color: var(--admin-accent-soft-border);
+}
+.layout-option svg, .layout-option input { flex: none; }
+.layout-option input, .fireworks-field input { accent-color: #0891b2; }
+.cover-fields {
+  display: grid;
+  min-width: 0;
+  gap: .6rem;
+  padding: .8rem;
+  background: var(--admin-canvas-soft);
+  border: 1px solid var(--admin-hairline);
+  border-radius: .7rem;
+}
+.cover-thumbnail, .current-cover {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  aspect-ratio: 2 / 1;
+  object-fit: contain;
+  background: #080e19;
+  border-radius: .5rem;
+}
+.current-cover { margin-bottom: .85rem; }
+.cover-file-label { display: grid; gap: .4rem; min-width: 0; }
+.cover-file { width: 100%; color: var(--admin-body); font-size: .76rem; }
+.cover-file::file-selector-button {
+  margin-right: .5rem;
+  padding: .35rem .55rem;
+  color: var(--admin-ink);
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-hairline-strong);
+  border-radius: .4rem;
+  cursor: pointer;
+}
+.cover-hint { margin: 0; color: var(--admin-muted); font-size: .72rem; line-height: 1.45; }
+.cover-remove { justify-self: start; color: var(--admin-body); font-size: .73rem; text-decoration: underline; }
+.fireworks-field { display: flex; align-items: center; gap: .45rem; color: var(--admin-accent-soft-ink); }
+.editor-actions { display: flex; flex-wrap: wrap; gap: .55rem; }
+.editor-actions .publish-btn { flex: 1 1 auto; width: auto; }
+.preview-dialog-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding: .6rem .8rem;
+  color: var(--admin-body);
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-hairline-strong);
+  border-radius: .65rem;
+  font-size: .8rem;
+  font-weight: 700;
+}
+.preview-dialog-btn:disabled { opacity: .55; cursor: not-allowed; }
 .editor-form small { display: block; margin-top: .35rem; color: var(--admin-muted); text-align: right; font-size: .68rem; }
 .editor-form small.limit { color: #e11d48; }
 .content-field { display: grid; gap: .45rem; }

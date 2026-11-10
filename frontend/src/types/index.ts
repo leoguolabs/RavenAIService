@@ -589,10 +589,17 @@ export interface UserAuthPayload {
   user: UserProfile
 }
 
-export interface SystemAnnouncement {
-  id: string
+export interface AnnouncementDraft {
   title: string
   content: string
+  layout?: 'text' | 'cover'
+  cover_image?: string | null
+  cover_alt?: string
+  fireworks?: boolean
+}
+
+export interface SystemAnnouncement extends AnnouncementDraft {
+  id: string
   published_at: string
   published_by: string
   active: boolean

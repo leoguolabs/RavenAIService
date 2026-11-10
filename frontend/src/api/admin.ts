@@ -5,6 +5,7 @@ import type {
   AdminAuthData,
   AdminConversationDetail,
   AdminIdentity,
+  AnnouncementDraft,
   AgentSkill,
   AgentSkillAgentInfo,
   ApiResponse,
@@ -269,10 +270,7 @@ export const adminApi = {
   getCurrentAnnouncement: (): Promise<ApiResponse<SystemAnnouncement | null>> =>
     adminClient.get('/admin/announcements/current'),
 
-  publishAnnouncement: (payload: {
-    title: string
-    content: string
-  }): Promise<ApiResponse<SystemAnnouncement>> =>
+  publishAnnouncement: (payload: AnnouncementDraft): Promise<ApiResponse<SystemAnnouncement>> =>
     adminClient.put('/admin/announcements/current', payload),
 
   deactivateAnnouncement: (): Promise<ApiResponse<SystemAnnouncement>> =>

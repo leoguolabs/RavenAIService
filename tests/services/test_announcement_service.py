@@ -67,3 +67,25 @@ def test_invalid_runtime_value_is_treated_as_no_announcement(
     runtime_settings_service._CACHE = None
 
     assert announcement_service.get_current() is None
+
+
+def test_legacy_announcement_defaults_to_classic_text(isolated_runtime_settings) -> None:
+    original = {
+        "id": "legacy-id",
+        "title": "Maintenance",
+        "content": "Tonight",
+        "published_at": "2026-07-14T00:00:00Z",
+        "published_by": "admin",
+        "active": True,
+    }
+    isolated_runtime_settings.write_text(
+        json.dumps({"system_announcement": original}), encoding="utf-8"
+    )
+
+    current = announcement_service.get_current()
+
+    assert current is not None
+    assert current.id == "legacy-id"
+    assert current.layout == "text"
+    assert current.cover_image is None
+    assert current.fireworks is False

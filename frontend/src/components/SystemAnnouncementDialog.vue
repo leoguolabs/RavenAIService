@@ -1,19 +1,52 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Megaphone, X } from 'lucide-vue-next'
+import { ImageOff, Megaphone, X } from 'lucide-vue-next'
 import { useAnnouncementStore } from '@/stores/announcement'
 import { useAppStore } from '@/stores/app'
+import type { AnnouncementDraft } from '@/types'
 import { renderAnnouncementMarkdown } from '@/utils/markdownRenderer'
+
+const props = defineProps<{ preview?: AnnouncementDraft }>()
+const emit = defineEmits<{ closePreview: [] }>()
 
 const { t } = useI18n()
 const appStore = useAppStore()
 const announcementStore = useAnnouncementStore()
 
-const announcement = computed(() => announcementStore.pending)
+const published = computed(() => props.preview ? null : announcementStore.pending)
+const announcement = computed(() => props.preview ?? published.value)
+const isCover = computed(() => announcement.value?.layout === 'cover' && !!announcement.value.cover_image)
+const dismissing = computed(() => !props.preview && announcementStore.dismissing)
 const announcementHtml = computed(() => (
   announcement.value ? renderAnnouncementMarkdown(announcement.value.content) : ''
 ))
+const dialog = ref<HTMLElement | null>(null)
+const coverFailed = ref(false)
+const fireworksDone = ref(false)
+let previousFocus: HTMLElement | null = null
+
+const restoreFocus = () => {
+  if (previousFocus?.isConnected) previousFocus.focus()
+  previousFocus = null
+}
+
+watch(dialog, (element) => {
+  if (!element) {
+    restoreFocus()
+    return
+  }
+  if (document.activeElement instanceof HTMLElement && !element.contains(document.activeElement)) {
+    previousFocus = document.activeElement
+  }
+  element.focus()
+}, { flush: 'post' })
+onBeforeUnmount(restoreFocus)
+
+watch([() => published.value?.id, () => announcement.value?.cover_image], () => {
+  coverFailed.value = false
+  fireworksDone.value = false
+})
 
 const formatPublishedAt = (value: string) => {
   const date = new Date(value)
@@ -28,6 +61,11 @@ const formatPublishedAt = (value: string) => {
 }
 
 const closeAnnouncement = async () => {
+  if (props.preview) {
+    emit('closePreview')
+    return
+  }
+  if (dismissing.value) return
   try {
     const dismissed = await announcementStore.dismiss()
     if (!dismissed) throw new Error(t('workbench.announcement.dismissFailed'))
@@ -40,30 +78,76 @@ const closeAnnouncement = async () => {
     })
   }
 }
+
+const handleDialogKeys = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    void closeAnnouncement()
+  }
+  if (event.key !== 'Tab' || !dialog.value) return
+  const focusable = dialog.value.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), [tabindex="0"]')
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.value)) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
 </script>
 
 <template>
   <div v-if="announcement" class="announcement-backdrop">
     <section
+      ref="dialog"
       class="announcement-dialog"
+      :class="{ 'announcement-dialog--cover': isCover }"
       role="dialog"
       aria-modal="true"
       aria-labelledby="system-announcement-title"
       aria-describedby="system-announcement-content"
+      tabindex="-1"
+      @keydown="handleDialogKeys"
     >
-      <div class="announcement-accent" aria-hidden="true"></div>
+      <div v-if="isCover" class="announcement-cover">
+        <img
+          v-if="!coverFailed"
+          :src="announcement.cover_image ?? undefined"
+          :alt="announcement.cover_alt ?? ''"
+          @error="coverFailed = true"
+        />
+        <div v-else class="announcement-cover-fallback">
+          <ImageOff :size="25" aria-hidden="true" />
+          <span>{{ announcement.cover_alt || t('workbench.announcement.coverUnavailable') }}</span>
+        </div>
+        <div
+          v-if="announcement.fireworks && !fireworksDone"
+          :key="published?.id ?? 'preview'"
+          class="announcement-fireworks"
+          aria-hidden="true"
+          @animationend.self="fireworksDone = true"
+        >
+          <div v-for="burst in 3" :key="burst" class="announcement-burst">
+            <i v-for="spark in 16" :key="spark" :style="{ '--angle': `${spark * 22.5}deg` }"></i>
+          </div>
+        </div>
+      </div>
+      <div v-else class="announcement-accent" aria-hidden="true"></div>
       <header class="announcement-header">
-        <div class="announcement-icon" aria-hidden="true">
+        <div v-if="!isCover" class="announcement-icon" aria-hidden="true">
           <Megaphone :size="23" :stroke-width="1.8" />
         </div>
         <div class="announcement-heading">
-          <span class="announcement-kicker">{{ t('workbench.announcement.kicker') }}</span>
+          <span v-if="!isCover" class="announcement-kicker">{{ t('workbench.announcement.kicker') }}</span>
           <h2 id="system-announcement-title">{{ announcement.title }}</h2>
         </div>
         <button
           type="button"
           class="announcement-close"
-          :disabled="announcementStore.dismissing"
+          :disabled="dismissing"
           :aria-label="t('workbench.announcement.acknowledge')"
           @click="closeAnnouncement"
         >
@@ -74,22 +158,23 @@ const closeAnnouncement = async () => {
       <div
         id="system-announcement-content"
         class="announcement-content"
+        tabindex="0"
         v-html="announcementHtml"
       ></div>
 
       <footer class="announcement-footer">
-        <div class="announcement-meta">
-          <span>{{ t('workbench.announcement.publishedBy', { name: announcement.published_by }) }}</span>
+        <div v-if="published" class="announcement-meta">
+          <span>{{ t('workbench.announcement.publishedBy', { name: published.published_by }) }}</span>
           <span aria-hidden="true">·</span>
-          <time :datetime="announcement.published_at">{{ formatPublishedAt(announcement.published_at) }}</time>
+          <time :datetime="published.published_at">{{ formatPublishedAt(published.published_at) }}</time>
         </div>
         <button
           type="button"
           class="announcement-ack"
-          :disabled="announcementStore.dismissing"
+          :disabled="dismissing"
           @click="closeAnnouncement"
         >
-          {{ announcementStore.dismissing
+          {{ dismissing
             ? t('workbench.announcement.acknowledging')
             : t('workbench.announcement.acknowledge') }}
         </button>
@@ -115,7 +200,10 @@ const closeAnnouncement = async () => {
 .announcement-dialog {
   position: relative;
   width: min(100%, 610px);
-  overflow: hidden;
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  outline: none;
   color: #dce7f4;
   background: #101a2b;
   border: 1px solid rgba(148, 163, 184, 0.24);
@@ -290,10 +378,10 @@ const closeAnnouncement = async () => {
   }
 }
 
-:global(html.dark) .announcement-backdrop,
-:global(html[data-theme='dark']) .announcement-backdrop,
-:global(body.dark) .announcement-backdrop,
-:global(body[data-theme='dark']) .announcement-backdrop {
+:global(html.dark .announcement-backdrop),
+:global(html[data-theme='dark'] .announcement-backdrop),
+:global(body.dark .announcement-backdrop),
+:global(body[data-theme='dark'] .announcement-backdrop) {
   --ann-overlay: rgba(2, 6, 23, 0.76);
   --ann-glow: rgba(34, 211, 238, 0.13);
   --ann-surface: #101827;
@@ -315,10 +403,10 @@ const closeAnnouncement = async () => {
   color-scheme: dark;
 }
 
-:global(html.light) .announcement-backdrop,
-:global(html[data-theme='light']) .announcement-backdrop,
-:global(body.light) .announcement-backdrop,
-:global(body[data-theme='light']) .announcement-backdrop {
+:global(html.light .announcement-backdrop),
+:global(html[data-theme='light'] .announcement-backdrop),
+:global(body.light .announcement-backdrop),
+:global(body[data-theme='light'] .announcement-backdrop) {
   --ann-overlay: rgba(15, 23, 42, 0.38);
   --ann-glow: rgba(8, 145, 178, 0.14);
   --ann-surface: #ffffff;
@@ -395,10 +483,144 @@ const closeAnnouncement = async () => {
 .announcement-content :deep(.announcement-markdown hr) { margin: 1rem 0; border: 0; border-top: 1px solid var(--ann-border); }
 .announcement-content :deep(.announcement-markdown img) { display: block; max-width: 100%; height: auto; margin: .85rem 0; border: 1px solid var(--ann-border); border-radius: .58rem; }
 
+.announcement-dialog--cover {
+  width: min(100%, 720px);
+  border-radius: clamp(20px, 4vw, 32px);
+}
+.announcement-cover {
+  position: relative;
+  display: grid;
+  width: 100%;
+  place-items: center;
+  aspect-ratio: 2 / 1;
+  max-height: min(44dvh, 360px);
+  overflow: hidden;
+  background:
+    radial-gradient(1px 1px at 22px 28px, #c5e0ff 85%, transparent) 0 0 / 91px 97px,
+    radial-gradient(1px 1px at 56px 11px, #7c92af 80%, transparent) 0 0 / 139px 69px,
+    radial-gradient(ellipse at 50% 100%, #14263c, #060b14 78%);
+}
+.announcement-cover img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.announcement-cover-fallback {
+  display: grid;
+  justify-items: center;
+  gap: .5rem;
+  max-width: 85%;
+  color: #dbeafe;
+  font-size: .83rem;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.announcement-dialog--cover .announcement-header {
+  display: block;
+  padding: clamp(1.35rem, 4vw, 2.15rem) 1.35rem .65rem;
+  text-align: center;
+}
+.announcement-dialog--cover .announcement-heading h2 {
+  font-size: clamp(1.35rem, 4.5vw, 2rem);
+  letter-spacing: -.025em;
+}
+.announcement-dialog--cover .announcement-close {
+  position: absolute;
+  top: clamp(.65rem, 2vw, 1rem);
+  right: clamp(.65rem, 2vw, 1rem);
+  width: 42px;
+  height: 42px;
+  color: #fff;
+  background: rgba(7, 13, 22, .76);
+  border-color: rgba(255, 255, 255, .35);
+  border-radius: 50%;
+}
+.announcement-dialog--cover .announcement-close:hover:not(:disabled) {
+  color: #fff;
+  background: #0f172a;
+  border-color: rgba(255, 255, 255, .6);
+}
+.announcement-dialog--cover .announcement-content {
+  max-height: min(31dvh, 300px);
+  margin: 0 clamp(.9rem, 4vw, 2.2rem);
+  padding: .2rem .45rem .45rem;
+  background: transparent;
+  border: 0;
+  text-align: center;
+}
+.announcement-dialog--cover .announcement-content :deep(:is(ol, ul, pre, blockquote, .table-wrapper)) {
+  text-align: start;
+}
+.announcement-dialog--cover .announcement-footer {
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: .85rem;
+  padding: .9rem 1rem clamp(1.15rem, 4vw, 1.8rem);
+}
+.announcement-dialog--cover .announcement-ack {
+  width: auto;
+  min-width: 124px;
+  padding: .7rem 1.4rem;
+  border-radius: 999px;
+  box-shadow: none;
+}
+.announcement-dialog--cover .announcement-meta { justify-content: center; }
+.announcement-dialog:not(.announcement-dialog--cover) .announcement-ack:only-child { margin-inline-start: auto; }
+.announcement-close:focus-visible,
+.announcement-ack:focus-visible,
+.announcement-content:focus-visible { outline: 2px solid var(--ann-accent); outline-offset: 2px; }
+
+.announcement-fireworks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: fireworks-lifetime 2s linear both;
+}
+.announcement-burst {
+  --delay: .08s;
+  --reach: clamp(34px, 11vw, 92px);
+  position: absolute;
+  left: 23%;
+  top: 38%;
+  color: #ffc26e;
+}
+.announcement-burst:nth-child(2) {
+  --delay: .35s;
+  left: 77%;
+  top: 34%;
+  color: #83e5ff;
+}
+.announcement-burst:nth-child(3) {
+  --delay: .7s;
+  --reach: clamp(26px, 8vw, 65px);
+  left: 59%;
+  top: 66%;
+  color: #fca9df;
+}
+.announcement-burst i {
+  position: absolute;
+  width: 8px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 50%;
+  box-shadow: 0 0 5px currentColor;
+  animation: announcement-spark 1.15s cubic-bezier(.13, .62, .27, 1) var(--delay) both;
+}
+.announcement-burst i:nth-child(2n) { --distance: calc(var(--reach) * .7); width: 4px; }
+@keyframes announcement-spark {
+  0% { opacity: 0; transform: rotate(var(--angle)) translateX(0) scale(.4); }
+  18% { opacity: .94; }
+  100% { opacity: 0; transform: rotate(var(--angle)) translateX(var(--distance, var(--reach))) scale(.2); }
+}
+@keyframes fireworks-lifetime { to { visibility: hidden; } }
+
 @keyframes announcement-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes announcement-rise { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
 @media (prefers-reduced-motion: reduce) {
+  .announcement-fireworks { display: none; }
   .announcement-backdrop, .announcement-dialog { animation: none; }
   .announcement-close, .announcement-ack { transition: none; }
 }

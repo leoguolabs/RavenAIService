@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 
 import pytest
 from fastapi import FastAPI
@@ -9,10 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.api import announcements as announcements_api
 from app.config import settings
+from app.models.announcement import MAX_COVER_BYTES
 from app.models.database import Base, get_db
 from app.models.user import User
 from app.security.user_auth import user_auth_manager
 from app.services import runtime_settings_service
+
+
+PNG_COVER = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
+)
 
 
 @pytest.fixture
@@ -182,3 +190,74 @@ def test_deactivation_hides_announcement_and_user_endpoints_require_auth(
     )
     assert pending.json()["data"] is None
     assert client.get("/api/v1/announcements/pending").status_code == 401
+
+
+def test_cover_round_trip_and_switch_back_to_text(client: TestClient) -> None:
+    cover = {
+        "title": "Release",
+        "content": "**Available now**",
+        "layout": "cover",
+        "cover_image": PNG_COVER,
+        "cover_alt": " Release artwork ",
+        "fireworks": True,
+    }
+    admin = _headers(client, "admin")
+    user = _headers(client, "alice")
+    response = client.put("/admin/announcements/current", json=cover, headers=admin)
+    assert response.status_code == 200, response.text
+    published = response.json()["data"]
+    assert published["cover_alt"] == "Release artwork"
+    assert published["cover_image"] == PNG_COVER
+    assert published["fireworks"] is True
+
+    runtime_settings_service._CACHE = None
+    assert client.get("/admin/announcements/current", headers=admin).json()["data"] == published
+    assert client.get("/api/v1/announcements/pending", headers=user).json()["data"] == published
+    assert client.post(f"/api/v1/announcements/{published['id']}/dismiss", headers=user).status_code == 200
+    assert client.get("/api/v1/announcements/pending", headers=user).json()["data"] is None
+
+    response = client.put("/admin/announcements/current", json={**cover, "layout": "text"}, headers=admin)
+    assert response.status_code == 200, response.text
+    classic = client.get("/api/v1/announcements/pending", headers=user).json()["data"]
+    assert classic["id"] != published["id"]
+    assert classic["layout"] == "text"
+    assert classic["cover_image"] is None
+    assert classic["cover_alt"] == ""
+    assert classic["fireworks"] is False
+
+
+@pytest.mark.parametrize(
+    "cover_image",
+    [
+        None,
+        "https://example.invalid/cover.png",
+        "data:image/png;base64,!!!",
+        PNG_COVER.replace("image/png", "image/jpeg"),
+    ],
+)
+def test_invalid_cover_keeps_current_announcement(client: TestClient, cover_image: str | None) -> None:
+    original = _publish(client)
+    headers = _headers(client, "admin")
+    response = client.put(
+        "/admin/announcements/current",
+        json={"title": "Release", "content": "Body", "layout": "cover", "cover_image": cover_image},
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert client.get("/admin/announcements/current", headers=headers).json()["data"] == original
+
+
+def test_rejects_cover_over_decoded_size_limit(client: TestClient) -> None:
+    oversized = base64.b64encode(b"x" * (MAX_COVER_BYTES + 1)).decode("ascii")
+    response = client.put(
+        "/admin/announcements/current",
+        json={
+            "title": "Release",
+            "content": "Body",
+            "layout": "cover",
+            "cover_image": f"data:image/png;base64,{oversized}",
+        },
+        headers=_headers(client, "admin"),
+    )
+    assert response.status_code == 422
+    assert "2 MiB" in response.json()["detail"]

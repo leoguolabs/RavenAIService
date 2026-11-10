@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin import require_global_admin
@@ -11,6 +11,7 @@ from app.api.users import get_current_user
 from app.models.announcement import (
     AnnouncementDismissData,
     AnnouncementDismissResponse,
+    AnnouncementDraft,
     AnnouncementResponse,
 )
 from app.models.database import get_db
@@ -21,10 +22,7 @@ admin_router = APIRouter(prefix="/admin/announcements", tags=["Admin"])
 user_router = APIRouter(prefix="/api/v1/announcements", tags=["系统公告"])
 
 
-class PublishAnnouncementRequest(BaseModel):
-    title: str = Field(..., min_length=1, max_length=120)
-    content: str = Field(..., min_length=1, max_length=4000)
-
+class PublishAnnouncementRequest(AnnouncementDraft):
     @field_validator("title", "content", mode="before")
     @classmethod
     def strip_required_text(cls, value: object) -> object:
@@ -50,11 +48,10 @@ async def publish_announcement(
     payload: PublishAnnouncementRequest,
     username: str = Depends(require_global_admin),
 ) -> AnnouncementResponse:
-    announcement = announcement_service.publish(
-        title=payload.title,
-        content=payload.content,
-        published_by=username,
-    )
+    try:
+        announcement = announcement_service.publish(published_by=username, **payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return AnnouncementResponse(data=announcement, message="公告已发布")
 
 
