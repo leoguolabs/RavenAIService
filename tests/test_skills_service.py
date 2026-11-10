@@ -632,6 +632,17 @@ class TestProjectSkillStorage:
 
 class TestUnifiedMaterialization:
 
+    def test_packaging_skill_does_not_ship_the_legacy_catalog(self, isolated_skills_dir):
+        from app.services.full_package_service import DEFAULT_CATALOG_PATH, load_catalog
+        from app.services.skills_service import materialize_enabled_skills
+
+        workspace = isolated_skills_dir / "packaging-workspace"
+        assert materialize_enabled_skills("package_search", workspace) == ["full-package-build"]
+        skill_dir = workspace / ".claude" / "skills" / "full-package-build"
+        assert (skill_dir / "SKILL.md").is_file()
+        assert not list(skill_dir.rglob(DEFAULT_CATALOG_PATH.name))
+        assert load_catalog()["projects"]
+
     def test_builtin_agent_project_precedence_is_shared_with_overview(
         self,
         isolated_skills_dir,

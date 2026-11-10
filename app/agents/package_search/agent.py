@@ -487,12 +487,11 @@ class PackageSearchAgent:
         packaging_mode = _is_packaging_task(task_data)
         if packaging_mode:
             system_prompt += (
-                "\n\n## Agent 执行打包（替代旧 catalog 流程）\n"
+                "\n\n## Agent 执行打包\n"
                 "你必须亲自调查和执行本次打包：先读取 full-package-build Skill、task.json 和上传清单，"
                 "使用 Bash/Python、Read/Grep 查询归档和源码。通过 discover_projects 和 "
                 "clone_project_repo 获取已注册项目源码（凭据由工具管理）。"
                 "从升级器源码、si.ini、构建脚本等证据确定 PacketAttr、FileAttr、版本、目标名称和提取方式；"
-                "旧 package-projects.json 仅为历史线索，不是约束或唯一依据。"
                 "先按 Skill 核对组件覆盖范围并确定完整包或补丁包，再分别确定发布包版本和组件版本。"
                 "在当前工作区编写并运行脚本生成 TGZ 和 review-plan.json，"
                 "再调用 mcp__agent_package__PublishPackage 进行校验、用户确认和入库。"
@@ -535,6 +534,13 @@ class PackageSearchAgent:
                 query_text=skill_query,
                 project_code=ctx.project_code or None,
             )
+            if packaging_mode and "full-package-build" not in materialized_skills:
+                materialized_skills.extend(skills_service.materialize_enabled_skills(
+                    AGENT_KEY,
+                    ctx.temp_dir,
+                    skill_names=["full-package-build"],
+                    project_code=ctx.project_code or None,
+                ))
             if materialized_skills:
                 selected_names = set(materialized_skills)
                 skill_overviews = [

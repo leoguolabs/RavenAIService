@@ -47,15 +47,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_CATALOG_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "agents"
-    / "package_search"
-    / "builtin_skills"
-    / "full-package-build"
-    / "references"
-    / "package-projects.json"
-)
+DEFAULT_CATALOG_PATH = Path(__file__).with_name("resources") / "package-projects.json"
 DEFAULT_MAX_ARCHIVE_MEMBERS = 10_000
 DEFAULT_MAX_EXTRACT_BYTES = 2 * 1024 * 1024 * 1024
 MANIFEST_NAME = "package-manifest.json"

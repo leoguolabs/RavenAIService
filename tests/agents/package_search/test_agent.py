@@ -334,10 +334,12 @@ def test_trace_emitter_receives_events(stub_service, stub_options, tmp_path):
     assert seen[0]["type"] == "run_start"
 
 
+@pytest.mark.parametrize("selected_by_relevance", [True, False])
 def test_agent_materializes_skills_layers_prompts_and_reuses_trace_seq(
     stub_service,
     monkeypatch,
     tmp_path,
+    selected_by_relevance,
 ):
     from app.agents.log_analysis.trace import SeqCounter
     from app.services import skills_service
@@ -363,7 +365,8 @@ def test_agent_materializes_skills_layers_prompts_and_reuses_trace_seq(
     assert shared_counter.next() == 2
     ctx.metadata["trace_seq_counter"] = shared_counter
 
-    materialize = MagicMock(return_value=["full-package-build"])
+    materialize = MagicMock(return_value=["full-package-build"] if selected_by_relevance else [])
+    materialize_packaging = MagicMock(return_value=["full-package-build"])
     overviews = MagicMock(
         return_value=[
             {
@@ -376,6 +379,7 @@ def test_agent_materializes_skills_layers_prompts_and_reuses_trace_seq(
     monkeypatch.setattr(
         skills_service, "materialize_relevant_enabled_skills", materialize
     )
+    monkeypatch.setattr(skills_service, "materialize_enabled_skills", materialize_packaging)
     monkeypatch.setattr(skills_service, "enabled_skill_overviews", overviews)
 
     captured: dict[str, str] = {}
@@ -413,13 +417,19 @@ def test_agent_materializes_skills_layers_prompts_and_reuses_trace_seq(
     assert materialize.call_args.args == ("package_search", ctx.temp_dir)
     assert materialize.call_args.kwargs["project_code"] == PROJECT
     assert "请制作整包" in materialize.call_args.kwargs["query_text"]
+    if selected_by_relevance:
+        materialize_packaging.assert_not_called()
+    else:
+        materialize_packaging.assert_called_once_with(
+            "package_search", ctx.temp_dir, skill_names=["full-package-build"], project_code=PROJECT,
+        )
     overviews.assert_called_once_with("package_search", project_code=PROJECT)
     assert "可用的 Skill（按需加载）" in captured["system_prompt"]
     assert "可用的 Skill（按需加载）" in captured["user_prompt"]
     assert "`full-package-build`：分类并构建已确认的软件升级整包" in (
         captured["user_prompt"]
     )
-    assert "Agent 执行打包（替代旧 catalog 流程）" in captured["system_prompt"]
+    assert "Agent 执行打包" in captured["system_prompt"]
     assert "Bash/Python" in captured["system_prompt"]
     assert "未关联代码仓库" in captured["system_prompt"]
 

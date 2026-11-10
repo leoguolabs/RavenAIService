@@ -9,14 +9,15 @@ The Configuration Manager SHALL expose only project discovery and server-side cl
 
 ### Requirement: Agent owns package interpretation and execution
 The system SHALL invoke the configured Agent for packaging, enable workspace code tools, and let it determine types, IDs, versions and layout using uploaded data, project source and existing package evidence. Static business catalogs MUST NOT gate this workflow.
+The shared instructions and materialized Skill SHALL omit fixed project identities, component sets, business IDs and legacy catalogs. The publication tool SHALL continue validating the supported TGZ and `si.ini` format.
 
 #### Scenario: Timestamp component version
 - **WHEN** an input has version `1.2.30.12.202609170917`
 - **THEN** the Agent separates component and requested release versions using evidence without catalog rejection
 
 #### Scenario: Uploaded components cover only part of the release target
-- **WHEN** a Lingxi 07a base station packaging request supplies OAM, CUCP, CUUP and DU as a supported subset of a full release
-- **THEN** the Agent selects patch mode with PacketAttr 1002 before resolving the release version
+- **WHEN** the uploads supply a supported subset of the selected project's full release
+- **THEN** the Agent selects patch mode using the attribute defined for that target before resolving the release version
 - **AND** if Packet_Ver is still needed, it asks for the patch package version without proposing example values
 
 ### Requirement: Validate and confirm publication

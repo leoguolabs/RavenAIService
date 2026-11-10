@@ -11,16 +11,17 @@ the configured real Agent runtime and model.
 sessions require a project; uploads can start unbound. Each upload is streamed to
 an isolated workspace and recorded with upload ID, filename, size and SHA-256.
 
-The Agent reads `task.json`, the input manifest and the `full-package-build`
-Skill. Bash/Python, Read/Grep/Glob and Write/Edit are available. The workspace-bound
+Packaging runs always materialize the `full-package-build` Skill. The Agent reads
+it together with `task.json` and the input manifest. Bash/Python, Read/Grep/Glob
+and Write/Edit are available. The workspace-bound
 `project_repo` MCP discovers and clones enabled project repositories without
 putting Git credentials in prompts or task files. Project source, archive
 manifests and user instructions provide the business evidence for package type,
 PacketAttr, FileAttr, target name, component version and whole-release version.
 The Agent determines package type before asking for a release version. A full
 package requires evidence that the payload covers every component required for
-the release target. A supported subset uses the project's patch type, such as
-PacketAttr 1002 for the Lingxi 07a base station. The Agent cross-checks versions
+the release target. A supported subset uses the patch attribute defined for that
+target. The Agent cross-checks versions
 against source and current release archives, including companion version scripts
 when available. It asks only for the required values that remain unresolved.
 The Agent writes and executes its own build script, then produces a flat TGZ and
@@ -31,11 +32,12 @@ lookup tool. The clone tool removes HTTP/HTTPS userinfo from Git remotes before
 returning a new or reused checkout, so `git remote -v` and `.git/config` cannot
 reveal its clone token. Trace masking also covers HTTP and bare GitLab PATs.
 
-The old `package-projects.json` catalog is historical reference only. Chat runs
-never call the old classifier, catalog version validation or deterministic
-builder. New component IDs and valid timestamp-bearing versions require no
-catalog change. Standalone legacy builder APIs/tests remain for compatibility.
-There is no deterministic fallback if the Agent or its provider fails.
+The legacy builder's `package-projects.json` ships as a server resource for
+standalone compatibility. The shared Skill contains no project catalog.
+Chat packaging uses the evidence for the current project to determine component
+IDs and versions. The publishing tool currently accepts flat TGZ packages with
+a root `si.ini` manifest. A different wire format requires its own validation
+and publication support.
 
 ## Publication boundary
 
@@ -111,8 +113,9 @@ instructions to override the user's request.
 
 Run package Agent, artifact validation, publication/broker, chat history and
 frontend conversation-store regressions. For release acceptance, use actual
-LX07A, LX10AB and 三标段 inputs with the configured live model; inspect its source
-queries, review every component, download the TGZ and independently compare
+inputs from projects with different component sets and package attributes.
+Inspect the configured live model's source queries, review every component,
+download the TGZ and independently compare
 payloads/si.ini/hash. Test switching away and reopening while running and while
 waiting for confirmation, completed history in another page, and failed history.
 A healthy container or synthetic model fixture alone is not end-to-end proof.
