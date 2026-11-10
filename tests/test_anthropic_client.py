@@ -169,34 +169,6 @@ class TestBuildOptions:
         assert opts.env["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
         assert opts.env["ANTHROPIC_API_KEY"] == "sk-test"
 
-    def test_nonessential_flag_only_changes_per_run_sdk_environment(self, base_settings, monkeypatch):
-        import copy
-        import os
-        base_settings.anthropic_provider = "yinhe"
-        base_settings.anthropic_model = "yinhe-thinking"
-        base_settings.anthropic_small_fast_model = "yinhe-thinking"
-        base_settings.anthropic_max_turns = 150
-        base_settings.agent_sdk_disable_nonessential_traffic = False
-        monkeypatch.setenv("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "0")
-        original = self._build(base_settings)
-        base_settings.agent_sdk_disable_nonessential_traffic = True
-        candidate = self._build(base_settings)
-        before = copy.deepcopy(original.__dict__)
-        after = copy.deepcopy(candidate.__dict__)
-        assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" not in before["env"]
-        assert after["env"].pop("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC") == "1"
-        assert before == after
-        assert candidate.max_turns == 150 and candidate.model == "yinhe-thinking"
-        assert os.environ["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "0"
-
-    def test_nonessential_sdk_flag_does_not_change_openai_protocol(self, base_settings):
-        base_settings.anthropic_provider = "openai"
-        base_settings.anthropic_model = "gpt-6.1-terra"
-        base_settings.agent_sdk_disable_nonessential_traffic = True
-        opts = self._build(base_settings)
-        assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" not in opts.env
-        assert opts.env["RAVEN_API_PROTOCOL"] == "openai_responses"
-
     def test_openai_protocol_and_auxiliary_models_follow_main(self, base_settings):
         base_settings.anthropic_provider = "openai"
         base_settings.anthropic_model = "gpt-6.1-terra"
@@ -240,49 +212,6 @@ class TestBuildOptions:
         base_settings.anthropic_model = "deepseek-v4-flash"
         opts = self._build(base_settings)
         assert opts.model == "deepseek-v4-flash"
-
-    @pytest.mark.parametrize("base_url", [None, "https://api.deepseek.com:443/anthropic/"])
-    def test_extended_context_changes_only_sdk_capacity(self, base_settings, monkeypatch, base_url):
-        import os
-        from dataclasses import asdict
-
-        base_settings.anthropic_model = "deepseek-flash"
-        base_settings.anthropic_small_fast_model = "deepseek-flash"
-        base_settings.anthropic_base_url = base_url
-        monkeypatch.setenv("ANTHROPIC_MODEL", "previous-provider-model")
-        common = dict(max_tokens=32000, max_turns=150, request_timeout_seconds=1800)
-        original = self._build(base_settings, **common)
-        extended = self._build(base_settings, use_extended_context=True, **common)
-        assert original.model == "deepseek-flash"
-        assert "ANTHROPIC_MODEL" not in original.env
-        assert extended.model == extended.env["ANTHROPIC_MODEL"] == "deepseek-flash[1m]"
-        assert extended.env["ANTHROPIC_SMALL_FAST_MODEL"] == "deepseek-flash"
-        assert os.environ["ANTHROPIC_MODEL"] == "previous-provider-model"
-        normalized = asdict(extended)
-        normalized["model"] = original.model
-        normalized["env"].pop("ANTHROPIC_MODEL")
-        assert normalized == asdict(original)
-
-    @pytest.mark.parametrize("provider,model,base_url", [
-        ("custom", "deepseek-flash", "https://api.deepseek.com/anthropic"),
-        ("deepseek", "unknown-flash", "https://api.deepseek.com/anthropic"),
-        ("deepseek", "deepseek-v4-pro", "https://api.deepseek.com/anthropic"),
-        ("deepseek", "deepseek-flash[1m]", "https://api.deepseek.com/anthropic"),
-        ("deepseek", "deepseek-flash", "https://gateway.test/anthropic"),
-        ("deepseek", "deepseek-flash", "https://api.deepseek.com.gateway.test/anthropic"),
-        ("deepseek", "deepseek-flash", "http://api.deepseek.com/anthropic"),
-        ("deepseek", "deepseek-flash", "https://api.deepseek.com:8443/anthropic"),
-        ("deepseek", "deepseek-flash", "https://api.deepseek.com:bad/anthropic"),
-        ("deepseek", "deepseek-flash", "https://api.deepseek.com/other"),
-        ("deepseek", "deepseek-flash", "https://api.deepseek.com/anthropic?route=other"),
-        ("deepseek", "deepseek-flash", "https://api.deepseek.com/anthropic#other"),
-        ("deepseek", "deepseek-flash", "https://user@api.deepseek.com/anthropic"),
-    ])
-    def test_extended_context_preserves_unverified_or_explicit_models(self, base_settings, provider, model, base_url):
-        base_settings.anthropic_provider = provider
-        base_settings.anthropic_model = model
-        base_settings.anthropic_base_url = base_url
-        assert self._build(base_settings, use_extended_context=True) == self._build(base_settings)
 
     def test_image_input_rejected_on_deepseek(self, base_settings):
         with patch("app.config.settings", base_settings), \
@@ -482,25 +411,6 @@ class TestEndpointOverride:
         opts = self._build(base_settings, endpoint=self._endpoint(small_fast_model=small_fast))
         assert opts.env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == expected
         assert opts.env["ANTHROPIC_SMALL_FAST_MODEL"] == expected
-
-    def test_extended_context_follows_selected_endpoint_and_caller_model(self, base_settings):
-        base_settings.anthropic_model = "deepseek-flash"
-        base_settings.anthropic_base_url = "https://api.deepseek.com/anthropic"
-        unverified = self._endpoint(provider="deepseek", model="deepseek-flash")
-        opts = self._build(base_settings, endpoint=unverified, use_extended_context=True)
-        assert opts.model == "deepseek-flash"
-        assert "ANTHROPIC_MODEL" not in opts.env
-
-        base_settings.anthropic_provider = "custom"
-        base_settings.anthropic_model = "primary-other"
-        official = self._endpoint(provider="deepseek", model="deepseek-flash",
-                                  base_url="https://api.deepseek.com/anthropic")
-        opts = self._build(base_settings, endpoint=official, use_extended_context=True)
-        assert opts.model == "deepseek-flash[1m]"
-        assert opts.env["ANTHROPIC_SMALL_FAST_MODEL"] == "deepseek-flash"
-        caller = self._build(base_settings, endpoint=official, model="other-model", use_extended_context=True)
-        assert caller.model == "other-model"
-        assert "ANTHROPIC_MODEL" not in caller.env
 
     def test_capability_gate_uses_the_endpoint_profile(self, base_settings):
         """Tool gating must follow the endpoint actually being called.

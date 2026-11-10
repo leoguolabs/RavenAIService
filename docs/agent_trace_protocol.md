@@ -75,15 +75,6 @@ remain unchanged. SDK messages still reach routing and cancellation checks;
 idle transports retain their regular heartbeats. Sequence numbers count emitted
 events, so new traces can be smaller without requiring a schema change.
 
-The default-off staged-evidence experiment emits `system_notice` with
-`kind: "evidence_stage"` and `phase: "collection" | "finalization"`.
-Collection assistant content remains in the ordinary thinking/tool trace, but
-its partial text does not enter `answer_delta`. The router and cancellation
-checks still see every SDK frame. Only the final stage's terminal result is
-parsed/persisted; a first-stage SDK or structured analysis error terminates
-normally through the existing error handling. There is one run lifecycle and
-one total timeout/turn budget, not a fresh run for each stage.
-
 ### Skill availability and actual use
 
 `available_skills` contains the complete enabled Skill catalog for the selected
@@ -327,14 +318,6 @@ Rate limits, billing, authentication, request size, and turn limits have separat
 messages. Ordinary answers and quoted diagnostic examples are left unchanged.
 Raw persisted errors and server diagnostics are retained; this presentation
 change does not alter the trace schema or endpoint retry policy.
-
-Optional isolated evidence verification emits `system_notice` with `kind=evidence_verification` and `phase=start|complete`. Completion metadata is limited to model, edit count, packet bytes and elapsed seconds. Internal edit JSON and the evidence packet are never answer deltas. Primary answer deltas remain provisional; `run_complete.final_text` contains the authoritative verified public result. Malformed verification emits error without `run_complete`; cancellation retains the existing cancelled terminal contract. Original primary raw text/trace remains diagnostic evidence.
-
-Optional evidence-progress checkpoints travel as SDK PostToolUse.additionalContext; they do not create fabricated answer deltas, completion events or tool evidence. Existing native tool results, original finalization/error/cancel contracts and the configured turn limit remain unchanged.
-
-Named-attachment component observations remain internal verification evidence. They do not fabricate tool steps, observed frames/events, answer deltas or completion events. The authoritative final result remains the atomically edited public answer.
-
-Suppressing unused SDK nonessential traffic does not suppress Raven application title events or primary tool/thinking/answer traces. Only unused SDK session metadata/background traffic is targeted; normal completion, error and cancellation contracts remain.
 
 ### OpenAI Agents SDK executor
 

@@ -160,40 +160,8 @@ class Settings(BaseSettings):
     code_repo_git_token: Optional[str] = (
         None  # 全局 Git Token（私有仓库认证，可被 project_repo 单独 token 覆盖）
     )
-    # Local experiment: omit unused SDK session titles/nonessential traffic.
-    agent_sdk_disable_nonessential_traffic: bool = False
-    agent_analysis_confidence_bounds_enabled: bool = False
-    agent_analysis_batch_prompt_enabled: bool = False
-    agent_analysis_prepare_primary_repo: bool = False
-    agent_analysis_stage_checkpoint_enabled: bool = False
     agent_related_repo_max_count: int = 4
     agent_repo_clone_timeout_seconds: int = 300
-    # Opt-in until paired latency and evidence-equivalence validation passes.
-    agent_evidence_efficiency_enabled: bool = False
-    # Local prompt experiment: dispatch independent text searches in one MCP batch.
-    agent_evidence_batch_plan_enabled: bool = False
-    # Separate local prompt experiment: small batches and gap-led follow-up.
-    agent_evidence_batch_plan_v3_enabled: bool = False
-    # Separate local prompt experiment: front-load independent checks per search turn.
-    agent_evidence_batch_plan_v4_enabled: bool = False
-    agent_evidence_regex_endpoints_enabled: bool = False
-    agent_evidence_compare_enabled: bool = False
-    # Independently opt in: added context/review failed the combined trial.
-    agent_evidence_source_context_enabled: bool = False
-    agent_evidence_final_review_enabled: bool = False
-    agent_evidence_progress_budget_enabled: bool = False
-    agent_evidence_final_review_mode: str = "session"  # session | isolated; review gate remains default off
-    agent_evidence_log_overview_enabled: bool = False
-    agent_evidence_statistics_enabled: bool = False
-    agent_analysis_standalone_statistics_enabled: bool = False
-    agent_analysis_native_search_counts_enabled: bool = False
-    agent_evidence_topic_context_enabled: bool = False
-    agent_evidence_search_endpoints_enabled: bool = False
-    agent_evidence_read_window_enabled: bool = False
-    # Independent SDK capacity experiment; does not require an evidence snapshot.
-    agent_evidence_extended_context_enabled: bool = False
-    # Local experiment: same-session collection/finalization, verified SDK only.
-    agent_evidence_staged_effort_enabled: bool = False
 
     # 上下文压缩/记忆配置
     agent_compression_strategy: str = (

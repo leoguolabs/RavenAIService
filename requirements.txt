@@ -30,10 +30,6 @@ xlrd>=2.0.1
 openai-agents==0.24.0  # Official Agents SDK, validated with Magpie Responses
 claude-agent-sdk>=0.2  # >=0.2.82 provides include_partial_messages / StreamEvent for answer_delta streaming
 
-# Optional bounded C function context; older images fall back to native windows.
-tree-sitter==0.25.2
-tree-sitter-c==0.24.2
-
 # HTTP client for the OCR bypass call (OpenAI-compatible chat/completions). Already
 # installed transitively via FastAPI/Starlette; declared explicitly because
 # app/services/ocr_service.py imports it directly.

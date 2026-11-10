@@ -40,7 +40,6 @@ def build_project_fit_guidance(
     catalog_available: bool,
     locale: str = "zh",
     selected_project_is_target: bool = False,
-    catalog_preloaded: bool = False,
 ) -> str:
     """Build the shared, high-priority project-fit policy for Agent prompts."""
     if locale == "en":
@@ -50,8 +49,6 @@ def build_project_fit_guidance(
         )
         if catalog_available:
             evidence_rule = (
-                "Before cloning or using project-specific evidence, read the complete enabled catalog in the startup snapshot."
-                if catalog_preloaded else
                 "Before cloning or using project-specific evidence, call "
                 "`mcp__project_repo__discover_projects` and read the complete enabled catalog."
             )
@@ -90,8 +87,6 @@ def build_project_fit_guidance(
     )
     if catalog_available:
         evidence_rule = (
-            "在克隆仓库、加载项目专属知识或作出领域结论之前，必须先阅读启动快照中完整的已启用项目卡片目录。"
-            if catalog_preloaded else
             "在克隆仓库、加载项目专属知识或作出领域结论之前，必须先调用 "
             "`mcp__project_repo__discover_projects` 读取完整的已启用项目卡片目录。"
         )

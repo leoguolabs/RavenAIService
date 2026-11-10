@@ -174,6 +174,14 @@ class ProjectExpertAgent:
         except Exception:
             pass
 
+        user_prompt = render_user_prompt(
+            user_prompt_template,
+            task_id=ctx.task_id,
+            workspace_dir=ctx.temp_dir,
+            question=ctx.metadata.get("question") or task_data.get("question", ""),
+            hints=ctx.metadata.get("hints") or task_data.get("hints", ""),
+        )
+
         # Resolve effective model before run for logging & result.
         # Endpoint selection happens here, not at build_options time: RUN_START
         # below names the model and is already streamed to the browser by the
@@ -232,27 +240,6 @@ class ProjectExpertAgent:
                 "ProjectExpertAgent: provider=%s does not support MCP; using repo_info.repo_url only",
                 provider,
             )
-
-        evidence_snapshot = None
-        if settings.agent_evidence_efficiency_enabled is True and supports_mcp:
-            from app.agents.evidence_policy import prepare_snapshot
-            from app.agents.evidence_tools import TOOL_NAMES, get_evidence_mcp_server
-
-            evidence_snapshot = await prepare_snapshot(task_data)
-            if evidence_snapshot is not None:
-                mcp_servers["evidence"] = get_evidence_mcp_server(ctx.temp_dir)
-                allowed_tools.extend(TOOL_NAMES)
-                from app.agents.evidence_policy import use_snapshot_in_templates
-
-                system_prompt, user_prompt_template = use_snapshot_in_templates(system_prompt, user_prompt_template)
-
-        user_prompt = render_user_prompt(
-            user_prompt_template,
-            task_id=ctx.task_id,
-            workspace_dir=ctx.temp_dir,
-            question=ctx.metadata.get("question") or task_data.get("question", ""),
-            hints=ctx.metadata.get("hints") or task_data.get("hints", ""),
-        )
 
         # 物化全部启用的 Skill 到 cwd/.claude/skills/<name>/，配合
         # setting_sources=["project"] 让 SDK 按官方约定发现 Skill。
@@ -371,7 +358,6 @@ class ProjectExpertAgent:
             project_code=project_code,
             project_card=project_card,
             catalog_available=supports_mcp,
-            catalog_preloaded=evidence_snapshot is not None,
             locale=ctx.locale,
             selected_project_is_target=True,
         )
@@ -430,20 +416,6 @@ class ProjectExpertAgent:
             system_prompt += "\n\n" + clarification.prompt_addendum
 
         system_prompt += required_skill_prompt
-        evidence_hooks = None
-        evidence_review = None
-        if evidence_snapshot is not None:
-            from app.agents.evidence_policy import execution_hooks, snapshot_prompt
-            from app.agents.evidence_review import FinalEvidenceReview
-
-            system_prompt += snapshot_prompt(evidence_snapshot, ctx.locale)
-            if settings.agent_evidence_final_review_enabled is True:
-                evidence_review = FinalEvidenceReview(ctx.locale, ctx.task_id, settings.anthropic_max_turns)
-            evidence_hooks = execution_hooks(
-                ctx.locale, ctx.task_id, ctx.temp_dir,
-                source_context=settings.agent_evidence_source_context_enabled is True,
-                final_review=evidence_review,
-            )
 
         def _make_options(endpoint: Optional[Any]) -> Any:
             return build_options(
@@ -458,7 +430,6 @@ class ProjectExpertAgent:
                 mcp_servers=mcp_servers,
                 setting_sources=setting_sources,
                 endpoint=endpoint,
-                **({"hooks": evidence_hooks} if evidence_hooks else {}),
             )
 
         def _on_endpoint(endpoint: Any) -> None:
@@ -516,8 +487,6 @@ class ProjectExpertAgent:
                     _log_workflow(ctx.task_id, "cancelled", reason="cancel_event_set")
                     _emit_cancel_requested(state)
                     raise AgentCancelled()
-                if evidence_review is not None:
-                    evidence_review.observe(message)
                 _emit_for_message(message, state=state)
 
         except AgentCancelled:

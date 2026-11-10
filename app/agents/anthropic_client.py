@@ -11,7 +11,6 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
-from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -422,28 +421,6 @@ def assert_anthropic_configured() -> None:
             )
 
 
-def _sdk_model_for_context(provider: str, model: str, base_url: str) -> str:
-    """Use only the verified official alias; gateways retain their own limits.
-
-    DeepSeek's coding-agent guide and /models were checked on 2026-10-26.
-    SDK 0.2.165 strips [1m] on the wire but uses it for local compaction.
-    This does not change output-token or reasoning-effort settings.
-    """
-    if provider != "deepseek" or model != "deepseek-flash":
-        return model
-    try:
-        url = urlsplit(base_url)
-        official = (
-            url.scheme == "https" and url.hostname == "api.deepseek.com"
-            and url.port in (None, 443) and url.path in ("/anthropic", "/anthropic/")
-            and url.username is None and url.password is None
-            and not url.query and not url.fragment
-        )
-    except (TypeError, ValueError):
-        return model
-    return "deepseek-flash[1m]" if official else model
-
-
 def build_options(
     *,
     system_prompt: "str | Dict[str, Any]",
@@ -465,7 +442,6 @@ def build_options(
     request_timeout_seconds: Optional[int] = None,
     include_partial_messages: bool = True,
     endpoint: Optional[Any] = None,
-    use_extended_context: bool = False,
 ) -> Any:
     """构建 ClaudeAgentOptions，按 caller override → Settings → provider profile 优先级解析参数。
 
@@ -552,10 +528,6 @@ def build_options(
         effective_api_key = configured_api_keys[0] if configured_api_keys else settings.anthropic_api_key
     effective_max_turns = max_turns if max_turns is not None else settings.anthropic_max_turns
     effective_permission_mode = permission_mode or settings.anthropic_permission_mode
-    sdk_model = (
-        _sdk_model_for_context(provider_name, effective_model, effective_base_url)
-        if use_extended_context is True else effective_model
-    )
 
     # thinking_budget_tokens 在不支持的 provider 下静默丢弃
     effective_thinking: Optional[Dict[str, Any]] = None
@@ -620,7 +592,7 @@ def build_options(
         ) from exc
 
     options_kwargs: Dict[str, Any] = {
-        "model": sdk_model,
+        "model": effective_model,
         "system_prompt": system_prompt,
         "allowed_tools": effective_allowed_tools,
         "cwd": cwd,
@@ -640,24 +612,11 @@ def build_options(
             "RAVEN_AGENT_KIND": endpoint.agent_kind,
         })
 
-    if (
-        getattr(settings, "agent_sdk_disable_nonessential_traffic", False) is True
-        and profile.api_protocol != "openai_responses"
-    ):
-        # SDK-generated session titles are unused by Raven's own title service.
-        # Set per-run only; preserve the primary prompt/model/tools/turn budget.
-        options_kwargs["env"]["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
-
     if profile.api_protocol == "openai_responses":
         options_kwargs["env"].update({
             "RAVEN_API_PROTOCOL": "openai_responses",
             "RAVEN_OPENAI_MAX_OUTPUT_TOKENS": str(max_tokens or settings.anthropic_max_tokens),
         })
-
-    if sdk_model != effective_model:
-        # Per-run only: never change administrator settings or auxiliary models.
-        options_kwargs["env"]["ANTHROPIC_MODEL"] = sdk_model
-        logger.info("SDK extended context enabled: model=%s sdk_model=%s", effective_model, sdk_model)
 
     if disallowed_tools:
         options_kwargs["disallowed_tools"] = list(disallowed_tools)

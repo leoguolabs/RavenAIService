@@ -1053,7 +1053,7 @@ class LogAnalysisAgent:
         system_prompt, user_prompt_template = get_prompts(locale=ctx.locale)
         system_prompt += (
             "\n\n## 当前运行工作区\n"
-            f"本次运行的初始工作目录是 `{ctx.temp_dir}`。"
+            f"本次运行的当前工作目录是 `{ctx.temp_dir}`。"
             f"`task.json` 的真实路径是 `{ctx.task_json_path}`，"
             f"日志目录是 `{ctx.logs_dir}`，源码目录是 `{ctx.repo_dir}`。"
             "读取文件和搜索时只使用这些路径或它们的相对路径 "
@@ -1061,9 +1061,7 @@ class LogAnalysisAgent:
             "第一次 Read 调用请使用 `{\"file_path\":\"task.json\"}`。"
             "不要尝试 `/data/task/task.json`、`/data/task/logs`，"
             "也不要尝试 `temp/code_repos/<task_id>/task.json` 这种相对路径；"
-            "初始工作目录已经是任务目录。"
-            "Bash 调用可能保留前次 cd 后的目录；Bash 读取和检索使用上述绝对路径，"
-            "Git 使用 git -C 指定仓库。独立调用不得依赖另一个调用改变目录。"
+            "当前工作目录已经是任务目录。"
             "如果路径不确定，先用 `pwd` / `ls -la` 确认当前目录。\n"
         )
 
@@ -1095,6 +1093,15 @@ class LogAnalysisAgent:
                 "检查；仅在项目匹配时，才将其视为权威仓库来源，跳过对 "
                 "metadata.json 的项目发现并进入克隆与调查。\n"
             )
+
+        user_prompt = render_user_prompt(
+            user_prompt_template,
+            task_id=ctx.task_id,
+            workspace_dir=ctx.temp_dir,
+            question=ctx.metadata.get("question") or task_data.get("question", ""),
+            project_code=(task_data.get("repo_info") or {}).get("project_code") if isinstance(task_data.get("repo_info"), dict) else None,
+            hints=task_data.get("hints", ""),
+        )
 
         # Resolve effective model before run for logging & result.
         # Endpoint selection happens here, not at build_options time: RUN_START
@@ -1155,74 +1162,6 @@ class LogAnalysisAgent:
                 "LogAnalysisAgent: provider=%s does not support MCP; using repo_info fallback only",
                 provider,
             )
-
-        evidence_snapshot = None
-        if settings.agent_evidence_efficiency_enabled is True and supports_mcp:
-            from app.agents.evidence_policy import prepare_snapshot
-            from app.agents.evidence_tools import TOOL_NAMES, get_evidence_mcp_server
-
-            evidence_snapshot = await prepare_snapshot(task_data)
-            if evidence_snapshot is not None:
-                statistics = settings.agent_evidence_statistics_enabled is True
-                mcp_servers["evidence"] = get_evidence_mcp_server(
-                    ctx.temp_dir, statistics=statistics,
-                    **({"regex_endpoints": True} if settings.agent_evidence_regex_endpoints_enabled is True else {}),
-                    **({"compare": True} if settings.agent_evidence_compare_enabled is True else {}),
-                )
-                allowed_tools.extend(TOOL_NAMES)
-                if settings.agent_evidence_compare_enabled is True:
-                    allowed_tools.append("mcp__evidence__compare_evidence")
-                if statistics:
-                    from app.agents.evidence_statistics import TOOL_NAME
-
-                    allowed_tools.append(TOOL_NAME)
-                    system_prompt += (
-                        "\nFull-file evidence statistics are available through mcp__evidence__summarize_evidence. "
-                        "Batch independent counts, literal field values and numeric ranges instead of repeated sample reads. "
-                        "Before making an all/always/never/range claim, verify the relevant complete scan and its extrema "
-                        "or keep the claim explicitly limited to observed samples. Regex coverage is not incident coverage; "
-                        "preserve original tools and uncertainty.\n" if ctx.locale == "en" else
-                        "\n可用 mcp__evidence__summarize_evidence 批量统计全文匹配次数、字段取值和数值范围，"
-                        "将互不依赖的统计合并，避免反复抽样读取。声称全程、始终、从未或数值范围前，"
-                        "先核对相关完整扫描及极值；未完成核验时将结论限定为已观察到的样本。"
-                        "正则覆盖不等于事件覆盖，原有工具和不确定性要求均保留。\n"
-                    )
-                from app.agents.evidence_policy import use_snapshot_in_templates
-
-                system_prompt, user_prompt_template = use_snapshot_in_templates(system_prompt, user_prompt_template)
-
-        if (
-            supports_mcp
-            and evidence_snapshot is None
-            and settings.agent_analysis_standalone_statistics_enabled is True
-        ):
-            from app.agents.evidence_statistics import TOOL_NAME
-            from app.agents.evidence_tools import get_evidence_mcp_server
-
-            mcp_servers["evidence"] = get_evidence_mcp_server(
-                ctx.temp_dir, statistics=True, search_read=False,
-            )
-            allowed_tools.append(TOOL_NAME)
-            system_prompt += (
-                "\nWhen reporting record totals and distinct field values, use "
-                "mcp__evidence__summarize_evidence in values mode after identifying the original file and record pattern. "
-                "One complete scan reports matched lines, regex occurrences and distinct captured values separately. "
-                "Group other known independent statistics in the same call. Keep original source checks and cite the record scope.\n"
-                if ctx.locale == "en" else
-                "\n需要报告记录总数与字段种类数时，在定位原始文件和记录模式后，"
-                "用 mcp__evidence__summarize_evidence 的 values 模式一次核对。"
-                "完整扫描分别返回匹配行数、匹配次数和不同取值数量。"
-                "同轮合并其他已知的独立统计，保留源码核对及记录范围。\n"
-            )
-
-        user_prompt = render_user_prompt(
-            user_prompt_template,
-            task_id=ctx.task_id,
-            workspace_dir=ctx.temp_dir,
-            question=ctx.metadata.get("question") or task_data.get("question", ""),
-            project_code=(task_data.get("repo_info") or {}).get("project_code") if isinstance(task_data.get("repo_info"), dict) else None,
-            hints=task_data.get("hints", ""),
-        )
 
         # 先按用户问题、提示和附件名筛选候选 Skill，再物化到工作区供 SDK
         # 按需调用。未命中时保持为空，不能回退为全部启用 Skill。
@@ -1336,7 +1275,6 @@ class LogAnalysisAgent:
             project_code=project_code,
             project_card=project_card,
             catalog_available=supports_mcp,
-            catalog_preloaded=evidence_snapshot is not None,
             locale=ctx.locale,
         )
 
@@ -1375,70 +1313,9 @@ class LogAnalysisAgent:
             system_prompt += "\n\n" + clarification.prompt_addendum
 
         system_prompt += required_skill_prompt
-        evidence_hooks = None
-        evidence_review = None
-        from app.agents.isolated_review import isolated_mode
-        isolated_selected = isolated_mode(settings, evidence_snapshot)
-        isolated_result = None
-        primary_options = {"value": None}
-        if evidence_snapshot is not None:
-            from app.agents.evidence_policy import execution_hooks, snapshot_prompt
-            from app.agents.evidence_review import FinalEvidenceReview
-
-            system_prompt += snapshot_prompt(
-                evidence_snapshot, ctx.locale,
-                batch_plan=settings.agent_evidence_batch_plan_enabled is True,
-                batch_plan_v3=settings.agent_evidence_batch_plan_v3_enabled is True,
-                batch_plan_v4=settings.agent_evidence_batch_plan_v4_enabled is True,
-            )
-            if settings.agent_evidence_log_overview_enabled is True:
-                from app.agents.log_overview import collect_log_overview, log_overview_prompt
-
-                try:
-                    overview = await asyncio.to_thread(collect_log_overview, ctx.temp_dir, ctx.logs_dir)
-                    system_prompt += log_overview_prompt(overview, ctx.locale)
-                except Exception:
-                    logger.warning("Log overview unavailable; retaining native evidence access")
-            if settings.agent_evidence_final_review_enabled is True and not isolated_selected:
-                evidence_review = FinalEvidenceReview(ctx.locale, ctx.task_id, settings.anthropic_max_turns)
-            evidence_hooks = execution_hooks(
-                ctx.locale, ctx.task_id, ctx.temp_dir,
-                source_context=settings.agent_evidence_source_context_enabled is True,
-                read_window=settings.agent_evidence_read_window_enabled is True,
-                topic_context=settings.agent_evidence_topic_context_enabled is True,
-                search_endpoints=settings.agent_evidence_search_endpoints_enabled is True,
-                final_review=evidence_review,
-                progress_budget=getattr(settings, "agent_evidence_progress_budget_enabled", False) is True,
-            )
-
-        if evidence_snapshot is not None and settings.agent_evidence_compare_enabled is True:
-            from app.agents.evidence_policy import comparison_execution_prompt
-
-            system_prompt += comparison_execution_prompt(ctx.locale)
-
-        if getattr(settings, "agent_analysis_confidence_bounds_enabled", False) is True:
-            from app.agents.confidence_prompt import confidence_bounds
-
-            system_prompt += confidence_bounds(ctx.locale)
-
-        if getattr(settings, "agent_analysis_batch_prompt_enabled", False) is True:
-            from app.agents.batch_prompt import dependency_batching
-
-            system_prompt += dependency_batching(ctx.locale)
-
-        if settings.agent_analysis_native_search_counts_enabled is True:
-            from claude_agent_sdk import HookMatcher
-            from app.agents.native_search_counts import NativeSearchCounts
-
-            counts = NativeSearchCounts(ctx.temp_dir, ctx.locale)
-            if evidence_hooks is None:
-                evidence_hooks = {}
-            evidence_hooks.setdefault("PostToolUse", []).append(
-                HookMatcher(matcher="Bash", hooks=[counts.after_tool]),
-            )
 
         def _make_options(endpoint: Optional[Any]) -> Any:
-            options = build_options(
+            return build_options(
                 system_prompt=system_prompt,
                 allowed_tools=allowed_tools,
                 cwd=ctx.temp_dir,
@@ -1451,65 +1328,11 @@ class LogAnalysisAgent:
                 mcp_servers=mcp_servers,
                 setting_sources=setting_sources,
                 endpoint=endpoint,
-                use_extended_context=settings.agent_evidence_extended_context_enabled is True,
-                **({"hooks": evidence_hooks} if evidence_hooks else {}),
             )
-
-            primary_options["value"] = options
-            return options
 
         def _on_endpoint(endpoint: Any) -> None:
             served["model"] = endpoint.model
             served["provider"] = endpoint.provider
-
-        collecting_stage = False
-
-        def _check_cancel() -> None:
-            if cancel_event is not None and cancel_event.is_set():
-                _log_workflow(ctx.task_id, "cancelled", reason="cancel_event_set")
-                _emit_cancel_requested(state)
-                raise AgentCancelled()
-
-        def _on_stage(phase: str) -> None:
-            nonlocal collecting_stage
-            collecting_stage = phase == "collection"
-            if phase == "original":
-                return
-            detail = (
-                ("Collecting evidence" if collecting_stage else "Preparing the answer")
-                if ctx.locale == "en" else
-                ("正在调查证据" if collecting_stage else "正在整理结论")
-            )
-            state.emit(build_event(
-                SYSTEM_NOTICE, task_id=ctx.task_id, seq_counter=state.seq_counter,
-                kind="evidence_stage", detail=detail, phase=phase,
-            ))
-
-        def _analysis_error(text: str) -> bool:
-            parsed = _extract_fenced_json(text)
-            return isinstance(parsed, dict) and parsed.get("status") == "error"
-
-        query_overrides: Dict[str, Any] = {}
-        if (
-            settings.agent_evidence_staged_effort_enabled is True
-            and evidence_snapshot is not None
-            and settings.agent_evidence_extended_context_enabled is True
-            and settings.agent_evidence_final_review_enabled is not True
-        ):
-            from app.agents.staged_evidence import make_staged_query
-
-            query_overrides["sdk_query"] = make_staged_query(
-                query, locale=ctx.locale, check_cancel=_check_cancel,
-                on_phase=_on_stage, is_analysis_error=_analysis_error,
-            )
-
-        if getattr(settings, "agent_analysis_stage_checkpoint_enabled", False) is True and not query_overrides:
-            from app.agents.stage_checkpoint import make_checkpoint_query
-
-            query_overrides["sdk_query"] = make_checkpoint_query(
-                query, provider=str(provider), locale=ctx.locale,
-                check_cancel=_check_cancel, on_phase=_on_stage,
-            )
 
         start = time.monotonic()
 
@@ -1552,59 +1375,18 @@ class LogAnalysisAgent:
             )
 
         try:
-            if (
-                settings.agent_analysis_prepare_primary_repo is True
-                and supports_mcp
-                and user_selected_repo
-                and isinstance(project_code, str)
-                and project_code.strip()
-            ):
-                from app.agents.log_analysis.prepared_repo import prepare_primary_repo
-
-                _check_cancel()
-                system_prompt += await prepare_primary_repo(ctx, project_code)
-                _check_cancel()
             async for message in routed_query(
                 prompt=user_prompt,
                 make_options=_make_options,
                 agent_kind=AGENT_KEY,
                 candidates=endpoints,
                 on_endpoint=_on_endpoint,
-                **query_overrides,
             ):
-                _check_cancel()
-                if evidence_review is not None:
-                    evidence_review.observe(message)
-                # Collection prose stays in the full assistant trace, never in
-                # the final-answer delta channel. Routing sees every SDK frame.
-                if collecting_stage and isinstance(getattr(message, "event", None), dict):
-                    continue
+                if cancel_event is not None and cancel_event.is_set():
+                    _log_workflow(ctx.task_id, "cancelled", reason="cancel_event_set")
+                    _emit_cancel_requested(state)
+                    raise AgentCancelled()
                 _emit_for_message(message, state=state)
-
-            if isolated_selected:
-                from app.agents.isolated_review import verify, VerificationError
-                candidate = _extract_fenced_json(state.final_text)
-                if candidate is None or not _validate_result_schema(candidate):
-                    raise VerificationError("Primary draft cannot be verified")
-                if candidate.get("status", "ok") == "ok" and not candidate.get("error_kind"):
-                    state.emit(build_event(
-                        SYSTEM_NOTICE, task_id=ctx.task_id, seq_counter=state.seq_counter,
-                        kind="evidence_verification", phase="start",
-                        detail="Checking conclusions" if ctx.locale == "en" else "\u6b63\u5728\u6838\u67e5\u7ed3\u8bba",
-                    ))
-                    isolated_result, verification = await verify(
-                        workspace=ctx.temp_dir, draft=candidate,
-                        primary_options=primary_options["value"],
-                        required_prompt=required_skill_prompt, locale=ctx.locale,
-                        check_cancel=_check_cancel,
-                    )
-                    _accumulate_token_usage(verification.pop("usage", None), state.token_usage)
-                    state.emit(build_event(
-                        SYSTEM_NOTICE, task_id=ctx.task_id, seq_counter=state.seq_counter,
-                        kind="evidence_verification", phase="complete",
-                        detail="Conclusions checked" if ctx.locale == "en" else "\u7ed3\u8bba\u6838\u67e5\u5b8c\u6210",
-                        **verification,
-                    ))
 
         except AgentCancelled:
             duration = time.monotonic() - start
@@ -1681,13 +1463,11 @@ class LogAnalysisAgent:
                 task_id=ctx.task_id,
                 seq_counter=state.seq_counter,
                 trace_summary=trace_summary,
-                final_text=coerce_excerpt(mask_tokens(
-                    "```json\n" + json.dumps(isolated_result, ensure_ascii=False) + "\n```"
-                    if isolated_result is not None else final_text), DEFAULT_EXCERPT_MAX_BYTES * 4),
+                final_text=coerce_excerpt(mask_tokens(final_text), DEFAULT_EXCERPT_MAX_BYTES * 4),
             )
         )
 
-        parsed = isolated_result if isolated_result is not None else _extract_fenced_json(final_text)
+        parsed = _extract_fenced_json(final_text)
         tool_trace = derive_tool_trace(state.trace_events)
         common_extra = {
             **runtime_metadata(state.trace_events),
