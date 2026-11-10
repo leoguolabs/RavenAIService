@@ -65,9 +65,9 @@ def output_text(event: dict) -> str:
 
 
 class StreamMeter:
-    def __init__(self, policy: TaskRoutingPolicy):
+    def __init__(self, policy: TaskRoutingPolicy, started: float | None = None):
         self.policy = policy
-        self.started = time.monotonic()
+        self.started = time.monotonic() if started is None else started
         self.first: float | None = None
         self.last = self.started
         self.samples: deque[tuple[float, float]] = deque()
@@ -87,6 +87,8 @@ class StreamMeter:
                 continue
             if text:
                 now = time.monotonic()
+                if self.first is None and now - self.started >= self.policy.first_token_seconds:
+                    raise SlowLocalResponse("first token timeout")
                 self.first = now if self.first is None else self.first
                 self.last = now
                 self.samples.append((now, len(text.encode("utf-8")) / 4))
@@ -110,11 +112,11 @@ class StreamMeter:
 
 class LocalStream:
     def __init__(self, response: httpx.Response, policy: TaskRoutingPolicy,
-                 on_slow: Callable[[], Awaitable[None]]):
+                 on_slow: Callable[[], Awaitable[None]], started: float | None = None):
         self.response = response
         self.policy = policy
         self.on_slow = on_slow
-        self.meter = StreamMeter(policy)
+        self.meter = StreamMeter(policy, started)
         self.iterator = response.aiter_bytes().__aiter__()
         self.pending: asyncio.Task | None = None
         self.prefix: list[bytes] = []
@@ -123,7 +125,10 @@ class LocalStream:
     async def next_chunk(self) -> bytes | None:
         if self.pending is None:
             self.pending = asyncio.create_task(anext(self.iterator))
-        ready, _ = await asyncio.wait({self.pending}, timeout=min(0.1, self.policy.probe_seconds / 4))
+        timeout = min(0.1, self.policy.probe_seconds / 4)
+        if self.meter.first is None:
+            timeout = min(timeout, max(0, self.meter.started + self.policy.first_token_seconds - time.monotonic()))
+        ready, _ = await asyncio.wait({self.pending}, timeout=timeout)
         if not ready:
             return None
         pending, self.pending = self.pending, None
@@ -225,9 +230,14 @@ class TaskRoute:
                 out_path, out_body = retarget(path, body, target)
                 request = self.client.build_request(method, f"{self.base_url.rstrip('/')}/{out_path}",
                     content=out_body, headers=headers, params=params)
+                started = time.monotonic()
                 try:
-                    response = await self.client.send(request, stream=True)
-                except httpx.HTTPError:
+                    if target == p.local_group:
+                        response = await asyncio.wait_for(self.client.send(request, stream=True),
+                                                          p.first_token_seconds)
+                    else:
+                        response = await self.client.send(request, stream=True)
+                except (httpx.HTTPError, TimeoutError):
                     if attempt == 0 and target == p.local_group:
                         await self.slow()
                         target = p.backup_model
@@ -237,23 +247,35 @@ class TaskRoute:
                 actual = model_ref(response)
                 if response.is_success and not actual:
                     raise httpx.RemoteProtocolError("Magpie did not identify the serving model")
-                if (attempt == 0 and target == p.local_group and
-                        (response.status_code in {408, 429} or response.status_code >= 500)):
+                if attempt == 0 and target == p.local_group and not response.is_success:
                     await response.aclose()
                     prepared = None
                     await self.slow()
                     target = p.backup_model
                     continue
                 if response.is_success and actual == p.local_model:
-                    # Both executors stream inference. A non-SSE response keeps
-                    # its transport timeout; its intermediate speed is unknown.
+                    # Share one dispatch-to-output budget; early headers must
+                    # not buy a fresh first-token allowance.
+                    local_started = started if target == p.local_group else None
                     if "text/event-stream" in response.headers.get("content-type", ""):
-                        local = LocalStream(response, p, self.slow)
+                        local = LocalStream(response, p, self.slow, local_started)
                         prepared.local = local
                         try:
                             await local.prime()
                         except (SlowLocalResponse, httpx.HTTPError):
                             await local.close()
+                            prepared = None
+                            await self.slow()
+                            target = p.backup_model
+                            if attempt == 0:
+                                continue
+                            raise
+                    elif local_started is not None:
+                        try:
+                            remaining = max(0, started + p.first_token_seconds - time.monotonic())
+                            await asyncio.wait_for(response.aread(), remaining)
+                        except (TimeoutError, httpx.HTTPError):
+                            await response.aclose()
                             prepared = None
                             await self.slow()
                             target = p.backup_model

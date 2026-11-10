@@ -244,6 +244,79 @@ async def test_cancel_gate_closes_upstream_and_releases_task():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["headers", "early_headers", "non_stream", "unavailable"])
+async def test_local_first_deadline_includes_headers_and_pins_actual_backup(failure, isolated_cooldown):
+    sent = []
+    abandoned = asyncio.Event()
+    slow_body = TimedStream([(0.12, event("LOCAL-MUST-NOT-LEAK"))])
+    p = policy().model_copy(update={"entry_group": "group/local", "first_token_seconds": 0.1})
+
+    async def upstream(request):
+        data = json.loads(request.content)
+        sent.append(data)
+        if data["model"] == "group/local":
+            if failure == "headers":
+                try:
+                    await asyncio.sleep(10)
+                finally:
+                    abandoned.set()
+            if failure == "early_headers":
+                await asyncio.sleep(0.06)
+                # Its first output would fit a fresh 0.1s allowance, but must
+                # not fit the remaining 0.04s of the original request budget.
+                slow_body.rows = [(0.07, event("LOCAL-MUST-NOT-LEAK"))]
+            response = reply("yinhe/local", slow_body, status=404 if failure == "unavailable" else 200)
+            if failure == "non_stream":
+                response.headers["content-type"] = "application/json"
+            return response
+        # Cloud has its own normal transport budget, not the local deadline.
+        await asyncio.sleep(0.12)
+        return reply("deepseek/flash")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+        route = TaskRoute("http://gateway", client, p)
+        body = {"model": "group/local", "messages": [{"role": "tool", "content": "already-executed"}]}
+        for _ in range(2):
+            prepared = await route.prepare("POST", "v1/responses", json.dumps(body).encode(), {}, [])
+            output = b''.join([chunk async for chunk in prepared.chunks()])
+            assert b'LOCAL-MUST-NOT-LEAK' not in output
+            isolated_cooldown["open"] = False  # Recovery never sends this invocation back.
+        assert [row["model"] for row in sent] == ["group/local", "cloud/strong", "deepseek/flash"]
+        assert all(row["messages"] == body["messages"] for row in sent)
+        assert route.pinned == "deepseek/flash" and not route.lock.locked()
+        assert isolated_cooldown["trips"] == 1
+        assert abandoned.is_set() if failure == "headers" else slow_body.closed
+
+
+@pytest.mark.asyncio
+async def test_fast_local_first_uses_no_classifier_and_cancellation_starts_no_backup():
+    sent, abandoned = [], asyncio.Event()
+
+    async def upstream(request):
+        sent.append(json.loads(request.content)["model"])
+        if len(sent) == 1:
+            return reply("yinhe/local", TimedStream([(0, event("short answer"))]))
+        try:
+            await asyncio.sleep(10)
+        finally:
+            abandoned.set()
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+        p = policy().model_copy(update={"entry_group": "group/local"})
+        route = TaskRoute("http://gateway", client, p)
+        first = await route.prepare("POST", "v1/messages", b'{"model":"group/local"}', {}, [])
+        _ = [chunk async for chunk in first.chunks()]
+        assert route.pinned == "yinhe/local"
+        pending = asyncio.create_task(route.prepare("POST", "v1/messages", b'{"model":"group/local"}', {}, []))
+        await asyncio.sleep(0.01)
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+        assert abandoned.is_set() and not route.lock.locked()
+        assert sent == ["group/local", "group/local"]
+
+
+@pytest.mark.asyncio
 async def test_auxiliary_requests_and_explicit_overrides_do_not_select_task():
     sent, routes = [], []
 

@@ -43,18 +43,21 @@ async def test_cooldown_shared_then_local_when_redis_unavailable(monkeypatch):
     assert not await policy.cooling("http://other", p)
 
 
-def test_intent_groups_have_cloud_classifier_and_safe_default():
+def test_local_first_groups_remove_classifier_and_preserve_cloud_order():
     script = runpy.run_path(str(Path(__file__).parents[2] / "scripts/configure-magpie-task-routing.py"))
     local, fallback, main, cloud = script["routing_groups"]("local/model", "cloud/strong", "cloud/light")
     defaults = policy.TaskRoutingPolicy()
-    assert local["firstToken"] == defaults.first_token_seconds == defaults.probe_seconds == 1
+    assert local["firstToken"] == 1  # Magpie supports only whole seconds.
+    assert defaults.first_token_seconds == defaults.probe_seconds == 0.5
+    assert defaults.min_tokens_per_second == 20
+    assert defaults.idle_seconds == 2 and defaults.cooldown_seconds == 120
     assert local["affinity"] == "session"
     assert local["members"] == ["local/model"]
-    assert fallback["members"] == ["group/raven-task-yinhe", "cloud/strong"]
+    assert fallback["members"] == main["members"] == ["group/raven-task-yinhe", "cloud/strong", "cloud/light"]
     assert "firstToken" not in fallback
-    for group in (main, cloud):
-        assert group["classifier"] == "cloud/light"
-        assert group["members"][0] == "cloud/strong"
+    for group in (local, fallback, main, cloud):
+        assert group["classifier"] == "" and group["rules"] == []
+        assert group["routing"] == "order"
         assert group["affinity"] == "session"
-        assert len([r for r in group["rules"] if r.get("intent")]) == 3
+    assert cloud["members"] == ["cloud/strong", "cloud/light"]
     assert all("local" not in model and "yinhe" not in model for model in cloud["members"])

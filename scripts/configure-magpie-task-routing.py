@@ -1,4 +1,4 @@
-"""Configure official intent rules and opt in to stable Raven task routing.
+"""Configure Yinhe-first routing with fast, sticky fallback and no classifier.
 
 Run inside the authorized backend. No provider credentials are copied or printed.
 Existing providers, executor overrides and unrelated groups are preserved.
@@ -20,29 +20,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def routing_groups(local: str, strong: str, light: str) -> list[dict]:
-    simple = ("简单任务：问候、闲聊、明确的知识问答、翻译、格式整理、字段提取；"
-              "不需要调查未知原因、设计方案或修改代码和设备配置")
-    routine = ("常规任务：按照明确步骤读取文件或日志、查询项目与设备信息、常规状态排查；"
-               "不涉及根因未知的故障、跨模块改动、架构设计或有风险的写操作")
-    complex_task = ("复杂任务：根因未知的故障定位、多文件代码修改、架构与算法设计、性能与并发问题、"
-                    "网络或设备配置变更、需要多步推理的方案；不确定难度时也归此类")
     local_ref = "group/raven-task-yinhe"
-    groups = [{"id": "raven-task-yinhe", "name": "Raven · 仅银河首 token 1 秒",
-        "members": [local], "routing": "order", "affinity": "session", "firstToken": 1},
-        {"id": "raven-task-local", "name": "Raven · 银河慢速转 GPT · 任务内保持",
-         "members": [local_ref, strong], "routing": "order", "affinity": "session"}]
-    for degraded in (False, True):
-        groups.append({"id": "raven-task-cloud" if degraded else "raven-task-intent",
-            "name": "Raven · 拥堵期间云端意图路由" if degraded else "Raven · 任务意图与复杂度",
-            "members": [strong, light] if degraded else [strong, local_ref, light],
-            "routing": "order", "affinity": "session", "classifier": light,
-            "rules": [
-                {"use": strong, "images": True},
-                {"use": strong, "intent": complex_task},
-                {"use": light, "intent": simple},
-                {"use": strong if degraded else local_ref, "intent": routine},
-            ]})
-    return groups
+    # Magpie's native timer is integer seconds. Raven enforces the tighter
+    # dispatch-to-output budget before this group's first response is delivered.
+    return [{"id": "raven-task-yinhe", "name": "Raven · 银河优先 · Raven 慢速保护",
+        "members": [local], "routing": "order", "affinity": "session", "firstToken": 1,
+        "classifier": "", "rules": []},
+        *[{"id": group_id, "name": name,
+           "members": [local_ref, strong, light], "routing": "order", "affinity": "session",
+           "classifier": "", "rules": []}
+          for group_id, name in (("raven-task-local", "Raven · 银河优先 · 顺序备用"),
+                                 ("raven-task-intent", "Raven · 银河优先 · 旧入口兼容"))],
+        {"id": "raven-task-cloud", "name": "Raven · 拥堵期间云端顺序备用",
+         "members": [strong, light], "routing": "order", "affinity": "session",
+         "classifier": "", "rules": []}]
 
 
 async def configure(args):
@@ -51,9 +42,9 @@ async def configure(args):
 
     config = runtime.get_config()
     groups = routing_groups(args.local_model, args.strong_model, args.light_model)
-    policy = TaskRoutingPolicy(enabled=True, entry_group="group/raven-task-intent",
+    policy = TaskRoutingPolicy(enabled=True, entry_group="group/raven-task-yinhe",
         degraded_group="group/raven-task-cloud", local_model=args.local_model,
-        local_group="group/raven-task-local", backup_model=args.strong_model)
+        local_group="group/raven-task-yinhe", backup_model=args.strong_model)
     async with httpx.AsyncClient(base_url=args.admin_url, timeout=30, follow_redirects=True) as client:
         response = await client.post("/_magpie/sign-in", data={
             "key": Path(args.web_key_file).read_text().strip(), "back": "/"})
@@ -63,7 +54,7 @@ async def configure(args):
         before = response.json()
         offered = {row["id"] for row in before.get("models", [])}
         if not {args.strong_model, args.light_model} <= offered:
-            raise RuntimeError("Cloud backup or classifier is unavailable in Magpie")
+            raise RuntimeError("Cloud backup is unavailable in Magpie")
         if args.local_model not in offered:
             response = await client.get("/api/providers")
             response.raise_for_status()
