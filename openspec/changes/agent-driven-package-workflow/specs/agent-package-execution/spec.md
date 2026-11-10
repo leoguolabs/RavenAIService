@@ -15,7 +15,15 @@ The system SHALL invoke the configured Agent for packaging, enable workspace cod
 - **THEN** the Agent separates component and requested release versions using evidence without catalog rejection
 
 ### Requirement: Validate and confirm publication
-The system SHALL validate artifact structure, hashes, input accounting and project scope, display the Agent's complete review plan, and publish only the confirmed artifact. It MUST reject unsafe archives, changed bytes, cancellation and duplicate publication.
+The system SHALL validate artifact structure, hashes, input accounting and project scope, retain evidence in the audit plan, and publish only the confirmed artifact. The publication summary SHALL contain the project, release version and type, component names and versions, and any release warnings or excluded uploads. It MUST reject unsafe archives, changed bytes, cancellation and duplicate publication.
+
+#### Scenario: Routine publication
+- **WHEN** the validated package has no outstanding warning that needs human judgment
+- **THEN** the conversation shows an inline summary with direct publication and cancellation actions and no source evidence
+
+#### Scenario: An outstanding decision affects release
+- **WHEN** the Agent has built a valid package but a remaining risk or scope change requires a human decision
+- **THEN** a publication dialog shows the same compact summary and the release impact
 
 #### Scenario: Agent builds a new component type
 - **WHEN** the Agent supplies evidence for a component absent from the static catalog

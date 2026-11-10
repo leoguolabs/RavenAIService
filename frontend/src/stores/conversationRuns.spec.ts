@@ -981,6 +981,16 @@ describe('conversationRuns store', () => {
     event: 'agent_trace',
   })
 
+  const publicationReview = {
+    project_name: 'Lingxi 07a',
+    project_code: 'oam_lx07a',
+    version: '1.1.0.0',
+    mode: 'full',
+    components: [{ name: 'oam', version: '1.0.0.2' }],
+    warnings: ['Firmware is absent'],
+    exclusions: [],
+  }
+
   it('pushes a pending clarification from an agent_trace-wrapped request', () => {
     const store = useConversationRunsStore()
     const state = store.ensureState('session-a')
@@ -990,11 +1000,13 @@ describe('conversationRuns store', () => {
       {
         ...wrappedClarificationRequest('run-a', 'session-a', 2, 'req-1'),
         purpose: 'package_build_confirmation',
+        publication_review: publicationReview,
       },
     )
     expect(state.pendingClarifications.map((c) => c.request_id)).toEqual(['req-1'])
     expect(state.pendingClarifications[0].run_id).toBe('run-a')
     expect(state.pendingClarifications[0].purpose).toBe('package_build_confirmation')
+    expect(state.pendingClarifications[0].publication_review).toEqual(publicationReview)
 
     store.applyEventToState(state, {
       event: 'agent_trace',
@@ -1056,12 +1068,14 @@ describe('conversationRuns store', () => {
           run_id: 'run-a',
           session_id: 'session-a',
           purpose: 'package_build_confirmation',
+          publication_review: publicationReview,
           questions: [{ question: 'pick?', options: [{ label: 'x' }, { label: 'y' }] }],
         },
       ],
     })
     expect(sessionA.pendingClarifications.map((c) => c.request_id)).toEqual(['req-a'])
     expect(sessionA.pendingClarifications[0].purpose).toBe('package_build_confirmation')
+    expect(sessionA.pendingClarifications[0].publication_review).toEqual(publicationReview)
   })
 
   it('submits clarification answers and removes the card on success', async () => {

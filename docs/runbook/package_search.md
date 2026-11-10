@@ -50,10 +50,13 @@ Agent-authored result before asking for publication confirmation:
   the hash of the bytes actually copied before atomic rename/registration, and
   rolls back on failure. Cancellation prevents publication.
 
-These are integrity checks, not project business classifiers. They do not prove
-that the Agent interpreted code correctly; the full mapping and its evidence
-are displayed together for one publication decision. Ordinary clarification
-preferences cannot skip this publication review. The tool is idempotent within
+The confirmation shows the project, release version and type, component versions,
+and any publication warnings or excluded uploads. A normal release uses an inline
+card. Only a remaining risk or scope change that needs a human decision opens the
+publication review dialog. Missing or conflicting required values are clarified
+before the plan reaches publication. The full validated plan retains source and
+archive evidence for audit. Ordinary clarification preferences cannot skip the
+publication decision. The tool is idempotent within
 a run and returns the real package ID, SHA-256 and `/raven/api/download/<id>` URL. Shell writes belong
 in the workspace, never directly in repository storage.
 

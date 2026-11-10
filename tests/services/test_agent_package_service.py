@@ -163,11 +163,9 @@ async def test_agent_invokes_publication_tool_and_records_real_model(package_cas
     service._touch_context = lambda *args, **kwargs: None
     service._save_context = lambda *args, **kwargs: None
     async def confirm(job, ctx, **kwargs):
-        question, = kwargs['questions']
-        assert 'PacketAttr=4242' in question['question']
-        assert 'source.bin\nnew-type → new-payload, FileAttr=909' in question['question']
-        assert 'repo/updater.c:14 ID=909;' in question['question']
-        assert question['allow_custom'] is False
+        assert kwargs['review']['project_name'] == 'New project'
+        assert kwargs['review']['components'][0]['name'] == 'new-type'
+        assert kwargs['review']['warnings'] == []
         return [{'selected_labels': ['确认 / Confirm'], 'question_index': 0}]
     service._request_packaging_confirmation = confirm
     from app.services.raven_package_service import raven_package_service
@@ -199,7 +197,7 @@ async def test_changed_artifact_during_confirmation_never_publishes(package_case
     ctx = SimpleNamespace(temp_dir=str(c.root))
     async def confirm(*args, **kwargs):
         write_archive(c.archive, c.ini, b'changed')
-        return [{'selected_labels': ['确认 / Confirm']} for _ in kwargs['questions']]
+        return [{'selected_labels': ['确认 / Confirm']}]
     service._request_packaging_confirmation = confirm
     job = AgentJob(session_id='s', task_id='t', context_meta={}, question='build', user_id='u',
                    remember=True, started_at=time.monotonic(), run_id='r',

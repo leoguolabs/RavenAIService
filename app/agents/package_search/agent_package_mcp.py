@@ -11,7 +11,7 @@ def get_mcp_server(publish: Callable[..., Awaitable[dict[str, Any]]]):
 
     @tool(
         "PublishPackage",
-        "Validate your built TGZ and JSON review plan, show the complete plan to the "
+        "Validate your built TGZ and JSON review plan, show a concise package summary to the "
         "user for confirmation, then publish once. Read full-package-build SKILL.md "
         "for the plan schema. Both paths must be inside the current workspace. "
         "Business types/IDs/versions come from your investigation, not a catalog. "

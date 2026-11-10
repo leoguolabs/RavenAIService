@@ -739,7 +739,7 @@ class PackageSearchChatService:
         plan_path: str, artifact_path: str, emit_trace: Any,
     ) -> Dict[str, Any]:
         """Review and publish Agent-built bytes; no business-rule builder fallback."""
-        from app.services.agent_package_service import validate_agent_package, review_questions
+        from app.services.agent_package_service import publication_review, validate_agent_package
         from app.services.package_confirmation_service import sign_confirmed_plan
         from app.services.raven_package_service import raven_package_service
         from app.services.chat_run_service import chat_run_service
@@ -755,8 +755,7 @@ class PackageSearchChatService:
             projects=job.project_catalog,
         )
         answers = await self._request_packaging_confirmation(
-            job, ctx, questions=review_questions(plan), draft=plan,
-            inputs=plan["inputs"], materialized=["full-package-build"],
+            job, ctx, review=publication_review(plan), draft=plan,
             emit_trace=emit_trace, chat_run_service=chat_run_service,
         )
         if any(a.get("selected_labels") != ["确认 / Confirm"] for a in answers):
@@ -815,14 +814,14 @@ class PackageSearchChatService:
         job: AgentJob,
         ctx: WorkspaceContext,
         *,
-        questions: List[Dict[str, Any]],
+        review: Dict[str, Any],
         draft: Dict[str, Any],
-        inputs: List[Dict[str, Any]],
-        materialized: List[str],
         emit_trace: Any,
         chat_run_service: Any,
     ) -> List[Dict[str, Any]]:
         """Ask through the shared broker and expose it to immediate cancellation."""
+        from app.services.agent_package_service import review_questions
+
         if job.cancel_requested or job.cancel_event.is_set():
             raise MandatoryClarificationError(
                 "cancelled", "打包确认已取消，未执行构建和发布。"
@@ -836,7 +835,7 @@ class PackageSearchChatService:
         chat_run_service.register_broker(job.run_id, broker)
         try:
             return await request_mandatory_clarification(
-                questions,
+                review_questions(review),
                 broker=broker,
                 emit=emit_trace,
                 seq_counter=seq_counter,
@@ -844,10 +843,11 @@ class PackageSearchChatService:
                 run_id=job.run_id,
                 session_id=job.session_id,
                 cancel_run=lambda sid=job.session_id: self.cancel(sid),
+                publication_review=review,
                 event_fields={
                     "plan_hash": draft.get("plan_hash"),
-                    "input_count": len(inputs),
-                    "loaded_skills": list(materialized),
+                    "input_count": len(draft["inputs"]),
+                    "loaded_skills": ["full-package-build"],
                 },
             )
         finally:

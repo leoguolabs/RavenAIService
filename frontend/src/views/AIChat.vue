@@ -28,6 +28,7 @@ import type { PendingClarification } from '@/types/agentTrace'
 import AgentTraceStream from '@/components/AgentTraceStream.vue'
 import StreamingAnswer from '@/components/StreamingAnswer.vue'
 import ClarificationCard from '@/components/ClarificationCard.vue'
+import PackagePublicationCard from '@/components/PackagePublicationCard.vue'
 import ShareConversationModal from '@/components/ShareConversationModal.vue'
 import ProjectRepoSelect from '@/components/ProjectRepoSelect.vue'
 import { projectRepoApi, type ProjectRepoOption } from '@/api'
@@ -200,6 +201,7 @@ const pendingClarifications = computed<PendingClarification[]>(
 const currentClarification = computed<PendingClarification | null>(() =>
   pendingClarifications.value.length > 0 ? pendingClarifications.value[0] : null,
 )
+const publicationNeedsReview = computed(() => !!currentClarification.value?.publication_review?.warnings.length)
 // The composer send button morphs into a stop button whenever the current
 // session has a run in flight, regardless of agent kind.
 const canCancelCurrentRun = computed(() => {
@@ -1678,6 +1680,15 @@ const submitClarificationAnswers = async () => {
   }
 }
 
+const submitPublicationDecision = (decision: 'confirm' | 'cancel') => {
+  const head = currentClarification.value
+  if (!head?.publication_review || head.submitting) return
+  const option = head.questions[0]?.options[decision === 'confirm' ? 0 : 1]
+  if (!option) return
+  head.draftSelected[0] = [option.label]
+  return submitClarificationAnswers()
+}
+
 const { handleKeydown, handleCompositionStart, handleCompositionEnd } =
   useChatComposerKeyboard(() => { void sendMessage() })
 
@@ -2312,6 +2323,24 @@ const openShareModal = () => {
 
     <!-- Composer -->
     <div class="rw-composer-wrap">
+      <div
+        v-if="currentClarification?.publication_review"
+        :class="publicationNeedsReview ? 'rw-modal-backdrop rw-hitl-backdrop' : 'rw-publication-inline'"
+      >
+        <div
+          :class="{ 'rw-modal rw-hitl-modal rw-clarification-modal': publicationNeedsReview }"
+          :role="publicationNeedsReview ? 'dialog' : undefined"
+          :aria-modal="publicationNeedsReview ? true : undefined"
+          :aria-label="publicationNeedsReview ? t('aiChat.clarification.publicationTitle') : undefined"
+        >
+          <PackagePublicationCard
+            :review="currentClarification.publication_review"
+            :submitting="currentClarification.submitting"
+            :error="currentClarification.error"
+            @decide="submitPublicationDecision"
+          />
+        </div>
+      </div>
       <!-- 未登录提示 -->
       <div v-if="!isLoggedIn" class="rw-composer-alert is-login">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
@@ -2692,7 +2721,7 @@ const openShareModal = () => {
     </div>
 
     <!-- AskUserQuestion clarification modal -->
-    <div v-if="currentClarification" class="rw-modal-backdrop rw-hitl-backdrop">
+    <div v-if="currentClarification && !currentClarification.publication_review" class="rw-modal-backdrop rw-hitl-backdrop">
       <div class="rw-modal rw-hitl-modal rw-clarification-modal">
         <ClarificationCard
           :pending="currentClarification"
@@ -3096,6 +3125,7 @@ const openShareModal = () => {
 
 /* Composer */
 .rw-composer-wrap { flex-shrink: 0; padding: 12px 32px 24px; background: var(--rw-canvas); }
+.rw-publication-inline { max-width: 820px; margin: 0 auto 10px; }
 .rw-composer {
   max-width: 820px; margin: 0 auto;
   border: 1px solid var(--rw-hairline-strong);

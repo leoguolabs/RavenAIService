@@ -495,6 +495,7 @@ async def request_mandatory_clarification(
     timeout_seconds: Optional[float] = None,
     cancel_run: Optional[CancelRunFn] = None,
     event_fields: Optional[Dict[str, Any]] = None,
+    publication_review: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Ask a non-optional, programmatic confirmation through the existing UI.
 
@@ -538,6 +539,7 @@ async def request_mandatory_clarification(
             mandatory=True,
             purpose="package_build_confirmation",
             **extra,
+            **({"publication_review": publication_review} if publication_review is not None else {}),
         ),
     )
 

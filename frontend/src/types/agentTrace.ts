@@ -152,11 +152,22 @@ export interface ClarificationQuestion {
   options: ClarificationOption[]
 }
 
+export interface PackagePublicationReview {
+  project_name: string
+  project_code: string
+  version: string
+  mode: 'full' | 'patch'
+  components: { name: string; version: string }[]
+  warnings: string[]
+  exclusions: { name: string; reason: string }[]
+}
+
 export interface ClarificationRequestEvent extends BaseTraceEvent {
   type: 'clarification_request'
   request_id: string
   questions: ClarificationQuestion[]
   purpose?: string
+  publication_review?: PackagePublicationReview
   run_id?: string
   session_id?: string
 }
@@ -184,6 +195,7 @@ export interface PendingClarification {
   request_id: string
   questions: ClarificationQuestion[]
   purpose?: string
+  publication_review?: PackagePublicationReview
   session_id?: string
   run_id?: string
   // Per-question working state for the card UI (selected labels + free text).

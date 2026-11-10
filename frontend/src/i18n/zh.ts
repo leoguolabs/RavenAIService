@@ -1731,7 +1731,7 @@ export default {
     capabilities: {
       package: {
         label: '配置管理员',
-        desc: '检索版本包，或上传组件文件。Agent 会核对组件、构建升级包，再提交完整方案供发布审核。',
+        desc: '检索版本包，或上传组件文件。Agent 会核对组件、构建升级包，再请你确认发布。',
         prompt1: '帮我找一个基带包，具体需求是……',
         prompt2: '我想检索一个重构包，筛选条件是……',
         prompt3: '帮我定位某个版本的基带包，要求是……',
@@ -1816,13 +1816,23 @@ export default {
       title: '继续前需要补充信息',
       subtitle: '请补充以下信息。',
       publicationTitle: '软件包发布审核',
-      publicationSubtitle: '请查看完整方案，决定是否发布。',
+      publicationSubtitle: '请核对发布信息，决定是否发布。',
       publicationSubmit: '提交发布决定',
       questionsLabel: '{count} 个待确认问题',
       customPlaceholder: '或自行输入答案…',
       submit: '提交回答',
       submitting: '提交中…',
       requiredError: '请回答每个问题（选择选项或填写自定义内容）。',
+    },
+    publication: {
+      ready: '软件包待发布',
+      full: '整包',
+      patch: '补丁包',
+      components: '组件及版本',
+      warnings: '发布前需核对',
+      exclusions: '未纳入的上传文件',
+      confirm: '确认发布',
+      cancel: '取消发布',
     },
     table: {
       markdownCopied: '已复制表格 Markdown 源码',

@@ -15,7 +15,7 @@ description: Investigate uploaded release components and project source, execute
 4. 代码和本次归档能确定的属性、类型、组件映射和版本直接写入方案，保留可复查的依据。版本若由外部脚本生成，先查项目源码和可用的同版本发布材料（包括配套脚本归档），静态核对脚本输出到清单字段的转换。只有必要输入仍缺失或权威证据冲突时，才用 `mcp__ask__AskUserQuestion` 询问未解决项。没有整包版本规则或用户指定值时，不用组件版本代填。
 5. 用工作区内脚本提取/复制正确载荷并构建 TGZ。只允许安全归档路径，拒绝链接、绝对路径和 `..`，限制展开大小。避免盲目 extractall。已有 Patch 先检查 `si.ini`，按证据提取其载荷，避免把整个旧包再次嵌套。
 6. 生成 `review-plan.json` 和平铺 TGZ。TGZ 只含根目录 `si.ini` 和各 payload，不含 review-plan.json。新 ID/类型不需要修改任何服务端 catalog。每个源文件必须对应至少一个组件或有明确排除理由。
-7. 调用 `mcp__agent_package__PublishPackage`，传入 `plan_path` 和 `artifact_path`。工具向用户展示完整方案并等待一次发布决定；校验错误可修正后重试，取消不可绕过。工具成功才可声称发布，引用其真实下载链接。禁止直接写仓库目录或调用其它发布 API。
+7. 调用 `mcp__agent_package__PublishPackage`，传入 `plan_path` 和 `artifact_path`。工具展示项目、整包版本和类型、组件及版本、异常和排除项，等待一次发布决定。源码依据留在 `evidence`。仅当已有可发布方案、但仍有需要用户判断的发布风险或范围变更时，填写 `publication_warnings`，每条只写影响和待决定事项。未经用户认可且影响发布范围的排除须列为警示。已授权的排除照常列出，例行校验、已解决的差异和不入包的校验文件无需警示。必要字段缺失或冲突时，先用聚焦的问题澄清。校验错误可修正后重试，取消不可绕过。工具成功才可声称发布，引用其真实下载链接。禁止直接写仓库目录或调用其它发布 API。
 
 ## Review plan schema
 
@@ -29,6 +29,7 @@ description: Investigate uploaded release components and project source, execute
   "packet_attr": 1001,
   "publisher": "GalaxySpace",
   "evidence": ["repo/path.c:123 @ commit: PacketAttr 与发布者的来源；用户指定整包版本"],
+  "publication_warnings": [],
   "components": [
     {
       "upload_id": "inputs_manifest 中的 upload_id",
@@ -41,12 +42,12 @@ description: Investigate uploaded release components and project source, execute
     }
   ],
   "excluded_inputs": [
-    {"upload_id": "排除文件的upload_id", "reason": "用户可审核的具体理由"}
+    {"upload_id": "排除文件的upload_id", "reason": "用一句话说明排除原因及其发布影响"}
   ]
 }
 ```
 
-`mode` 为 `full` 或 `patch`。版本是独立字符串，不受项目正则约束。每个 FileAttr/输出文件名唯一；一份上传归档可以提供多个组件。引用证据要具体、可复查；不得伪造源码行号、commit 或缺失的版本。
+`mode` 为 `full` 或 `patch`。版本是独立字符串，不受项目正则约束。每个 FileAttr/输出文件名唯一；一份上传归档可以提供多个组件。`publication_warnings` 可省略，最多 6 条，每条最多 200 字符。引用证据要具体、可复查；不得伪造源码行号、commit 或缺失的版本。
 
 ## Wire manifest
 

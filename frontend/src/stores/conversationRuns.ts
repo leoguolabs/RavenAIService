@@ -224,11 +224,14 @@ const normalizeClarificationQuestions = (raw: unknown): ClarificationQuestion[] 
 const makePendingClarification = (
   requestId: string,
   questions: ClarificationQuestion[],
-  meta: { session_id?: string; run_id?: string; purpose?: string },
+  meta: Pick<PendingClarification, 'session_id' | 'run_id' | 'purpose' | 'publication_review'>,
 ): PendingClarification => ({
   request_id: requestId,
   questions,
   ...(meta.purpose ? { purpose: meta.purpose } : {}),
+  ...(meta.purpose === 'package_build_confirmation' && meta.publication_review
+    ? { publication_review: meta.publication_review }
+    : {}),
   session_id: meta.session_id,
   run_id: meta.run_id,
   draftSelected: questions.map(() => []),
@@ -466,6 +469,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
             session_id: payload?.session_id || state.sessionId,
             run_id: payload?.run_id || state.activeRunId || undefined,
             purpose: payload?.purpose,
+            publication_review: payload?.publication_review,
           }),
         )
       }
@@ -800,6 +804,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
           session_id: c?.session_id || state.sessionId,
           run_id: c?.run_id || runId,
           purpose: c?.purpose,
+          publication_review: c?.publication_review,
         }),
       )
     }

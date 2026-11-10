@@ -93,6 +93,9 @@ def validate_agent_package(
         raise AgentPackageError("Artifact must be a TGZ archive")
     if not 0 < artifact.stat().st_size <= int(settings.upload_max_size_mb) * 1024 * 1024:
         raise AgentPackageError("Artifact is empty or exceeds the upload limit")
+    warnings = raw.get("publication_warnings", [])
+    if not isinstance(warnings, list) or len(warnings) > 6:
+        raise AgentPackageError("Provide at most six publication warnings")
     plan = {
         "schema_version": 1,
         "execution": "agent",
@@ -104,6 +107,7 @@ def validate_agent_package(
         "packet_attr": _number(raw.get("packet_attr"), "PacketAttr"),
         "publisher": _text(raw.get("publisher"), "Publisher"),
         "evidence": _evidence(raw.get("evidence")),
+        "publication_warnings": [_text(item, "publication warning", limit=200) for item in warnings],
         "artifact_path": str(artifact),
         "artifact_sha256": sha256_file(artifact),
         "artifact_size": artifact.stat().st_size,
@@ -236,23 +240,37 @@ def _validate_archive(path: Path, plan: dict[str, Any]) -> None:
             raise AgentPackageError(f"si.ini {key} differs from review plan")
 
 
-def review_questions(plan: dict[str, Any]) -> list[dict[str, Any]]:
-    """Present the whole validated plan for one publication decision."""
-    overview = (f"{plan['project_name']} ({plan['project_code']}) | {plan['version']} | "
-                f"{plan['mode']} | PacketAttr={plan['packet_attr']} | Publisher={plan['publisher']}")
-    sections = ["\n".join([overview, *plan["evidence"]])]
-    for item in plan["inputs"]:
-        mapped = [c for c in plan["components"] if c["upload_id"] == item["upload_id"]]
-        detail = "\n".join(
-            f"{c['component_key']} → {c['output_name']}, FileAttr={c['file_attr']}, "
-            f"version={c['version']}\n" + "\n".join(c["evidence"]) for c in mapped
-        ) if mapped else "排除 / Exclude: " + item["reason"]
-        sections.append(f"{item['original_name']}\n{detail}")
+def publication_review(plan: dict[str, Any]) -> dict[str, Any]:
+    """Project the validated plan onto the fields needed for publication."""
+    return {
+        "project_name": plan["project_name"],
+        "project_code": plan["project_code"],
+        "version": plan["version"],
+        "mode": plan["mode"],
+        "components": [
+            {"name": c["component_key"], "version": c["version"]} for c in plan["components"]
+        ],
+        "warnings": plan.get("publication_warnings", []),
+        "exclusions": [
+            {"name": item["original_name"], "reason": item["reason"]}
+            for item in plan["inputs"] if not item["include"]
+        ],
+    }
+
+
+def review_questions(review: dict[str, Any]) -> list[dict[str, Any]]:
+    """Keep the decision compatible with the existing confirmation transport."""
+    overview = (f"{review['project_name']} ({review['project_code']}) | "
+                f"{review['version']} | {review['mode']}")
+    lines = [overview]
+    lines.extend(f"{c['name']} · {c['version']}" for c in review["components"])
+    lines.extend(f"异常 / Warning: {warning}" for warning in review["warnings"])
+    lines.extend(f"排除 / Exclude: {item['name']} · {item['reason']}" for item in review["exclusions"])
     return [{
-        "question": "\n\n".join(sections),
+        "question": "\n".join(lines),
         "header": "发布确认", "multiSelect": False, "allow_custom": False,
         "options": [
-            {"label": "确认 / Confirm", "description": "按上述 Agent 方案发布 / Publish this Agent plan"},
+            {"label": "确认 / Confirm", "description": "发布此软件包 / Publish this package"},
             {"label": "取消 / Cancel", "description": "不发布 / Do not publish"},
         ],
     }]

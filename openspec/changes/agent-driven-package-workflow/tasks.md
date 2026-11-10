@@ -13,3 +13,8 @@
 - [x] 3.1 Run focused backend/frontend regression checks and update the packaging runbook.
 - [x] 3.2 Run actual local Docker Agent packaging with supplied releases and verify archive contents/download hashes.
 - [x] 3.3 Verify browser upload, confirmation, switching/reopening and second-page recovery; review changes and commit.
+
+## 4. Publication summary
+
+- [x] 4.1 Project the validated audit plan onto a compact confirmation with inline actions and a dialog only for outstanding publication decisions.
+- [x] 4.2 Verify publication, cancellation, reconnection, and frontend rendering with and without a release warning.
