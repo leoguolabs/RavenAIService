@@ -1,7 +1,8 @@
-"""Internal OpenAI transport with fail-closed, real-credit admission.
+"""Internal OpenAI transport with fail-closed, balance-based admission.
 
 The dashboard source is deliberately isolated from inference credentials. It is
-not a public billing API; an expired session denies new inference until renewed.
+not a public billing API; when a refresh is required an expired session denies
+new admission until renewed.
 See openspec/changes/enforce-openai-balance-floor/design.md.
 """
 
@@ -26,6 +27,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.services.openai_balance_estimate import BalanceEstimate, RETRY_AFTER, magpie_ledger, utc_now
 from app.services.openai_task_admission import ADMISSION_HEADER
 
 BALANCE_URL = "https://api.openai.com/v1/dashboard/billing/credit_grants"
@@ -86,7 +88,7 @@ def retry_after_seconds(response: httpx.Response) -> float | None:
 
 def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal("15"),
                client: httpx.AsyncClient | None = None, balance_timeout: float = 2,
-               task_caller_sha256: str = "") -> FastAPI:
+               task_caller_sha256: str = "", estimate: BalanceEstimate | None = None) -> FastAPI:
     if not minimum.is_finite() or minimum < 0:
         raise ValueError("Balance floor must be a nonnegative USD amount")
     if task_caller_sha256 and (len(task_caller_sha256) != 64
@@ -107,12 +109,16 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
     application = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     application.state.upstream = client
     state = {"decision": "unverified", "balance_usd": None, "checked_at": None,
-             "forwarded": 0, "blocked": 0, "balance_lookups": 0}
+             "forwarded": 0, "blocked": 0, "balance_lookups": 0,
+             "estimated_usd": None, "magpie_ledger_reads": 0}
     display_balance = None
     retry_source, retry_until = None, 0.0
 
     def source_identity(source: dict) -> bytes:
         return json.dumps([source["organization"], source["api_key_sha256"], source["authorization"]]).encode()
+
+    def fingerprint(source: dict) -> str:
+        return hashlib.sha256(source_identity(source)).hexdigest()
 
     def sign(source: dict, payload: str) -> str:
         return hmac.digest(signing_key, source_identity(source) + payload.encode(), "sha256").hex()
@@ -133,7 +139,7 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
             "message": "OpenAI 暂时无法核验 / OpenAI admission verification unavailable"}}, status_code=503)
 
     def unavailable(error: BalanceUnavailable):
-        if str(error) != "http_429_backoff":
+        if str(error) not in {"http_429_backoff", "balance_refresh_backoff"}:
             logger.warning("OpenAI balance verification failed (%s)", error)
         state.update(decision="balance_source_unavailable", balance_usd=None)
         return refused()
@@ -195,6 +201,31 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
         except (httpx.HTTPError, TimeoutError) as exc:
             raise BalanceUnavailable(type(exc).__name__) from exc
 
+    async def task_amount(source: dict, key: str) -> Decimal:
+        if estimate is None:
+            return await verified_balance(source, attempts=1)
+        async with estimate.lock:
+            identity = fingerprint(source)
+            state["magpie_ledger_reads"] += 1
+            ledger = await magpie_ledger(application.state.upstream, key)
+            now = utc_now()
+            amount = estimate.reusable(identity, ledger, minimum, now)
+            if amount is None:
+                state["estimated_usd"] = None
+                if estimate.retry_at and now < estimate.retry_at:
+                    raise BalanceUnavailable("balance_refresh_backoff")
+                try:
+                    amount = await verified_balance(source, attempts=1)
+                except BalanceUnavailable:
+                    estimate.retry_at = now + RETRY_AFTER
+                    estimate.ledger_reset = True
+                    raise
+                estimate.remember(identity, amount, ledger, datetime.fromisoformat(state["checked_at"]))
+            snap = estimate.verified(identity)
+            state.update(estimated_usd=str(amount), balance_usd=str(snap.amount),
+                         checked_at=snap.checked_at.isoformat())
+            return amount
+
     @application.post("/task-admission")
     async def task_admission(request: Request):
         nonlocal display_balance
@@ -205,10 +236,11 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
             return JSONResponse({"error": {"message": "Unauthorized"}}, status_code=401)
         try:
             source = read_source(source_path)
-            amount = await verified_balance(source, attempts=1)
+            amount = await task_amount(source, key)
         except BalanceUnavailable as exc:
             return unavailable(exc)
-        display_balance = (hashlib.sha256(source_identity(source)).digest(), amount, state["checked_at"])
+        if estimate is None:
+            display_balance = (fingerprint(source), amount, state["checked_at"])
         decision = "below" if amount < minimum else "allow"
         state["decision"] = "balance_below_floor" if decision == "below" else "available"
         payload = f"{int(time.time()) + 6 * 3600}.{decision}.{secrets.token_hex(16)}"
@@ -234,9 +266,16 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
                 return refused()
         else:
             if task_caller_sha256:
-                if not display_balance or display_balance[0] != hashlib.sha256(source_identity(source)).digest():
+                identity = fingerprint(source)
+                if estimate is not None:
+                    snap = estimate.verified(identity)
+                    if snap is None:
+                        return refused()
+                    amount, checked_at = snap.amount, snap.checked_at.isoformat()
+                elif display_balance and display_balance[0] == identity:
+                    _, amount, checked_at = display_balance
+                else:
                     return refused()
-                _, amount, checked_at = display_balance
             else:
                 try:
                     amount = await verified_balance(source)
@@ -290,6 +329,8 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
     return application
 
 
+estimate_path = os.environ.get("OPENAI_BALANCE_ESTIMATE_STATE")
 app = create_app(Path(os.environ.get("OPENAI_BALANCE_SOURCE_FILE", SOURCE_PATH)),
                  Decimal(os.environ.get("OPENAI_BALANCE_MIN_USD", "15")),
-                 task_caller_sha256=os.environ.get("OPENAI_BALANCE_TASK_CALLER_SHA256", ""))
+                 task_caller_sha256=os.environ.get("OPENAI_BALANCE_TASK_CALLER_SHA256", ""),
+                 estimate=BalanceEstimate(Path(estimate_path)) if estimate_path else None)

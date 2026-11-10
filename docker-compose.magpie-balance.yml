@@ -16,6 +16,7 @@ services:
     environment:
       OPENAI_BALANCE_MIN_USD: "15"
       OPENAI_BALANCE_TASK_CALLER_SHA256: "${OPENAI_BALANCE_TASK_CALLER_SHA256:-}"
+      OPENAI_BALANCE_ESTIMATE_STATE: "/var/lib/openai-balance-guard/baseline.json"
       PYTHONDONTWRITEBYTECODE: "1"
     # Read a 0600 bind-mounted secret without making it world-readable on the host.
     user: "0:0"
@@ -25,6 +26,8 @@ services:
     init: true
     secrets:
       - openai_balance_source
+    volumes:
+      - openai_balance_state:/var/lib/openai-balance-guard
     expose:
       - "8099"
     restart: unless-stopped
@@ -38,3 +41,6 @@ services:
 secrets:
   openai_balance_source:
     file: ${OPENAI_BALANCE_SOURCE_FILE:?Set the private dashboard balance credential file}
+
+volumes:
+  openai_balance_state:

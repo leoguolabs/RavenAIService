@@ -18,3 +18,8 @@
 
 - [x] 4.1 Check the real balance once before the Agent starts, preserve the decision through model requests and tool continuations, and serve the display from the last verified reading.
 - [x] 4.2 Verify task isolation, fail-closed fallback and the scoped local deployment.
+
+## 5. Periodic balance verification
+
+- [x] 5.1 Persist a verified balance baseline and estimate from priced Magpie usage until a timed or boundary check is needed.
+- [x] 5.2 Verify threshold, ledger anomalies, restart recovery and local deployment.

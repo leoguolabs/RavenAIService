@@ -81,7 +81,9 @@ Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema�
 
 ### OpenAI 真实余额门槛
 
-可选层 `docker-compose.magpie-balance.yml` 在 Magpie 与 OpenAI 之间运行内部 `openai-balance-guard`，不发布宿主端口。设置 `OPENAI_BALANCE_TASK_CALLER_SHA256` 启用任务模式。可能使用该 OpenAI 供应商的 Agent 在启动执行器前查询一次同一组织的真实余额，预算为 **2 秒**。任务内的模型请求、工具续接、执行器重试和模型切换复用本次决定。收到 429 和有效的 `Retry-After` 后，同一账单凭据在等待期内暂停查询。
+可选层 `docker-compose.magpie-balance.yml` 在 Magpie 与 OpenAI 之间运行内部 `openai-balance-guard`，不发布宿主端口。设置 `OPENAI_BALANCE_TASK_CALLER_SHA256` 启用任务模式。可能使用该 OpenAI 供应商的 Agent 在启动执行器前核验准入。门禁从 Magpie 账本读取该 OpenAI 供应商的已计价花费，从上次实查余额扣减此后的用量。第一次任务和上次实查满 **12 小时**后的首个任务会查询 OpenAI，单次预算为 **2 秒**。空闲时没有定时请求。
+
+估算降到 **20 USD** 时提前实查。在缓冲区内实查确认余额后，每再消耗 **1 USD** 或触及 **15 USD** 时再次复核，以先到者为准。账本缺失、回退或出现新增未计价用量也需要复核。连续账本异常或实查失败时，异常查询至少间隔 **15 分钟**，并遵守上游 429 的 `Retry-After`。复核必需但无法完成时拒绝 OpenAI。任务内的模型请求、工具续接、执行器重试和模型切换复用本次决定。
 
 核验低于 **15 USD** 时门禁返回 402，恰好 15 USD 允许请求；无有效准入决定时返回 503。Magpie 使用既有 DeepSeek fallback，Raven 固定实际备用模型并继续执行。只有本次任务的有效决定可以放行。未配置任务模式的部署继续采用逐请求校验。
 
@@ -103,11 +105,11 @@ magpie provider set raven-openai \
   'balance.path=$balance' additional-tools=on
 ```
 
-这里保留原有模型、key、压缩策略及其他供应商设置；`additional-tools=on` 显式保留 OpenAI 原域名下默认支持的动态工具。确认该供应商没有仍直连 OpenAI 的其他协议入口。`/balance` 也需要匹配的推理 key。任务模式下它返回最近一次成功核验的真实金额和时间，管理页刷新与「Check balance」共用这份读数。保护服务重启后由下一次成功核验填充读数。
+这里保留原有模型、key、压缩策略及其他供应商设置；`additional-tools=on` 显式保留 OpenAI 原域名下默认支持的动态工具。确认该供应商没有仍直连 OpenAI 的其他协议入口。`/balance` 也需要匹配的推理 key。任务模式下它返回最近一次成功核验的真实金额和时间，管理页刷新与「Check balance」共用这份读数。真实余额和对应的 Magpie 账本基线保存在 `openai_balance_state` 卷中，重启可复用。门禁的 `/health` 区分真实余额和估算额，并分别统计查询次数。
 
 刷新凭据后，原地写入文件会在下次请求生效；如果用原子替换更新文件，需要仅重建此服务，使 Compose secret 的文件挂载指向新文件。Magpie 的配额休息可能延迟恢复；已经转到备用模型的任务保持原选择。回滚需恢复私有备份中的供应商入口及 fallback；这样也会撤销余额保护，不能以恢复调用为由自动绕过门槛。
 
-此规则按任务开始时核验到的余额决定是否准入。任务执行中产生的消费、其他客户端消费或账单更新延迟仍可能让最终余额低于 15 USD。
+准入使用任务开始时的估算或实查结果。估算只计入当前 Magpie 账本中的花费，其他客户端消费、未结算用量和账单延迟由下一次实查校正。
 
 ### 六类 Agent 交叉用例
 

@@ -1,7 +1,15 @@
 ## ADDED Requirements
 
 ### Requirement: Verified balance admission
-In task mode, Raven SHALL check the actual USD credit-grants balance once before starting an Agent task whose route may use the protected provider. Each protected inference SHALL use that task's authenticated decision. A task SHALL NOT query again during streaming, tool continuation, executor retries or fallback. The guard SHALL refuse forwarding below USD 15 and SHALL admit exactly USD 15. No local usage estimate SHALL substitute for a balance query.
+In task mode, Raven SHALL decide admission before starting an Agent task whose route may use the protected provider. The guard SHALL use the verified USD credit-grants balance minus subsequent priced Magpie usage while the baseline is younger than 12 hours and the estimate is outside the next verification boundary. At that boundary, when the baseline expires, or when the ledger becomes untrustworthy, the guard SHALL obtain a fresh balance before issuing an allow decision. Each protected inference SHALL use that task's authenticated decision. Streaming, tool continuation, executor retries and fallback SHALL NOT trigger balance queries. The guard SHALL refuse forwarding below USD 15 and SHALL admit a verified USD 15.
+
+#### Scenario: Recent trustworthy baseline
+- **WHEN** the estimated balance remains above the next verification boundary and Magpie's ledger is consistent
+- **THEN** a new task uses the estimate without a request to the billing endpoint
+
+#### Scenario: Boundary reached or ledger uncertainty
+- **WHEN** estimated balance falls to USD 20, or the ledger loses continuity or contains new unpriced use
+- **THEN** the next task requires a real balance check, subject to backoff after repeated anomalies
 
 #### Scenario: Below threshold
 - **WHEN** the source reports 14.99

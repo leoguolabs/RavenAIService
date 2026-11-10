@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import httpx
@@ -8,6 +9,8 @@ import pytest
 from starlette.requests import Request
 
 from app.services.openai_balance_guard import BALANCE_URL, create_app
+from app.services import openai_balance_guard as guard
+from app.services.openai_balance_estimate import BalanceEstimate, USAGE_URL
 from app.services.openai_task_admission import ADMISSION_HEADER
 
 
@@ -305,6 +308,88 @@ async def test_failed_task_admission_never_retries_mid_task(source):
             for _ in range(2):
                 assert (await client.post("/v1/responses", headers=AUTH)).status_code == 503
             assert calls == [BALANCE_URL]
+
+
+async def test_estimate_reuses_balance_until_threshold_or_twelve_hours(source, tmp_path, monkeypatch):
+    lookups = []
+    cost = 10
+    amounts = iter((25, 19, 14.9, 50))
+    caller = {"Authorization": "Bearer caller"}
+
+    async def upstream(request):
+        if request.url.host == "magpie":
+            assert str(request.url).split("?")[0] == USAGE_URL
+            assert request.url.params["provider"] == "raven-openai"
+            assert request.headers["authorization"] == caller["Authorization"]
+            return httpx.Response(200, json={"total": int(cost * 10), "unpriced": 0, "cost": cost})
+        assert str(request.url) == BALANCE_URL
+        lookups.append(cost)
+        return httpx.Response(200, json={"total_available": next(amounts)})
+
+    path = tmp_path / "baseline.json"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as external:
+        def app():
+            return create_app(source, client=external, estimate=BalanceEstimate(path),
+                              task_caller_sha256=hashlib.sha256(b"caller").hexdigest())
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app()), base_url="http://guard") as client:
+            responses = await asyncio.gather(*(client.post("/task-admission", headers=caller) for _ in range(2)))
+            assert all(response.is_success for response in responses)
+            assert lookups == [10]
+
+        # Recreating the guard restores the verified amount and its ledger baseline.
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app()), base_url="http://guard") as client:
+            cost = 14
+            assert (await client.post("/task-admission", headers=caller)).is_success
+            assert (await client.get("/health")).json()["estimated_usd"] == "21.00000000"
+            assert (await client.get("/balance", headers=AUTH)).json()["balance"] == 25
+            assert lookups == [10]
+            cost = 15
+            assert (await client.post("/task-admission", headers=caller)).is_success
+            assert lookups == [10, 15]
+            cost = 15.5
+            assert (await client.post("/task-admission", headers=caller)).is_success
+            assert lookups == [10, 15]
+            cost = 16
+            proof = (await client.post("/task-admission", headers=caller)).json()["admission"]
+            assert (await client.post("/v1/responses", headers={**AUTH, ADMISSION_HEADER: proof})).status_code == 402
+            assert (await client.post("/task-admission", headers=caller)).is_success
+            assert lookups == [10, 15, 16]
+            future = datetime.now(timezone.utc) + timedelta(hours=12, seconds=1)
+            monkeypatch.setattr(guard, "utc_now", lambda: future)
+            assert (await client.post("/task-admission", headers=caller)).is_success
+            assert lookups == [10, 15, 16, 16]
+
+
+@pytest.mark.parametrize("failure", ["missing", "unpriced", "reset"])
+async def test_uncertain_magpie_ledger_requires_fresh_balance_and_backs_off(source, failure):
+    lookups = 0
+    ready = False
+    caller = {"Authorization": "Bearer caller"}
+
+    async def upstream(request):
+        nonlocal lookups
+        if request.url.host == "magpie":
+            if not ready:
+                return httpx.Response(200, json={"total": 20, "unpriced": 0, "cost": 5})
+            if failure == "missing":
+                return httpx.Response(503)
+            if failure == "reset":
+                return httpx.Response(200, json={"total": 0, "unpriced": 0, "cost": 0})
+            return httpx.Response(200, json={"total": 21, "unpriced": 1, "cost": 5})
+        assert str(request.url) == BALANCE_URL
+        lookups += 1
+        return httpx.Response(503) if ready else httpx.Response(200, json={"total_available": 80})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as external:
+        app = create_app(source, client=external, estimate=BalanceEstimate(None),
+                         task_caller_sha256=hashlib.sha256(b"caller").hexdigest())
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://guard") as client:
+            assert (await client.post("/task-admission", headers=caller)).is_success
+            ready = True
+            assert (await client.post("/task-admission", headers=caller)).status_code == 503
+            assert (await client.post("/task-admission", headers=caller)).status_code == 503
+            assert lookups == 2
 
 
 def test_invalid_floor_is_not_silently_disabled(source):
