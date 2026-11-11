@@ -208,6 +208,7 @@ claude_agent_log_analysis:
         }
         ```
         其中 `title`、`description`、`rationale` 为必填，`suspected_files`、`suspected_symbols` 为选填（不确定时省略或留空数组）。
+        自动 Bug Fix 只能修改所选项目的 `repo/`。依赖 `related_repos/<project_code>/` 的修复建议保留在分析回答中，并说明应选择哪个项目重新分析。只把所选项目可以独立实施的修复放入 `proposed_fixes`。
 
         ## 规则
         - 绝对不要在工作目录中写入或编辑任何文件。
@@ -390,6 +391,7 @@ claude_agent_log_analysis:
         }
         ```
         `title`, `description`, and `rationale` are required; `suspected_files` and `suspected_symbols` are optional (omit or leave as empty arrays when uncertain).
+        Automatic Bug Fix can write only to the selected project's `repo/`. Keep fixes that depend on `related_repos/<project_code>/` in the analysis answer and name the project to select for a new analysis. Include only fixes that can be implemented independently in the selected project in `proposed_fixes`.
 
         ## Rules
         - Never write or edit any files in the working directory.

@@ -14,6 +14,7 @@ from contextlib import suppress
 from pathlib import Path
 
 MAX_OUTPUT = 64 * 1024
+GIT_SSH_ENV_KEYS = ("SSH_AUTH_SOCK", "GIT_SSH_COMMAND")
 
 
 def schema(required=(), **properties):
@@ -48,6 +49,7 @@ TOOLS = {
 class WorkspaceTools:
     def __init__(self, options):
         self.cwd = Path(options.cwd).resolve()
+        self.git_ssh_env = {key: options.env[key] for key in GIT_SSH_ENV_KEYS if key in options.env}
         self.roots = [self.cwd, *(Path(path).resolve() for path in (options.add_dirs or []))]
         self.skills_enabled = "project" in (options.setting_sources or [])
         # Raven materializes trusted Skills as links to shared packages. Snapshot
@@ -70,6 +72,8 @@ class WorkspaceTools:
         # to model-controlled commands. Application tools run in the parent.
         env = {key: value for key, value in os.environ.items() if key in {
             "PATH", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR"}}
+        if argv[0] == "/bin/bash":
+            env.update(self.git_ssh_env)
         process = await asyncio.create_subprocess_exec(*argv, cwd=str(self.cwd), env=env,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
         output = bytearray()

@@ -33,6 +33,27 @@ logger = logging.getLogger(__name__)
 _SUCCESS_STATUSES = frozenset({"ok", "completed"})
 
 
+def _project_fixes(analysis_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Keep automatic repairs inside the selected project's write scope."""
+    proposed = analysis_result.get("proposed_fixes")
+    if not isinstance(proposed, list):
+        return []
+
+    fixes = []
+    for fix in proposed:
+        if not isinstance(fix, dict):
+            continue
+        paths = fix.get("suspected_files") or []
+        if isinstance(paths, list) and any(
+            isinstance(path, str)
+            and path.strip().removeprefix("repo:").removeprefix("./").startswith("related_repos/")
+            for path in paths
+        ):
+            continue
+        fixes.append(fix)
+    return fixes
+
+
 def should_dispatch(analysis_result: Dict[str, Any]) -> bool:
     """判定一次分析结果是否应当派发 Bug 修复任务。
 
@@ -45,8 +66,7 @@ def should_dispatch(analysis_result: Dict[str, Any]) -> bool:
         return False
     if not analysis_result.get("requires_code_fix"):
         return False
-    fixes = analysis_result.get("proposed_fixes")
-    return isinstance(fixes, list) and len(fixes) > 0
+    return bool(_project_fixes(analysis_result))
 
 
 def _derive_title(analysis_result: Dict[str, Any], proposed_fixes: List[Any]) -> str:
@@ -73,9 +93,7 @@ def create_task_from_analysis(
 
     调用方负责事务提交。``proposed_fixes`` 序列化进 ``proposed_fixes_json``。
     """
-    proposed_fixes = analysis_result.get("proposed_fixes") or []
-    if not isinstance(proposed_fixes, list):
-        proposed_fixes = []
+    proposed_fixes = _project_fixes(analysis_result)
 
     task = BugFixTask(
         project_repo_id=project_repo_id,

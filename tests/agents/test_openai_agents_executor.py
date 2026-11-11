@@ -201,8 +201,9 @@ async def test_workspace_tools_cannot_escape_or_inherit_keys(tmp_path, monkeypat
     with pytest.raises(ValueError, match='outside'):
         await workspace.call('Read', {'file_path': '../secret'})
     monkeypatch.setenv('OPENAI_API_KEY', 'secret-never-pass')
-    result = await workspace.call('Bash', {'command': 'printf "%s" "${OPENAI_API_KEY-unset}"'})
-    assert 'unset' in result['stdout'] and 'secret-never-pass' not in str(result)
+    monkeypatch.setenv('SSH_AUTH_SOCK', '/run/fixture/agent.sock')
+    result = await workspace.call('Bash', {'command': 'printf "%s\\n" "${OPENAI_API_KEY-unset}" "${SSH_AUTH_SOCK-unset}"'})
+    assert result['stdout'].splitlines() == ['unset', 'unset']
     await workspace.call('Write', {'file_path': 'file', 'content': 'hello'})
     await workspace.call('Edit', {'file_path': 'file', 'old_string': 'hello', 'new_string': 'updated'})
     assert (tmp_path / 'file').read_text() == 'updated'

@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.log_analysis.trace import mask_tokens
 from app.api.users import get_current_user, get_request_locale
 from app.i18n.messages import t
 from app.models.bug_fix import BugFixMergeRequest, BugFixTask, BugFixTaskStatus
@@ -271,7 +272,7 @@ async def get_bug_fix(
         model=task.model,
         trace_events=_parse_json(task.trace_events_json, []),
         context_availability=(_parse_json(task.source_context_json, {}).get("availability", "snapshot") if task.source_context_json else "legacy_reconstructed"),
-        error=task.error,
+        error=mask_tokens(task.error) if task.error else task.error,
         proposed_fixes=_parse_json(task.proposed_fixes_json, []),
         fix_outcomes=_parse_json(task.fix_outcomes_json, []),
         merge_requests=merge_requests,

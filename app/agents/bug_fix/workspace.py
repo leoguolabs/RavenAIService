@@ -48,6 +48,7 @@ class BugFixWorkspaceContext:
     default_branch: str
     logs_dir: Optional[str] = None  # temp_dir/logs/；来源日志同步成功时非 None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    repo_url: str = field(default="", repr=False)
 
 
 def _git_identity() -> Dict[str, str]:
@@ -244,6 +245,7 @@ def prepare(
             default_branch=default_branch,
             logs_dir=str(logs_dir) if logs_dir is not None else None,
             metadata={"title": title, "proposed_fixes": proposed_fixes, "source_context": context_metadata},
+            repo_url=repo_url,
         )
     except BugFixWorkspaceError:
         shutil.rmtree(str(temp_dir), ignore_errors=True)

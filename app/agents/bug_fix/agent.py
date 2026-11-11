@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -238,7 +239,8 @@ class BugFixCodingAgent:
 
     async def run(self, ctx: BugFixWorkspaceContext) -> Dict[str, Any]:
         from app.agents.anthropic_client import build_options
-        from app.agents.bug_fix.prompts import get_prompts, render_user_prompt
+        from app.agents.bug_fix.git_tools import infer_provider
+        from app.agents.bug_fix.prompts import GITLAB_SSH_PROMPT, get_prompts, render_user_prompt
         from app.config import settings
 
         try:
@@ -259,6 +261,12 @@ class BugFixCodingAgent:
                 "触发本次修复的原始日志已同步到 `logs/`（内容与日志分析 Agent "
                 "工作区一致）。定位根因、确认错误上下文时优先查阅其中的日志证据。\n"
             )
+        ssh_url = ctx.repo_url
+        if scp_url := re.fullmatch(r"([^/@:\s]+@[^/:\s]+):(.+)", ssh_url):
+            ssh_url = f"ssh://{scp_url[1]}/{scp_url[2]}"
+        use_ssh = ssh_url.lower().startswith("ssh://")
+        if use_ssh and infer_provider(ssh_url) == "gitlab":
+            system_prompt_text += GITLAB_SSH_PROMPT
         # 改代码能力对齐原生 Claude Code：使用 claude_code preset，
         # 把 Bug 修复约束与最终 merge_requests JSON 输出契约作为 append 叠加。
         system_prompt = {
@@ -318,6 +326,11 @@ class BugFixCodingAgent:
             max_tokens=settings.bug_fix_agent_max_tokens,
             request_timeout_seconds=settings.bug_fix_agent_request_timeout_seconds,
         )
+        if use_ssh:
+            # Explicit opt-in for executors that sanitize their tool environment.
+            from app.agents.openai_agents_tools import GIT_SSH_ENV_KEYS
+
+            options.env.update({key: os.environ[key] for key in GIT_SSH_ENV_KEYS if key in os.environ})
 
         start = time.monotonic()
         collected_text: List[str] = []

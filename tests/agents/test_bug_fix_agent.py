@@ -485,12 +485,44 @@ async def test_terminal_sdk_error_without_exception(monkeypatch):
     from types import SimpleNamespace
     from app.agents import anthropic_client
     async def query(**kwargs):
-        yield SimpleNamespace(is_error=True, result="API Error: 500 upstream unavailable", content=None)
+        yield SimpleNamespace(is_error=True, result="API Error: 429 <ak-fixture-key> insufficient balance", content=None)
     monkeypatch.setattr(claude_agent_sdk, "query", query)
     monkeypatch.setattr(anthropic_client, "build_options", lambda **kw: object())
     result = await bf_agent.BugFixCodingAgent().run(_make_ctx("sdk-500"))
     assert result["status"] == "failed"
-    assert "500 upstream" in result["error"]
+    assert result["error_kind"] == "upstream_error"
+    assert "429 <***> insufficient balance" in result["error"]
+    assert "ak-fixture-key" not in str(result)
+
+
+@pytest.mark.parametrize("repo_url", [
+    "ssh://git@gitlab.example.com:2225/team/repo.git", "git@gitlab.example.com:team/repo.git",
+])
+async def test_ssh_bug_fix_uses_worker_git_identity_without_provider_keys(monkeypatch, tmp_path, repo_url):
+    from types import SimpleNamespace
+    from app.agents import provider_query
+    from app.agents.openai_agents_tools import WorkspaceTools
+
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/run/fixture/agent.sock")
+    monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=yes")
+    monkeypatch.setenv("OPENAI_API_KEY", "do-not-forward")
+
+    async def query(*, prompt, options):
+        assert "-o merge_request.create" in options.system_prompt["append"]
+        result = await WorkspaceTools(options).call("Bash", {"command": (
+            'printf "%s\\n" "$SSH_AUTH_SOCK" "$GIT_SSH_COMMAND" "${OPENAI_API_KEY-unset}" "${ANTHROPIC_API_KEY-unset}"'
+        )})
+        assert result["stdout"].splitlines() == [
+            "/run/fixture/agent.sock", "ssh -o StrictHostKeyChecking=yes", "unset", "unset",
+        ]
+        yield SimpleNamespace(content='{"status":"failed","error_kind":"fixture","merge_requests":[]}')
+
+    monkeypatch.setattr(provider_query, "query", query)
+    ctx = _make_ctx("ssh-repair")
+    ctx.repo_url = repo_url
+    ctx.temp_dir = str(tmp_path)
+    result = await bf_agent.BugFixCodingAgent().run(ctx)
+    assert result["error_kind"] == "fixture"
 
 
 async def test_checkpoint_recovers_published_mr_and_marks_missing_item_failed(tmp_path, monkeypatch):

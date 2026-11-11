@@ -69,6 +69,18 @@ def test_should_dispatch_false_when_no_fixes():
     assert bug_fix_service.should_dispatch(_analysis(proposed_fixes=[])) is False
 
 
+def test_related_repository_proposals_are_not_auto_dispatched(session):
+    related = {"title": "Fix protocol stack", "suspected_files": ["repo:related_repos/stack_three/app/a.cpp"]}
+    primary = {"title": "Fix OAM", "suspected_files": ["repo:app/oam.cpp"]}
+    assert not bug_fix_service.should_dispatch(_analysis(proposed_fixes=[related]))
+
+    analysis = _analysis(proposed_fixes=[related, primary])
+    assert bug_fix_service.should_dispatch(analysis)
+    task = bug_fix_service.create_task_from_analysis(session, project_repo_id=3, analysis_result=analysis)
+    assert json.loads(task.proposed_fixes_json) == [primary]
+    assert analysis["proposed_fixes"] == [related, primary]
+
+
 def test_should_dispatch_false_on_legacy_result_without_fields():
     # legacy result missing the new fields → safe default
     assert bug_fix_service.should_dispatch({"status": "completed"}) is False

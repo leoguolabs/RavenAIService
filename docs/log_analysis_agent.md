@@ -306,7 +306,11 @@ Agent 运行期间通过 `trace_emitter` 回调推送 `AgentTraceEvent`，事件
 
 ## BugFix 独立审核与上下文交接
 
-日志分析的 `requires_code_fix` / `proposed_fixes` 表示修复建议。BugFix 使用后台“模型设置”中的独立端点（`bug_fix_agent_provider/api_key/base_url/model`），不会回退到分析主备模型。API Key 留空保留已保存值，连接测试 target 为 `bug_fix`。Token 上限、最大回合与超时也可独立调整；未配置专用密钥会返回 `bug_fix_model_unconfigured`。
+日志分析的 `requires_code_fix` / `proposed_fixes` 表示修复建议。自动修复任务以所选项目的 `repo/` 为目标，引用 `related_repos/<project_code>/` 的修复建议留在分析回答中。需要修复该仓库时，请选择对应项目重新分析。
+
+启用 Magpie 时，Bug Fix 使用后台 Agent 运行时为 `bug_fix` 选定的模型和执行器。关闭 Magpie 时使用后台“模型设置”中的独立端点（`bug_fix_agent_provider/api_key/base_url/model`）。API Key 留空保留已保存值，连接测试 target 为 `bug_fix`。Token 上限、最大回合与超时可独立调整。专用端点未配置时返回 `bug_fix_model_unconfigured`。
+
+对于 GitLab SSH 仓库，Bug Fix Bash 继承 worker 的 SSH agent socket 和主机密钥校验命令。首次推送修复分支时通过 GitLab push options 创建指向任务基线的 MR，并记录 GitLab 返回的 MR URL。
 
 兼容不支持 Token/超时构造参数的 Python SDK 版本：底层 CLI 同时接收 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 与 `API_TIMEOUT_MS`，BugFix 编排另有总执行时限，避免后台保存成功但预算参数在 SDK 层被忽略。
 

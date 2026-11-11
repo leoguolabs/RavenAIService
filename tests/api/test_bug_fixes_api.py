@@ -103,7 +103,7 @@ def client(tmp_path) -> TestClient:
                 source_log_id="log-b",
                 title="Fix B",
                 status=BugFixTaskStatus.FAILED,
-                error="old_failure",
+                error="upstream_error: <ak-fixture-key> insufficient balance",
                 fix_outcomes_json=json.dumps(
                     [{"fix_index": 1, "outcome": "failed"}]
                 ),
@@ -234,7 +234,9 @@ def test_admin_reads_any_detail(client: TestClient) -> None:
     _as_user(client, "user-admin", role="admin")
     resp = client.get("/api/v1/bug-fixes/task-b")
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["id"] == "task-b"
+    data = resp.json()["data"]
+    assert data["id"] == "task-b"
+    assert data["error"] == "upstream_error: <***> insufficient balance"
 
 
 def test_missing_task_returns_404(client: TestClient) -> None:

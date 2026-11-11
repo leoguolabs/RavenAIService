@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 # from any text that may flow into a trace event.
 _TOKEN_URL_RE = re.compile(r"(https?://)[^/@\s]+@", re.IGNORECASE)
 _GITLAB_TOKEN_RE = re.compile(r"\bglpat-[A-Za-z0-9_-]{8,}\b")
+_MOONSHOT_KEY_RE = re.compile(r"<ak-[A-Za-z0-9_-]+>")
 
 
 EventType = Literal[
@@ -158,8 +159,9 @@ class SeqCounter:
 
 
 def mask_tokens(text: str) -> str:
-    """Strip the credential portion from a token-bearing URL."""
-    return _GITLAB_TOKEN_RE.sub("***", _TOKEN_URL_RE.sub(r"\1***@", text))
+    """Mask credentials in URLs, GitLab tokens and Moonshot error details."""
+    text = _TOKEN_URL_RE.sub(r"\1***@", text)
+    return _MOONSHOT_KEY_RE.sub("<***>", _GITLAB_TOKEN_RE.sub("***", text))
 
 
 def runtime_metadata(events: Iterable[dict]) -> dict:
