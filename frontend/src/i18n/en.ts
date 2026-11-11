@@ -1936,7 +1936,6 @@ export default {
         terminal: { label: 'AI Terminal', description: 'Connect to devices over SSH, transfer files, and use AI to investigate commands and errors.' },
         packages: { label: 'Package building', description: 'Select components and configurations for a product and build packages for upgrade testing.' },
         chat: { label: 'Assistant chat', description: 'Ask questions about test issues, files and images while keeping conversation context.' },
-        knowledge: { label: 'Knowledge bases', description: 'Import project material to search and reference in conversations.' },
         account: { label: 'Account & models', description: 'Sign in to connect to service-provided models and testing capabilities.' },
         tools: { label: 'Additional tools', description: 'Use code tools, web search and other configured tools as needed.' },
         settings: { label: 'Settings', description: 'Configure appearance, data, device identity and updates.' },

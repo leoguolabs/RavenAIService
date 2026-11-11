@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-const featureKeys = ['agents', 'assets', 'terminal', 'packages', 'chat', 'knowledge', 'account', 'tools', 'settings'] as const
+const featureKeys = ['agents', 'assets', 'terminal', 'packages', 'chat', 'account', 'tools', 'settings'] as const
 type FeatureKey = (typeof featureKeys)[number]
 const selectedImage = ref<FeatureKey | null>(null)
 const imageTitle = computed(() =>

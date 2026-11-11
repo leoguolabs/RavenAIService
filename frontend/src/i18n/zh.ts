@@ -1931,7 +1931,6 @@ export default {
         terminal: { label: 'AI 终端', description: '通过 SSH 连接设备，传输文件，并借助 AI 分析命令与报错。' },
         packages: { label: '软件打包', description: '按型号选择组件和配置，生成升级测试所需的软件包。' },
         chat: { label: '助手对话', description: '就测试问题、文件和图片向助手提问，保留对话上下文。' },
-        knowledge: { label: '知识库', description: '导入项目资料，在对话中检索和引用。' },
         account: { label: '账号与模型', description: '登录 Raven 账号，连接服务端提供的模型和测试能力。' },
         tools: { label: '扩展工具', description: '按需使用代码工具、联网搜索和其他已配置的工具。' },
         settings: { label: '设置', description: '配置客户端外观、数据、设备身份和更新。' },
