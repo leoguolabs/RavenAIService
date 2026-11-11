@@ -1797,6 +1797,8 @@ export default {
       loading: '加载项目中…',
       requiredPlaceholder: '选择关联项目（必选）',
       optionalPlaceholder: '关联项目（可自动识别）',
+      searchPlaceholder: '输入项目名称或编号',
+      noMatches: '没有匹配的项目',
       cardPreview: '项目卡片',
     },
     rename: {

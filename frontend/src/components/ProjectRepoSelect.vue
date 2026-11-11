@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ProjectRepoOption } from '@/api'
+import { filterProjectRepoOptions } from '@/utils/projectRepoSearch'
 
 const PREVIEW_DELAY_MS = 3000
 
@@ -18,8 +19,12 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const rootRef = ref<HTMLElement | null>(null)
-const triggerRef = ref<HTMLButtonElement | null>(null)
+const inputRef = ref<HTMLInputElement | null>(null)
+const menuRef = ref<HTMLElement | null>(null)
+const listboxId = `project-repo-listbox-${useId()}`
+const optionId = (option: ProjectRepoOption) => `${listboxId}-option-${option.id}`
 const isOpen = ref(false)
+const searchQuery = ref('')
 const activeIndex = ref(-1)
 const activeSource = ref<'keyboard' | 'pointer' | null>(null)
 const previewOption = ref<ProjectRepoOption | null>(null)
@@ -35,9 +40,14 @@ const placeholder = computed(() =>
       ? t('aiChat.project.requiredPlaceholder')
       : t('aiChat.project.optionalPlaceholder'),
 )
-const activeOptionId = computed(() => {
-  const option = props.options[activeIndex.value]
-  return isOpen.value && option ? `project-repo-option-${option.id}` : undefined
+const filteredOptions = computed(() => filterProjectRepoOptions(props.options, searchQuery.value))
+const activeOption = computed(() => filteredOptions.value[activeIndex.value])
+const inputValue = computed({
+  get: () => isOpen.value ? searchQuery.value : selectedOption.value?.project_name ?? '',
+  set: (value: string) => {
+    openMenu()
+    searchQuery.value = value
+  },
 })
 
 const clearPreviewTimer = () => {
@@ -54,34 +64,35 @@ const resetPreview = () => {
 
 const closeMenu = () => {
   isOpen.value = false
+  searchQuery.value = ''
   activeIndex.value = -1
   activeSource.value = null
   resetPreview()
 }
 
 const openMenu = () => {
-  if (props.loading) return
+  if (props.loading || isOpen.value) return
   isOpen.value = true
-  activeIndex.value = props.options.findIndex((option) => option.id === props.modelValue)
+  activeIndex.value = filteredOptions.value.findIndex((option) => option.id === props.modelValue)
   activeSource.value = null
   resetPreview()
+  void scrollActiveOptionIntoView()
 }
 
 const toggleMenu = () => {
   if (isOpen.value) closeMenu()
   else openMenu()
+  inputRef.value?.focus()
 }
 
 const selectOption = (option: ProjectRepoOption) => {
   emit('update:modelValue', option.id)
   closeMenu()
-  void nextTick(() => triggerRef.value?.focus())
 }
 
 const clearSelection = () => {
   emit('update:modelValue', null)
   closeMenu()
-  void nextTick(() => triggerRef.value?.focus())
 }
 
 const scrollActiveOptionIntoView = async () => {
@@ -91,7 +102,7 @@ const scrollActiveOptionIntoView = async () => {
 }
 
 const armPreview = (index: number, source: 'keyboard' | 'pointer') => {
-  const option = props.options[index]
+  const option = filteredOptions.value[index]
   if (!option) return
 
   activeIndex.value = index
@@ -108,7 +119,7 @@ const armPreview = (index: number, source: 'keyboard' | 'pointer') => {
 }
 
 const showPreviewImmediately = (index: number) => {
-  const option = props.options[index]
+  const option = filteredOptions.value[index]
   if (!option?.project_card.trim()) return
 
   clearPreviewTimer()
@@ -118,20 +129,23 @@ const showPreviewImmediately = (index: number) => {
 }
 
 const moveActiveOption = (direction: 1 | -1) => {
-  if (!isOpen.value) openMenu()
-  if (!props.options.length) return
+  openMenu()
+  const optionCount = filteredOptions.value.length
+  if (!optionCount) return
 
   let nextIndex = activeIndex.value
   if (nextIndex < 0) {
-    nextIndex = direction === 1 ? 0 : props.options.length - 1
+    nextIndex = direction === 1 ? 0 : optionCount - 1
   } else {
-    nextIndex = (nextIndex + direction + props.options.length) % props.options.length
+    nextIndex = (nextIndex + direction + optionCount) % optionCount
   }
   armPreview(nextIndex, 'keyboard')
   void scrollActiveOptionIntoView()
 }
 
 const handleKeydown = (event: KeyboardEvent) => {
+  if (event.isComposing) return
+
   switch (event.key) {
     case 'ArrowDown':
       event.preventDefault()
@@ -141,33 +155,19 @@ const handleKeydown = (event: KeyboardEvent) => {
       event.preventDefault()
       moveActiveOption(-1)
       break
-    case 'Home':
-      if (!isOpen.value || !props.options.length) return
-      event.preventDefault()
-      armPreview(0, 'keyboard')
-      void scrollActiveOptionIntoView()
-      break
-    case 'End':
-      if (!isOpen.value || !props.options.length) return
-      event.preventDefault()
-      armPreview(props.options.length - 1, 'keyboard')
-      void scrollActiveOptionIntoView()
-      break
     case 'Enter':
       event.preventDefault()
       if (!isOpen.value) {
         openMenu()
-      } else if (activeIndex.value >= 0) {
-        selectOption(props.options[activeIndex.value])
+      } else if (activeOption.value) {
+        selectOption(activeOption.value)
       }
       break
     case 'Escape':
       if (!isOpen.value) return
       event.preventDefault()
       closeMenu()
-      break
-    case 'Tab':
-      closeMenu()
+      void nextTick(() => inputRef.value?.select())
       break
   }
 }
@@ -181,6 +181,18 @@ const handleOptionLeave = (index: number) => {
 const handleDocumentPointerDown = (event: PointerEvent) => {
   if (!rootRef.value?.contains(event.target as Node)) closeMenu()
 }
+
+const handleFocusOut = (event: FocusEvent) => {
+  if (!rootRef.value?.contains(event.relatedTarget as Node | null)) closeMenu()
+}
+
+watch([filteredOptions, searchQuery], () => {
+  if (!isOpen.value) return
+  activeIndex.value = searchQuery.value.trim() && filteredOptions.value.length ? 0 : -1
+  activeSource.value = null
+  resetPreview()
+  if (menuRef.value) menuRef.value.scrollTop = 0
+}, { deep: true })
 
 watch(() => props.options, () => {
   if (!props.options.some((option) => option.id === props.modelValue) && props.modelValue !== null) {
@@ -200,75 +212,95 @@ onUnmounted(() => {
     ref="rootRef"
     class="rw-project-picker"
     :class="{ required: required && modelValue === null, open: isOpen }"
+    @focusout="handleFocusOut"
   >
-    <button
-      ref="triggerRef"
-      type="button"
-      class="rw-project-select"
-      role="combobox"
-      aria-haspopup="listbox"
-      :aria-expanded="isOpen"
-      :aria-controls="isOpen ? 'project-repo-listbox' : undefined"
-      :aria-activedescendant="activeOptionId"
-      :aria-label="t('aiChat.project.selectorLabel')"
-      :disabled="loading"
-      @click="toggleMenu"
-      @keydown="handleKeydown"
-    >
-      <span :class="{ placeholder: !selectedOption }">
-        {{ selectedOption?.project_name || placeholder }}
-      </span>
-      <svg class="rw-project-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="m6 9 6 6 6-6" />
-      </svg>
-    </button>
-
-    <div
-      v-if="isOpen"
-      id="project-repo-listbox"
-      class="rw-project-menu"
-      role="listbox"
-    >
+    <div class="rw-project-select" :class="{ loading }">
+      <input
+        ref="inputRef"
+        v-model="inputValue"
+        type="text"
+        class="rw-project-input"
+        role="combobox"
+        autocomplete="off"
+        aria-autocomplete="list"
+        :aria-expanded="isOpen"
+        :aria-controls="isOpen ? listboxId : undefined"
+        :aria-activedescendant="isOpen && activeOption ? optionId(activeOption) : undefined"
+        :aria-label="t('aiChat.project.selectorLabel')"
+        :aria-required="required || undefined"
+        :placeholder="isOpen ? t('aiChat.project.searchPlaceholder') : placeholder"
+        :disabled="loading"
+        @focus="inputRef?.select()"
+        @click="openMenu"
+        @keydown="handleKeydown"
+      />
       <button
-        v-if="!required && modelValue !== null"
         type="button"
-        class="rw-project-option rw-project-option--clear"
-        role="option"
-        :aria-selected="false"
-        @click="clearSelection"
+        class="rw-project-toggle"
+        tabindex="-1"
+        :aria-label="t('aiChat.project.selectorLabel')"
+        :aria-expanded="isOpen"
+        :aria-controls="isOpen ? listboxId : undefined"
+        :disabled="loading"
+        @mousedown.prevent
+        @click="toggleMenu"
       >
-        {{ t('aiChat.project.optionalPlaceholder') }}
-      </button>
-      <button
-        v-for="(option, index) in options"
-        :id="`project-repo-option-${option.id}`"
-        :key="option.id"
-        type="button"
-        class="rw-project-option"
-        :class="{
-          active: activeIndex === index,
-          selected: modelValue === option.id,
-        }"
-        role="option"
-        :aria-selected="modelValue === option.id"
-        :data-project-option-active="activeIndex === index"
-        @mouseenter="armPreview(index, 'pointer')"
-        @mouseleave="handleOptionLeave(index)"
-        @click="selectOption(option)"
-      >
-        <span class="rw-project-option__content">
-          <span class="rw-project-option__name">{{ option.project_name }}</span>
-          <span
-            class="rw-project-help"
-            aria-hidden="true"
-            @mouseenter.stop="showPreviewImmediately(index)"
-            @click.stop.prevent
-          >?</span>
-        </span>
-        <svg v-if="modelValue === option.id" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="m5 12 4 4L19 6" />
+        <svg class="rw-project-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
+    </div>
+
+    <div v-if="isOpen" ref="menuRef" class="rw-project-menu">
+      <div :id="listboxId" role="listbox" :aria-label="t('aiChat.project.selectorLabel')">
+        <button
+          v-if="!required && modelValue !== null && !searchQuery.trim()"
+          type="button"
+          class="rw-project-option rw-project-option--clear"
+          role="option"
+          tabindex="-1"
+          :aria-selected="false"
+          @mousedown.prevent
+          @click="clearSelection"
+        >
+          {{ t('aiChat.project.optionalPlaceholder') }}
+        </button>
+        <button
+          v-for="(option, index) in filteredOptions"
+          :id="optionId(option)"
+          :key="option.id"
+          type="button"
+          class="rw-project-option"
+          :class="{
+            active: activeIndex === index,
+            selected: modelValue === option.id,
+          }"
+          role="option"
+          tabindex="-1"
+          :aria-selected="modelValue === option.id"
+          :data-project-option-active="activeIndex === index"
+          @mouseenter="armPreview(index, 'pointer')"
+          @mouseleave="handleOptionLeave(index)"
+          @mousedown.prevent
+          @click="selectOption(option)"
+        >
+          <span class="rw-project-option__content">
+            <span class="rw-project-option__name">{{ option.project_name }}</span>
+            <span
+              class="rw-project-help"
+              aria-hidden="true"
+              @mouseenter.stop="showPreviewImmediately(index)"
+              @click.stop.prevent
+            >?</span>
+          </span>
+          <svg v-if="modelValue === option.id" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m5 12 4 4L19 6" />
+          </svg>
+        </button>
+      </div>
+      <div v-if="!filteredOptions.length" class="rw-project-empty" role="status">
+        {{ t('aiChat.project.noMatches') }}
+      </div>
     </div>
 
     <aside
@@ -296,10 +328,8 @@ onUnmounted(() => {
 .rw-project-select {
   width: 220px;
   height: 28px;
-  padding: 0 9px 0 11px;
   display: flex;
   align-items: center;
-  gap: 8px;
   border: 1px solid var(--rw-hairline-strong);
   background: var(--rw-canvas);
   color: var(--rw-ink);
@@ -307,31 +337,43 @@ onUnmounted(() => {
   font: inherit;
   font-size: 12.5px;
   font-weight: 500;
-  cursor: pointer;
   transition: border-color .15s, box-shadow .15s;
 }
 
-.rw-project-select > span {
+.rw-project-input {
+  flex: 1;
   min-width: 0;
-  overflow: hidden;
+  height: 100%;
+  padding: 0 0 0 11px;
+  border: 0;
+  outline: none;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.rw-project-select > span.placeholder { color: var(--rw-muted); }
+.rw-project-input::placeholder { color: var(--rw-muted); opacity: 1; }
 .rw-project-select:hover { border-color: var(--rw-ink); }
-.rw-project-select:focus-visible {
-  outline: none;
+.rw-project-select:focus-within {
   border-color: var(--rw-ink);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--rw-ink) 12%, transparent);
 }
-.rw-project-select:disabled { opacity: .6; cursor: not-allowed; }
+.rw-project-select.loading { opacity: .6; }
+.rw-project-select :disabled { cursor: not-allowed; }
 .rw-project-picker.required .rw-project-select { border-color: var(--rw-danger, #b91c1c); }
-.rw-project-chevron {
+.rw-project-toggle {
   flex: 0 0 auto;
-  margin-left: auto;
-  transition: transform .16s ease;
+  height: 100%;
+  padding: 0 9px 0 8px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
+.rw-project-chevron { transition: transform .16s ease; }
 .rw-project-picker.open .rw-project-chevron { transform: rotate(180deg); }
 
 .rw-project-menu {
@@ -410,6 +452,11 @@ onUnmounted(() => {
   color: var(--rw-muted);
   border-bottom: 1px solid var(--rw-hairline-strong);
   border-radius: 7px 7px 3px 3px;
+}
+.rw-project-empty {
+  padding: 8px 9px;
+  color: var(--rw-muted);
+  font-size: 12.5px;
 }
 
 .rw-project-preview {

@@ -1802,6 +1802,8 @@ export default {
       loading: 'Loading projects…',
       requiredPlaceholder: 'Select related project (required)',
       optionalPlaceholder: 'Related project (can be inferred)',
+      searchPlaceholder: 'Enter a project name or code',
+      noMatches: 'No matching projects',
       cardPreview: 'Project card',
     },
     rename: {
