@@ -3,17 +3,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-const featureKeys = [
-  'account',
-  'chat',
-  'agents',
-  'knowledge',
-  'assets',
-  'packages',
-  'terminal',
-  'tools',
-  'settings',
-] as const
+const featureKeys = ['agents', 'assets', 'terminal', 'packages', 'chat', 'knowledge', 'account', 'tools', 'settings'] as const
 type FeatureKey = (typeof featureKeys)[number]
 const selectedImage = ref<FeatureKey | null>(null)
 const imageTitle = computed(() =>
@@ -26,7 +16,8 @@ const imageOpen = computed({
   },
 })
 
-const screenshotUrl = (key: FeatureKey) => `${import.meta.env.BASE_URL}client-showcase/${key}.webp`
+const screenshots = import.meta.glob<string>('/src/assets/client-showcase/*.webp', { eager: true, query: '?url', import: 'default' })
+const screenshotUrl = (key: FeatureKey) => screenshots[`/src/assets/client-showcase/${key}.webp`]
 </script>
 
 <template>
@@ -53,16 +44,9 @@ const screenshotUrl = (key: FeatureKey) => `${import.meta.env.BASE_URL}client-sh
       <div class="feature-copy">
         <p class="feature-kicker">
           <span>{{ String(index + 1).padStart(2, '0') }}</span>
-          {{ t(`download.showcase.features.${key}.label`) }}
         </p>
-        <h3 :id="`client-feature-title-${key}`">{{ t(`download.showcase.features.${key}.title`) }}</h3>
+        <h3 :id="`client-feature-title-${key}`">{{ t(`download.showcase.features.${key}.label`) }}</h3>
         <p class="feature-description">{{ t(`download.showcase.features.${key}.description`) }}</p>
-        <dl class="feature-points">
-          <div v-for="point in 4" :key="point">
-            <dt>{{ t(`download.showcase.features.${key}.points.${point - 1}.title`) }}</dt>
-            <dd>{{ t(`download.showcase.features.${key}.points.${point - 1}.description`) }}</dd>
-          </div>
-        </dl>
       </div>
       <figure class="feature-figure">
         <button

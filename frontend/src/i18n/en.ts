@@ -1922,222 +1922,24 @@ export default {
     collapse: 'Collapse',
     viewHistory: 'View history ({count})',
     showcase: {
-      eyebrow: 'Inside the client',
-      title: 'One workspace for everyday engineering',
-      intro: 'Explore the client from assistant conversations to log analysis, package delivery and remote terminals, with screenshots and practical feature descriptions.',
+      eyebrow: 'Client features',
+      title: 'A workspace for testing',
+      intro: 'Explore log analysis, device troubleshooting and package management.',
       navigation: 'Explore client features',
       enlarge: 'View full screenshot',
       caption: 'Raven desktop client',
       requirements: 'Before you start',
-      requirementsText: 'Connect to a reachable RavenAIService and sign in with your Raven account. The service provides models, projects and Agent capabilities. Knowledge bases, image tools, CLIs and external tools require their corresponding models or local components.',
+      requirementsText: 'Connect to a reachable RavenAIService and sign in. Projects, models and Agents are provided by the service.',
       features: {
-        account: {
-          label: 'Account & models',
-          title: 'One account, one connected workspace',
-          description: 'Connect to RavenAIService with your Raven account. Chat, Agents, files and Terminal share the same service connection.',
-          points: [
-            {
-              title: 'Sign in and register',
-              description: 'Account registration, sign-in, session restoration, sign-out and connection retry.',
-            },
-            {
-              title: 'Managed models',
-              description: 'Synchronize models and capabilities from the service without entering provider keys in each client tool.',
-            },
-            {
-              title: 'Primary and backup routes',
-              description: 'Refresh model capabilities automatically and switch available routes before response output begins.',
-            },
-            {
-              title: 'Cross-platform desktop',
-              description: 'A consistent native workspace for macOS, Windows and Linux.',
-            },
-          ],
-        },
-        chat: {
-          label: 'Assistant chat',
-          title: 'Turn questions into reusable work',
-          description: 'Organize questions, document reading and engineering discussions by assistant and topic, with context and tools in the same conversation.',
-          points: [
-            {
-              title: 'Assistants and topics',
-              description: 'Use assistant prompts, topic history and context settings to continue discussions and organize work.',
-            },
-            {
-              title: 'Multimodal input',
-              description: 'Send text, images and files, and stream answers and reasoning when supported by the selected model.',
-            },
-            {
-              title: 'Search and tools',
-              description: 'Add context with configured knowledge bases, web search, memory and MCP tools.',
-            },
-            {
-              title: 'Edit and export',
-              description: 'Edit, retry and copy messages, or export content as Markdown, images and Word documents.',
-            },
-          ],
-        },
-        agents: {
-          label: 'Agent workbench',
-          title: 'Specialized Agents for engineering tasks',
-          description: 'Choose a project and work with service-backed Agents for code, logs and package configuration, with visible progress and results.',
-          points: [
-            {
-              title: 'Project Expert',
-              description: 'Ask repository-aware technical questions, find relevant code and explore implementation choices.',
-            },
-            {
-              title: 'Log Analysis',
-              description: 'Upload log files or archives and analyze issues with optional project context.',
-            },
-            {
-              title: 'Configuration Manager',
-              description: 'Find project packages, confirm components and versions, and build deliverables using project rules.',
-            },
-            {
-              title: 'Progress and conversations',
-              description: 'Stream answers, reasoning, plans and tool activity. Rename or pin conversations, cancel tasks and resume active runs.',
-            },
-          ],
-        },
-        knowledge: {
-          label: 'Knowledge bases',
-          title: 'Make scattered material searchable',
-          description: 'Organize project material into local knowledge bases that can be searched and referenced in conversations.',
-          points: [
-            {
-              title: 'Multiple sources',
-              description: 'Manage files, directories, web links, sitemaps and notes by knowledge base.',
-            },
-            {
-              title: 'Parsing and preprocessing',
-              description: 'Extract content with configured document parsing, OCR and preprocessing, with visible processing progress.',
-            },
-            {
-              title: 'Semantic retrieval',
-              description: 'Use available embedding models and retrieval settings to find relevant material and reference it in chat.',
-            },
-            {
-              title: 'Knowledge maintenance',
-              description: 'Create, rename and configure bases, and manage sources and indexes. Required model capabilities come from the service.',
-            },
-          ],
-        },
-        assets: {
-          label: 'Files & logs',
-          title: 'Local files and platform assets together',
-          description: 'Manage documents, text, packages and logs in one file workspace, keeping source material close to its results.',
-          points: [
-            {
-              title: 'Local files',
-              description: 'Browse documents and text, sort by date, size or name, and open, rename or delete files.',
-            },
-            {
-              title: 'Log workflow',
-              description: 'Browse service log records, upload material, filter entries and inspect details and related analysis.',
-            },
-            {
-              title: 'Package management',
-              description: 'Scan local packages, inspect types and versions, open their location and upload to configured FTP destinations.',
-            },
-            {
-              title: 'Platform packages',
-              description: 'Browse configuration packages, project assets and downloads in the embedded service view.',
-            },
-          ],
-        },
-        packages: {
-          label: 'Package building',
-          title: 'Build product-specific upgrade packages',
-          description: 'Organize components and configuration in product-specific forms to prepare software packages for upgrade and delivery.',
-          points: [
-            {
-              title: 'Product selection',
-              description: 'Package types include Lingxi 10, Lingxi 07A, Ka TX, Ka RX, configuration packages and Lingxi 06 Lot 3 packages.',
-            },
-            {
-              title: 'Components and configuration',
-              description: 'Enter versions and select component files and configuration according to the chosen product rules.',
-            },
-            {
-              title: 'Build and inspect',
-              description: 'Generate packages, inspect output information and manage the results in the file workspace.',
-            },
-            {
-              title: 'Coordinated delivery',
-              description: 'Use local packaging alongside the service Configuration Manager. Available workflows depend on the installed version and project rules.',
-            },
-          ],
-        },
-        terminal: {
-          label: 'AI Terminal',
-          title: 'Connect, operate and investigate',
-          description: 'Embedded Chaterm brings remote connections, file transfer and AI assistance into the same terminal workspace.',
-          points: [
-            {
-              title: 'Connections and transfers',
-              description: 'Manage SSH, SFTP and jump hosts, with multiple sessions, split panels and Kubernetes exec.',
-            },
-            {
-              title: 'AI assistance',
-              description: 'Generate or explain commands and investigate errors. Agent actions run in the visible terminal.',
-            },
-            {
-              title: 'Shared models',
-              description: 'Reuse RavenAIService-managed models and primary/backup routes without separate Terminal provider keys.',
-            },
-            {
-              title: 'Persistent sessions',
-              description: 'Keep terminal sessions alive while switching client tabs, with a theme that follows the desktop workspace.',
-            },
-          ],
-        },
-        tools: {
-          label: 'Additional tools',
-          title: 'Open the tools each task needs',
-          description: 'Extend the workspace through application entries, using the installed components and available service model capabilities.',
-          points: [
-            {
-              title: 'Translation and images',
-              description: 'Translate multilingual text and use the image workspace when the required model capabilities are available.',
-            },
-            {
-              title: 'Code tools',
-              description: 'Select a supported Code CLI, model and project directory, configure its environment and launch local coding tools.',
-            },
-            {
-              title: 'Apps and tabs',
-              description: 'Browse and pin applications, and organize multiple workspace pages in tabs.',
-            },
-            {
-              title: 'MCP and web search',
-              description: 'Manage MCP tool services and web search settings to connect assistants to external tools and information.',
-            },
-          ],
-        },
-        settings: {
-          label: 'Desktop & settings',
-          title: 'Make the workspace fit your routine',
-          description: 'Manage desktop behavior, data, helper tools and device collaboration from a single settings workspace.',
-          points: [
-            {
-              title: 'Appearance and shortcuts',
-              description: 'Adjust language, light/dark theme, display layout, navigation, keyboard shortcuts and quick phrases.',
-            },
-            {
-              title: 'Desktop assistants',
-              description: 'Configure the quick assistant and selection helpers, with tray integration, launch settings and notifications.',
-            },
-            {
-              title: 'Data and memory',
-              description: 'Manage data locations, backups and sync, memory and document preprocessing. External storage requires its own connection setup.',
-            },
-            {
-              title: 'Devices and versions',
-              description: 'Configure the client device identity for platform collaboration, and inspect version and update information in About.',
-            },
-          ],
-        },
+        agents: { label: 'Agent workbench', description: 'Select a project to analyze test logs, investigate code or find packages, and follow progress.' },
+        assets: { label: 'Files & logs', description: 'Upload and inspect test logs, and manage local files and software packages.' },
+        terminal: { label: 'AI Terminal', description: 'Connect to devices over SSH, transfer files, and use AI to investigate commands and errors.' },
+        packages: { label: 'Package building', description: 'Select components and configurations for a product and build packages for upgrade testing.' },
+        chat: { label: 'Assistant chat', description: 'Ask questions about test issues, files and images while keeping conversation context.' },
+        knowledge: { label: 'Knowledge bases', description: 'Import project material to search and reference in conversations.' },
+        account: { label: 'Account & models', description: 'Sign in to connect to service-provided models and testing capabilities.' },
+        tools: { label: 'Additional tools', description: 'Use code tools, web search and other configured tools as needed.' },
+        settings: { label: 'Settings', description: 'Configure appearance, data, device identity and updates.' },
       },
     },
     platforms: {

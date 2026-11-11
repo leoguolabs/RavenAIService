@@ -1918,221 +1918,23 @@ export default {
     viewHistory: '查看历史版本 ({count})',
     showcase: {
       eyebrow: '客户端功能',
-      title: '一个工作台，贯穿日常工程工作',
-      intro: '从助手对话到日志分析、软件交付和远程终端，按功能查看客户端界面与使用方式。',
+      title: '围绕测试任务开展工作',
+      intro: '查看日志分析、设备排查和软件包管理等功能。',
       navigation: '浏览客户端功能',
       enlarge: '查看完整截图',
       caption: 'Raven 客户端界面',
       requirements: '使用前准备',
-      requirementsText: '请连接可访问的 RavenAIService 并登录 Raven 账号。模型、项目与智能体能力由服务端提供；知识库、绘图、CLI 和外部工具需要对应模型或本地组件支持。',
+      requirementsText: '请连接可访问的 RavenAIService 并登录账号。项目、模型和智能体能力由服务端提供。',
       features: {
-        account: {
-          label: '账号与模型',
-          title: '一个账号，连接完整工作台',
-          description: '通过 Raven 账号连接 RavenAIService，助手、智能体、文件与终端共享服务入口。',
-          points: [
-            {
-              title: '登录与注册',
-              description: '支持账号登录、注册、会话恢复、退出登录和连接重试。',
-            },
-            {
-              title: '统一模型',
-              description: '登录后同步服务端管理的模型与能力，无需在客户端分别填写模型服务商密钥。',
-            },
-            {
-              title: '主备路由',
-              description: '模型能力定期刷新；支持主备模型路由，在开始输出前处理可用路由切换。',
-            },
-            {
-              title: '跨平台桌面',
-              description: '为 macOS、Windows 和 Linux 提供统一的原生桌面工作入口。',
-            },
-          ],
-        },
-        chat: {
-          label: '助手对话',
-          title: '从提问到可复用的工作成果',
-          description: '围绕助手和话题组织日常问答、文档阅读与工程讨论，把上下文和工具放在同一个对话里。',
-          points: [
-            {
-              title: '助手与话题',
-              description: '使用助手提示词、话题历史与上下文设置，连续追问并管理不同工作主题。',
-            },
-            {
-              title: '多模态输入',
-              description: '发送文字、图片和文件；结合模型能力阅读材料，流式查看回答与推理内容。',
-            },
-            {
-              title: '检索与工具',
-              description: '在对话中使用知识库、联网搜索、记忆和 MCP 工具，按已配置的能力补充上下文。',
-            },
-            {
-              title: '编辑与导出',
-              description: '支持消息编辑、重试、复制以及 Markdown、图片和 Word 等内容导出。',
-            },
-          ],
-        },
-        agents: {
-          label: '智能体工作台',
-          title: '让专业智能体处理工程任务',
-          description: '选择项目后，让服务端智能体围绕代码、日志和软件配置开展工作，过程与结果都可追踪。',
-          points: [
-            {
-              title: '代码专家',
-              description: '基于选定项目与代码仓库回答技术问题，帮助理解实现、定位相关代码与分析方案。',
-            },
-            {
-              title: '日志分析',
-              description: '上传日志文件或压缩包，结合项目上下文分析问题并查看分析结论。',
-            },
-            {
-              title: '配置管理员',
-              description: '查找项目软件包，并按项目规则确认组件与版本，制作升级包等交付物。',
-            },
-            {
-              title: '过程与会话',
-              description: '查看流式回答、推理、计划与工具执行；管理会话历史，支持重命名、置顶、取消和恢复运行。',
-            },
-          ],
-        },
-        knowledge: {
-          label: '知识库',
-          title: '把分散资料整理为可检索的知识',
-          description: '按主题建立本地知识库，让项目资料进入可搜索、可引用的统一内容集合。',
-          points: [
-            {
-              title: '多种资料来源',
-              description: '导入文件、整个目录、网页链接、站点地图和笔记，按知识库分类管理。',
-            },
-            {
-              title: '解析与预处理',
-              description: '配合文档解析、OCR 与预处理设置提取内容，查看资料处理进度。',
-            },
-            {
-              title: '语义检索',
-              description: '配置可用的嵌入模型与检索参数，搜索资料并在助手对话中引用相关内容。',
-            },
-            {
-              title: '知识维护',
-              description: '创建、重命名和调整知识库，管理来源内容与索引；模型能力需由服务端提供。',
-            },
-          ],
-        },
-        assets: {
-          label: '文件与日志',
-          title: '本地文件与平台资产集中查看',
-          description: '在文件工作区里管理文档、文本、软件包与日志，让材料和分析结果保持关联。',
-          points: [
-            {
-              title: '本地文件',
-              description: '按文档与文本分类浏览，按时间、大小或名称排序，支持打开、重命名与删除。',
-            },
-            {
-              title: '日志工作流',
-              description: '查看服务端日志列表、上传材料、筛选记录，并打开详情与相关分析结果。',
-            },
-            {
-              title: '软件包管理',
-              description: '扫描本地软件包，查看类型、版本与详情，打开所在位置并按配置上传到 FTP。',
-            },
-            {
-              title: '平台配置包',
-              description: '通过内嵌的平台页面浏览配置包、项目资产和下载内容，沿用统一服务地址。',
-            },
-          ],
-        },
-        packages: {
-          label: '软件打包',
-          title: '面向型号的升级包制作',
-          description: '使用型号专属的打包界面组织组件与配置，生成用于后续升级和交付的软件包。',
-          points: [
-            {
-              title: '型号选择',
-              description: '提供灵犀 10、灵犀 07A、Ka 发射、Ka 接收、配置包和灵犀 06 三标段等打包类型。',
-            },
-            {
-              title: '组件与配置',
-              description: '按所选型号填写版本、选择组件文件与配置，使用对应的格式和规则组织内容。',
-            },
-            {
-              title: '生成与查看',
-              description: '生成软件包并查看输出信息，结合文件工作区管理已制作的包。',
-            },
-            {
-              title: '协同交付',
-              description: '本地打包与服务端配置管理员配合使用；可用流程以安装版本和项目规则为准。',
-            },
-          ],
-        },
-        terminal: {
-          label: 'AI 终端',
-          title: '连接设备，边操作边分析',
-          description: '内嵌 Chaterm 将远程连接、文件传输与 AI 辅助放到同一个终端工作区。',
-          points: [
-            {
-              title: '连接与传输',
-              description: '管理 SSH、SFTP 与跳板机连接，使用多会话、多面板和 Kubernetes exec。',
-            },
-            {
-              title: 'AI 辅助',
-              description: '生成和解释命令，分析报错与排查步骤；Agent 操作在可见终端中执行。',
-            },
-            {
-              title: '共享模型',
-              description: '复用 RavenAIService 的托管模型与主备路由，无需为终端单独管理模型密钥。',
-            },
-            {
-              title: '会话持续',
-              description: '切换客户端功能页时保留终端会话，终端主题与桌面工作台保持一致。',
-            },
-          ],
-        },
-        tools: {
-          label: '扩展工具',
-          title: '按任务打开更多工作工具',
-          description: '通过应用入口扩展工作台，按已安装组件和服务端模型能力选择适合的工具。',
-          points: [
-            {
-              title: '翻译与绘图',
-              description: '使用翻译页面处理多语言文本；在具备相应模型能力时使用绘图工作区。',
-            },
-            {
-              title: '代码工具',
-              description: '选择支持的 Code CLI、模型和项目目录，配置环境并启动本地代码工具。',
-            },
-            {
-              title: '应用与标签页',
-              description: '浏览和固定应用入口，在标签页中组织多个工作页面并切换。',
-            },
-            {
-              title: 'MCP 与联网搜索',
-              description: '管理 MCP 工具服务与联网检索设置，为助手配置外部工具和信息来源。',
-            },
-          ],
-        },
-        settings: {
-          label: '桌面与设置',
-          title: '把工作台调整成顺手的工具',
-          description: '从界面到数据和设备协同，集中管理桌面工作方式与辅助能力。',
-          points: [
-            {
-              title: '界面与快捷操作',
-              description: '设置语言、明暗主题、显示布局、导航入口、快捷键与快捷短语。',
-            },
-            {
-              title: '桌面助手',
-              description: '配置快捷助手与划词辅助，配合托盘、开机启动和桌面通知快速进入工作。',
-            },
-            {
-              title: '数据与记忆',
-              description: '管理数据目录与备份同步，配置记忆和文档预处理；外部存储需完成对应连接设置。',
-            },
-            {
-              title: '设备与版本',
-              description: '设置客户端设备标识以参与平台设备协同，并在关于页面查看版本与更新信息。',
-            },
-          ],
-        },
+        agents: { label: '智能体工作台', description: '选择项目，分析测试日志、查询代码或查找软件包，并查看执行过程。' },
+        assets: { label: '文件与日志', description: '上传和查看测试日志，管理本地文件与软件包。' },
+        terminal: { label: 'AI 终端', description: '通过 SSH 连接设备，传输文件，并借助 AI 分析命令与报错。' },
+        packages: { label: '软件打包', description: '按型号选择组件和配置，生成升级测试所需的软件包。' },
+        chat: { label: '助手对话', description: '就测试问题、文件和图片向助手提问，保留对话上下文。' },
+        knowledge: { label: '知识库', description: '导入项目资料，在对话中检索和引用。' },
+        account: { label: '账号与模型', description: '登录 Raven 账号，连接服务端提供的模型和测试能力。' },
+        tools: { label: '扩展工具', description: '按需使用代码工具、联网搜索和其他已配置的工具。' },
+        settings: { label: '设置', description: '配置客户端外观、数据、设备身份和更新。' },
       },
     },
     platforms: {
