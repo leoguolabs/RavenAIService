@@ -113,7 +113,9 @@ magpie provider set raven-openai \
   'balance.path=$balance' additional-tools=on
 ```
 
-这里保留原有模型、key、压缩策略及其他供应商设置；`additional-tools=on` 显式保留 OpenAI 原域名下默认支持的动态工具。确认该供应商没有仍直连 OpenAI 的其他协议入口。`/balance` 也需要匹配的推理 key。任务模式下它返回最近一次成功核验的真实金额和时间，管理页刷新与「Check balance」共用这份读数。真实余额和对应的 Magpie 账本基线保存在 `openai_balance_state` 卷中，重启可复用。门禁的 `/health` 区分真实余额和估算额，并分别统计查询次数。
+这里保留原有模型、key、压缩策略及其他供应商设置。`additional-tools=on` 显式保留 OpenAI 原域名下默认支持的动态工具。确认该供应商没有仍直连 OpenAI 的其他协议入口。使用推理 key 请求 `/balance` 可读取最近一次成功核验的真实金额和时间。任务模式下，将 Magpie 的 OpenAI 供应商的私有 Balance Token 设为与门禁匹配的 Magpie caller key，并将 Balance field 设为 `Estimated balance: estimated_balance; Last verified: $balance; Verified at: checked_at_display`，即可显示按最新账本估算的余额、OpenAI 实查余额和核验时间。面板刷新只读取 Magpie 账本，实查超过 12 小时或账本无法核对时显示「—」。真实余额和对应的账本基线保存在 `openai_balance_state` 卷中，重启可复用。门禁的 `/health` 区分实查和任务准入估算额，并分别统计查询次数。
+
+银河内部模型不限量时，设置 `magpie provider set raven-yinhe balance=off`，关闭 OneAPI 余额探测及余额卡片。模型、key 和网关用量统计继续使用原配置。
 
 刷新凭据后，原地写入文件会在下次请求生效；如果用原子替换更新文件，需要仅重建此服务，使 Compose secret 的文件挂载指向新文件。Magpie 的配额休息可能延迟恢复；已经转到备用模型的任务保持原选择。回滚需恢复私有备份中的供应商入口及 fallback；这样也会撤销余额保护，不能以恢复调用为由自动绕过门槛。
 

@@ -361,6 +361,42 @@ async def test_estimate_reuses_balance_until_threshold_or_twelve_hours(source, t
             assert lookups == [10, 15, 16, 16]
 
 
+async def test_magpie_display_uses_live_ledger_and_preserves_verification_time(source, monkeypatch):
+    caller = {"Authorization": "Bearer caller"}
+    lookups = 0
+    cost, unpriced = 1, 0
+
+    async def upstream(request):
+        nonlocal lookups
+        if str(request.url) == BALANCE_URL:
+            lookups += 1
+            return httpx.Response(200, json={"total_available": 78.44})
+        assert request.headers["authorization"] == caller["Authorization"]
+        return httpx.Response(200, json={"total": cost, "unpriced": unpriced, "cost": cost})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as external:
+        app = create_app(source, client=external, estimate=BalanceEstimate(None),
+                         task_caller_sha256=hashlib.sha256(b"caller").hexdigest())
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://guard") as client:
+            assert (await client.get("/balance", headers=caller)).status_code == 503
+            assert (await client.post("/task-admission", headers=caller)).is_success
+            verified = (await client.get("/balance", headers=AUTH)).json()
+            cost = 5
+            display = (await client.get("/balance", headers=caller)).json()
+            assert display["estimated_balance"] == "≈$74.44"
+            assert display["balance"] == verified["balance"] == 78.44
+            assert display["checked_at"] == verified["checked_at"]
+            assert display["checked_at_display"].endswith(" UTC")
+            assert (await client.post("/v1/responses", headers=caller)).status_code == 401
+            unpriced = 1
+            assert (await client.get("/balance", headers=caller)).json()["estimated_balance"] == "—"
+            unpriced = 0
+            future = datetime.now(timezone.utc) + timedelta(hours=12, seconds=1)
+            monkeypatch.setattr(guard, "utc_now", lambda: future)
+            assert (await client.get("/balance", headers=caller)).json()["estimated_balance"] == "—"
+            assert lookups == 1
+
+
 @pytest.mark.parametrize("failure", ["missing", "unpriced", "reset"])
 async def test_uncertain_magpie_ledger_requires_fresh_balance_and_backs_off(source, failure):
     lookups = 0

@@ -123,6 +123,10 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
     def sign(source: dict, payload: str) -> str:
         return hmac.digest(signing_key, source_identity(source) + payload.encode(), "sha256").hex()
 
+    def is_task_caller(key: str) -> bool:
+        return bool(key and task_caller_sha256 and hmac.compare_digest(
+            hashlib.sha256(key.encode()).hexdigest(), task_caller_sha256))
+
     def verdict(source: dict, proof: str) -> str:
         payload, _, signature = proof.rpartition(".")
         expires, _, decision = payload.partition(".")
@@ -230,9 +234,8 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
     async def task_admission(request: Request):
         nonlocal display_balance
         auth = request.headers.get("authorization", "")
-        key = auth.removeprefix("Bearer ")
-        if not auth.startswith("Bearer ") or not task_caller_sha256 or not hmac.compare_digest(
-                hashlib.sha256(key.encode()).hexdigest(), task_caller_sha256):
+        key = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
+        if not is_task_caller(key):
             return JSONResponse({"error": {"message": "Unauthorized"}}, status_code=401)
         try:
             source = read_source(source_path)
@@ -246,7 +249,30 @@ def create_app(source_path: Path = Path(SOURCE_PATH), minimum: Decimal = Decimal
         payload = f"{int(time.time()) + 6 * 3600}.{decision}.{secrets.token_hex(16)}"
         return {"admission": f"{payload}.{sign(source, payload)}"}
 
-    @application.api_route("/balance", methods=["GET"])
+    @application.get("/balance")
+    async def balance_for_magpie(request: Request):
+        auth = request.headers.get("authorization", "")
+        key = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
+        if estimate is None or not is_task_caller(key):
+            return await forward(request)
+        try:
+            source = read_source(source_path)
+        except BalanceUnavailable as exc:
+            return unavailable(exc)
+        async with estimate.lock:
+            snap = estimate.verified(fingerprint(source))
+            if snap is None:
+                return refused()
+            ledger = await magpie_ledger(application.state.upstream, key)
+            amount = estimate.current_estimate(snap, ledger, utc_now())
+        return {
+            "balance": float(snap.amount),
+            "currency": "usd",
+            "checked_at": snap.checked_at.isoformat(),
+            "checked_at_display": snap.checked_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "estimated_balance": f"≈${amount:.2f}" if amount is not None else "—",
+        }
+
     @application.api_route("/v1/{path:path}", methods=["GET", "POST", "DELETE"])
     async def forward(request: Request, path: str = ""):
         try:

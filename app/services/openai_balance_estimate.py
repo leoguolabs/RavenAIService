@@ -101,6 +101,15 @@ class BalanceEstimate:
         snap = self.snapshot
         return snap if snap and snap.identity == identity else None
 
+    def current_estimate(self, snap: Snapshot, ledger: Ledger | None, now: datetime) -> Decimal | None:
+        prior = self.last_ledger
+        if (not timedelta(0) <= now - snap.checked_at < REFRESH_AFTER
+                or ledger is None or snap.ledger is None or self.ledger_reset
+                or not ledger.extends(snap.ledger) or ledger.unpriced != snap.ledger.unpriced
+                or (prior is not None and not ledger.extends(prior))):
+            return None
+        return snap.amount - (ledger.cost - snap.ledger.cost)
+
     def reusable(self, identity: str, ledger: Ledger | None, floor: Decimal, now: datetime) -> Decimal | None:
         if identity != self.identity:
             self.identity, self.last_ledger, self.retry_at = identity, None, None
@@ -115,16 +124,14 @@ class BalanceEstimate:
             return None
         if snap.amount < floor:
             return snap.amount
-        if (ledger is None or snap.ledger is None or self.ledger_reset
-                or not ledger.extends(snap.ledger) or ledger.unpriced != snap.ledger.unpriced):
+        estimate = self.current_estimate(snap, ledger, now)
+        if estimate is None:
             return None
-        spend = ledger.cost - snap.ledger.cost
-        estimate = snap.amount - spend
         buffer = floor + Decimal(5)
         # After verifying inside the buffer, recheck after another dollar of
         # priced spend or on reaching the floor, whichever comes first.
         boundary = buffer if snap.amount > buffer else max(floor, snap.amount - Decimal(1))
-        return estimate if spend == 0 or estimate > boundary else None
+        return estimate if estimate == snap.amount or estimate > boundary else None
 
     def remember(self, identity: str, amount: Decimal, ledger: Ledger | None, now: datetime) -> None:
         prior = self.verified(identity)
