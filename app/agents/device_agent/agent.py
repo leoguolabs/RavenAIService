@@ -135,16 +135,11 @@ class DeviceAgentContext:
     # （``ChatRunService`` / ``AIChatService``）从请求/用户偏好解析后传入；
     # 缺省时回退到系统默认语言，旧调用方无需改动即可工作。
     locale: Optional[str] = None
-    # ---- AskUserQuestion 澄清提问（用户偏好 + run 级取消回调）----
+    # ---- AskUserQuestion 澄清提问（用户偏好）----
     # 是否向 Agent 暴露 AskUserQuestion 工具（用户「全局禁用澄清」开关，默认开）。
     clarification_enabled: bool = True
     # 单轮 run 内最多发起 AskUserQuestion 的次数（用户偏好，默认 5）。
     clarification_max_rounds: int = 5
-    # 澄清超时（固定 5 分钟）后的行为：``cancel`` 取消本轮 / ``continue`` 基于已知信息继续。
-    clarification_on_timeout: str = "cancel"
-    # run 级取消回调，澄清超时 ``cancel`` 模式时调用；由 ``ChatRunService`` 注入。
-    # 缺省（如 legacy ``ai_chat_service`` 路径）时澄清超时降级为 ``continue`` 语义。
-    cancel_run: Optional[Callable[[], None]] = None
 
 
 # ─────────────────────── Helpers ───────────────────────────────────
@@ -452,8 +447,6 @@ class DeviceAgent:
                 ClarificationPrefs(
                     enabled=bool(ctx.clarification_enabled),
                     max_rounds=int(ctx.clarification_max_rounds),
-                    on_timeout=str(ctx.clarification_on_timeout),
-                    timeout_seconds=ClarificationPrefs._timeout_from_settings(),
                 ),
                 emit=emit,
                 seq_counter=seq_counter,
@@ -461,7 +454,6 @@ class DeviceAgent:
                 run_id=run_id,
                 session_id=session_id,
                 locale=ctx.locale,
-                cancel_run=ctx.cancel_run,
                 # DeviceAgent shares one broker between tool approval and
                 # clarification, and registers it itself above.
                 broker=broker,

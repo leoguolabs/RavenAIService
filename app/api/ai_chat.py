@@ -486,7 +486,7 @@ async def chat_clarification_resolve_endpoint(
     current_user=Depends(get_optional_user),
     locale: str = Depends(get_request_locale),
 ) -> ChatClarificationResolveResponse:
-    """Resolve a pending ``AskUserQuestion`` request raised by a DeviceAgent run.
+    """Resolve a pending clarification owned by an interactive Agent run.
 
     Lookup / ownership rules mirror :func:`chat_permission_resolve_endpoint`:
     1. ``run_id`` (preferred) → 2. ``session_id`` active run → 3. legacy scan,
@@ -497,7 +497,7 @@ async def chat_clarification_resolve_endpoint(
       custom text (a required question was left blank).
     - 403/404 handled the same way as permissions (we return 404 on miss).
     - 200 with ``{request_id}`` on success; the broker future receives
-      ``{"answers": [...]}`` and the agent loop continues.
+      ``{"answers": [...]}`` and the paused run resumes.
     """
     if not payload.answers or any(not ans.is_answered() for ans in payload.answers):
         raise HTTPException(

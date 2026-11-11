@@ -224,7 +224,7 @@ const normalizeClarificationQuestions = (raw: unknown): ClarificationQuestion[] 
 const makePendingClarification = (
   requestId: string,
   questions: ClarificationQuestion[],
-  meta: Pick<PendingClarification, 'session_id' | 'run_id' | 'purpose' | 'publication_review'>,
+  meta: Pick<PendingClarification, 'session_id' | 'run_id' | 'purpose' | 'publication_review' | 'paused'>,
 ): PendingClarification => ({
   request_id: requestId,
   questions,
@@ -232,6 +232,7 @@ const makePendingClarification = (
   ...(meta.purpose === 'package_build_confirmation' && meta.publication_review
     ? { publication_review: meta.publication_review }
     : {}),
+  ...(meta.paused ? { paused: true } : {}),
   session_id: meta.session_id,
   run_id: meta.run_id,
   draftSelected: questions.map(() => []),
@@ -470,6 +471,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
             run_id: payload?.run_id || state.activeRunId || undefined,
             purpose: payload?.purpose,
             publication_review: payload?.publication_review,
+            paused: payload?.paused === true,
           }),
         )
       }
@@ -739,8 +741,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
     state.runAgentKind = null
     state.subscription = null
     // A terminal run can never resolve an outstanding clarification, so drop any
-    // pending question cards (e.g. when a cancel-on-timeout aborts the run
-    // before its ``clarification_resolved`` event is delivered).
+    // pending question cards if cancellation interrupted event delivery.
     state.pendingClarifications = []
     // Keep seenSeq so a future reconnect to the same run still dedupes; the
     // map is small and cleared on session reload.
@@ -805,6 +806,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
           run_id: c?.run_id || runId,
           purpose: c?.purpose,
           publication_review: c?.publication_review,
+          paused: c?.paused === true,
         }),
       )
     }

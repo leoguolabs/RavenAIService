@@ -164,7 +164,6 @@ const profileForm = reactive({
   profileRole: 'developer' as UserProfileRole,
   clarificationEnabled: true,
   clarificationMaxRounds: 5,
-  clarificationOnTimeout: 'cancel' as 'cancel' | 'continue',
 })
 
 const userMenuRef = ref<HTMLElement | null>(null)
@@ -209,8 +208,6 @@ const syncProfileForm = () => {
   profileForm.profileRole = (userStore.profile?.profile_role || 'developer') as UserProfileRole
   profileForm.clarificationEnabled = userStore.profile?.clarification_enabled ?? true
   profileForm.clarificationMaxRounds = userStore.profile?.clarification_max_rounds ?? 5
-  profileForm.clarificationOnTimeout =
-    (userStore.profile?.clarification_on_timeout === 'continue' ? 'continue' : 'cancel')
 }
 
 const openSettingsModal = () => {
@@ -243,7 +240,6 @@ const handleSaveProfile = async () => {
       profile_role: profileForm.profileRole || 'developer',
       clarification_enabled: profileForm.clarificationEnabled,
       clarification_max_rounds: Number(profileForm.clarificationMaxRounds) || 5,
-      clarification_on_timeout: profileForm.clarificationOnTimeout,
     })
     if (!resp?.success || !resp.data) {
       throw new Error(resp?.message || t('workbench.settingsPanel.saveFailed'))
@@ -1082,19 +1078,7 @@ const handleUserLogout = () => {
                       :disabled="!profileForm.clarificationEnabled"
                     />
                   </label>
-                  <label class="rw-form-field">
-                    <span class="rw-form-label">{{ t('workbench.settingsPanel.clarification.onTimeoutLabel') }}</span>
-                    <select
-                      v-model="profileForm.clarificationOnTimeout"
-                      class="rw-select"
-                      :disabled="!profileForm.clarificationEnabled"
-                    >
-                      <option value="cancel">{{ t('workbench.settingsPanel.clarification.onTimeoutCancel') }}</option>
-                      <option value="continue">{{ t('workbench.settingsPanel.clarification.onTimeoutContinue') }}</option>
-                    </select>
-                  </label>
                 </div>
-                <p class="rw-settings-note">{{ t('workbench.settingsPanel.clarification.onTimeoutHint') }}</p>
               </section>
             </div>
 

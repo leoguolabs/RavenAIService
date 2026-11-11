@@ -9,13 +9,19 @@ import shutil
 import signal
 import sys
 import tempfile
+import time
 import uuid
+from contextlib import aclosing
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from claude_agent_sdk import AssistantMessage, ResultMessage, SystemMessage, TextBlock, ToolResultBlock, ToolUseBlock, UserMessage
 from claude_agent_sdk.types import StreamEvent
 
 from app.agents.antigravity_control import control_bridge, normalize_tool
+from app.agents.clarification_pause import (
+    SegmentUsage, cancelled_message, continuation_prompt, current_pause,
+)
 from app.agents.runtime_secrets import redact
 
 
@@ -120,81 +126,130 @@ async def terminate(process):
         await process.wait()
 
 
+@dataclass
+class _SegmentCheckpoint:
+    session_id: str = ""
+    model_invocations: int = 0
+    result: ResultMessage | None = None
+
+
 async def query(*, prompt, options):
     text = await prompt_text(prompt)
-    timeout = float((options.env or {}).get("API_TIMEOUT_MS", "3600000")) / 1000
+    remaining_time = float((options.env or {}).get("API_TIMEOUT_MS", "3600000")) / 1000
+    remaining_turns = options.max_turns
+    pause = current_pause.get()
+    conversation = ""
+    usage = SegmentUsage()
     with tempfile.TemporaryDirectory(prefix="raven-agy-") as directory:
-        task_home = Path(directory)
-        settings_dir = task_home / ".gemini" / "antigravity-cli"
-        model_name = "magpie/" + str(options.model)
-        write_config(settings_dir / "settings.json", {
-            "modelProvider": "gemini", "model": model_name,
-            "customModelsConfig": {"customModels": {model_name: {
-                "apiProvider": "API_PROVIDER_GOOGLE_GEMINI", "modelName": str(options.model)}}},
-            "permissions": {"allow": ["mcp(*)"], "deny": [], "ask": []},
-        })
-        skills = Path(options.cwd) / ".claude" / "skills"
-        if skills.is_dir() and "project" in (options.setting_sources or []):
-            shutil.copytree(skills, task_home / ".gemini" / "config" / "skills", symlinks=False)
-        async with control_bridge(options) as (control, control_url, control_token):
-            write_config(task_home / ".gemini" / "config" / "mcp_config.json", {"mcpServers": {
-                name: {"serverUrl": f"{control_url}/mcp/{name}", "headers": {"Authorization": "Bearer " + control_token},
-                       "timeoutSeconds": int(timeout)} for name in control.clients}})
-            hook_command = shlex.join([sys.executable, str(Path(__file__).with_name("antigravity_hook.py"))])
-            write_config(task_home / ".gemini" / "config" / "hooks.json", {"raven": {
-                "PreToolUse": [{"matcher": ".*", "hooks": [{"command": hook_command + " PreToolUse", "timeout": int(timeout)}]}],
-                "PreInvocation": [{"command": hook_command + " PreInvocation", "timeout": 30}],
-                "Stop": [{"command": hook_command + " Stop", "timeout": int(timeout)}],
-            }})
-            # Do not inherit upstream keys or another user's CLI state.
-            env = {key: value for key, value in os.environ.items() if key in {
-                "PATH", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "PYTHONPATH"}}
-            env.update({"HOME": directory, "XDG_CONFIG_HOME": str(task_home / ".config"),
-                "GEMINI_API_KEY": options.env["ANTHROPIC_API_KEY"],
-                "GOOGLE_GEMINI_BASE_URL": options.env["ANTHROPIC_BASE_URL"],
-                "RAVEN_CONTROL_URL": control_url, "RAVEN_CONTROL_TOKEN": control_token})
-            argv = ["agy", "--model", model_name, "--input-format", "stream-json", "--output-format", "stream-json"]
-            process = await asyncio.create_subprocess_exec(*argv, cwd=str(options.cwd), env=env,
-                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                start_new_session=True, limit=4 * 1024 * 1024)
-            # Drain diagnostics without persisting prompts, credentials or CLI internals.
-            async def drain():
-                while await process.stderr.read(65536):
-                    pass
-            stderr_task = asyncio.create_task(drain())
-            adapter = EventAdapter(str(options.model), control.mcp_names)
-            try:
-                process.stdin.write((json.dumps({"event": "user", "message": {"content": text}}) + "\n").encode())
-                await process.stdin.drain()
-                process.stdin.close()
-                async with asyncio.timeout(timeout):
-                    while line := await process.stdout.readline():
-                        try:
-                            row = json.loads(line)
-                        except ValueError as exc:
-                            raise RuntimeError("Invalid Antigravity event stream") from exc
-                        for message in adapter.messages(row):
-                            if isinstance(message, AssistantMessage):
-                                texts = [block.text for block in message.content if isinstance(block, TextBlock)]
-                                if texts:
-                                    control.last_assistant_message = "\n".join(texts)
+        while True:
+            checkpoint = _SegmentCheckpoint()
+            started = time.monotonic()
+            async with aclosing(_segment(
+                text, options, remaining_time, Path(directory), conversation, checkpoint
+            )) as stream:
+                async for message in stream:
+                    yield usage.apply(message) if isinstance(message, ResultMessage) else message
+            if pause is None or not pause.pending:
+                return
+            if not checkpoint.session_id:
+                raise RuntimeError("Antigravity stopped without a session to resume / Antigravity 未返回可恢复的会话")
+            usage.add(checkpoint.result)
+            remaining_time -= time.monotonic() - started
+            answers = await pause.wait()
+            if answers is None:
+                yield cancelled_message()
+                return
+            if remaining_time <= 0:
+                raise asyncio.TimeoutError
+            if remaining_turns is not None:
+                remaining_turns -= checkpoint.model_invocations
+                if remaining_turns <= 0:
+                    raise RuntimeError("Maximum Agent turns reached / 达到 Agent 最大轮次")
+                options = replace(options, max_turns=remaining_turns)
+            text = continuation_prompt(answers)
+            conversation = checkpoint.session_id
+
+
+async def _segment(text, options, timeout, task_home, conversation, checkpoint):
+    settings_dir = task_home / ".gemini" / "antigravity-cli"
+    model_name = "magpie/" + str(options.model)
+    write_config(settings_dir / "settings.json", {
+        "modelProvider": "gemini", "model": model_name,
+        "customModelsConfig": {"customModels": {model_name: {
+            "apiProvider": "API_PROVIDER_GOOGLE_GEMINI", "modelName": str(options.model)}}},
+        "permissions": {"allow": ["mcp(*)"], "deny": [], "ask": []},
+    })
+    skills = Path(options.cwd) / ".claude" / "skills"
+    if not conversation and skills.is_dir() and "project" in (options.setting_sources or []):
+        shutil.copytree(skills, task_home / ".gemini" / "config" / "skills", symlinks=False)
+    async with control_bridge(options) as (control, control_url, control_token):
+        write_config(task_home / ".gemini" / "config" / "mcp_config.json", {"mcpServers": {
+            name: {"serverUrl": f"{control_url}/mcp/{name}", "headers": {"Authorization": "Bearer " + control_token},
+                   "timeoutSeconds": max(1, int(timeout))} for name in control.clients}})
+        hook_command = shlex.join([sys.executable, str(Path(__file__).with_name("antigravity_hook.py"))])
+        write_config(task_home / ".gemini" / "config" / "hooks.json", {"raven": {
+            "PreToolUse": [{"matcher": ".*", "hooks": [{"command": hook_command + " PreToolUse", "timeout": max(1, int(timeout))}]}],
+            "PreInvocation": [{"command": hook_command + " PreInvocation", "timeout": 30}],
+            "Stop": [{"command": hook_command + " Stop", "timeout": max(1, int(timeout))}],
+        }})
+        # Do not inherit upstream keys or another user's CLI state.
+        env = {key: value for key, value in os.environ.items() if key in {
+            "PATH", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "PYTHONPATH"}}
+        env.update({"HOME": str(task_home), "XDG_CONFIG_HOME": str(task_home / ".config"),
+            "GEMINI_API_KEY": options.env["ANTHROPIC_API_KEY"],
+            "GOOGLE_GEMINI_BASE_URL": options.env["ANTHROPIC_BASE_URL"],
+            "RAVEN_CONTROL_URL": control_url, "RAVEN_CONTROL_TOKEN": control_token})
+        argv = ["agy", "--model", model_name, "--input-format", "stream-json", "--output-format", "stream-json"]
+        if conversation:
+            argv += ["--conversation", conversation]
+        process = await asyncio.create_subprocess_exec(*argv, cwd=str(options.cwd), env=env,
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            start_new_session=True, limit=4 * 1024 * 1024)
+        # Drain diagnostics without persisting prompts, credentials or CLI internals.
+        async def drain():
+            while await process.stderr.read(65536):
+                pass
+        stderr_task = asyncio.create_task(drain())
+        adapter = EventAdapter(str(options.model), control.mcp_names)
+        try:
+            process.stdin.write((json.dumps({"event": "user", "message": {"content": text}}) + "\n").encode())
+            await process.stdin.drain()
+            process.stdin.close()
+            async with asyncio.timeout(timeout):
+                while line := await process.stdout.readline():
+                    try:
+                        row = json.loads(line)
+                    except ValueError as exc:
+                        raise RuntimeError("Invalid Antigravity event stream") from exc
+                    for message in adapter.messages(row):
+                        if isinstance(message, AssistantMessage):
+                            texts = [block.text for block in message.content if isinstance(block, TextBlock)]
+                            if texts:
+                                control.last_assistant_message = "\n".join(texts)
+                        if control.paused_for_clarification and isinstance(message, ResultMessage):
+                            checkpoint.result = message
+                        else:
                             yield redact(message, (control_token, options.env["ANTHROPIC_API_KEY"]))
-                        step = row.get("step_update", {})
-                        if step.get("step_type") == "tool" and step.get("state") == "DONE":
-                            info = step.get("tool_info", {})
-                            name, args = normalize_tool(info.get("name", step.get("tool_name", "")),
-                                info.get("parameters", {}), control.mcp_names)
-                            if not name.startswith("mcp__"):
-                                await control.hooks("PostToolUse", name, args,
-                                    f"agy-{adapter.session_id}-{step.get('step_index')}", info.get("output"))
-                    code = await process.wait()
-                if adapter.result is None:
-                    raise RuntimeError(f"Antigravity failed (exit {code}); no terminal event")
-                # The structured error result already carries the failure. Do not replace it
-                # with a generic exit-code exception after the caller consumes the result.
-                if code != 0 and adapter.result.get("status") == "SUCCESS":
-                    raise RuntimeError(f"Antigravity failed (exit {code}) after a successful terminal event")
-            finally:
-                await terminate(process)
-                stderr_task.cancel()
-                await asyncio.gather(stderr_task, return_exceptions=True)
+                    step = row.get("step_update", {})
+                    if step.get("step_type") == "tool" and step.get("state") == "DONE":
+                        info = step.get("tool_info", {})
+                        name, args = normalize_tool(info.get("name", step.get("tool_name", "")),
+                            info.get("parameters", {}), control.mcp_names)
+                        if not name.startswith("mcp__"):
+                            await control.hooks("PostToolUse", name, args,
+                                f"agy-{adapter.session_id}-{step.get('step_index')}", info.get("output"))
+                code = await process.wait()
+            if control.paused_for_clarification and adapter.session_id:
+                checkpoint.session_id = adapter.session_id
+                checkpoint.model_invocations = control.model_invocations
+                return
+            if adapter.result is None:
+                raise RuntimeError(f"Antigravity failed (exit {code}); no terminal event")
+            # The structured error result already carries the failure. Do not replace it
+            # with a generic exit-code exception after the caller consumes the result.
+            if code != 0 and adapter.result.get("status") == "SUCCESS":
+                raise RuntimeError(f"Antigravity failed (exit {code}) after a successful terminal event")
+        finally:
+            await terminate(process)
+            stderr_task.cancel()
+            await asyncio.gather(stderr_task, return_exceptions=True)

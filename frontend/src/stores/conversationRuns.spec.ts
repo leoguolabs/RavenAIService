@@ -948,8 +948,12 @@ describe('conversationRuns store', () => {
     const store = useConversationRunsStore()
     const state = store.ensureState('session-a')
     store.applyEventToState(state, traceEvent('run-a', 'session-a', 1, 'run_start'))
-    store.applyEventToState(state, clarificationRequest('run-a', 'session-a', 2, 'req-1'))
+    store.applyEventToState(state, {
+      ...clarificationRequest('run-a', 'session-a', 2, 'req-1'),
+      paused: true,
+    })
     expect(state.pendingClarifications.map((c) => c.request_id)).toEqual(['req-1'])
+    expect(state.pendingClarifications[0].paused).toBe(true)
     expect(state.pendingClarifications[0].draftSelected).toEqual([[]])
 
     store.applyEventToState(state, {
@@ -964,6 +968,24 @@ describe('conversationRuns store', () => {
       outcome: 'answered',
     })
     expect(state.pendingClarifications).toEqual([])
+  })
+
+  it('restores a paused card from the active run snapshot after reload', () => {
+    const store = useConversationRunsStore()
+    const state = store.ensureState('session-a')
+    store.mergeSnapshot(state, {
+      run_id: 'run-a',
+      session_id: 'session-a',
+      status: 'running',
+      agent_kind: 'project_expert',
+      pending_clarifications: [{
+        ...clarificationRequest('run-a', 'session-a', 2, 'req-1'),
+        paused: true,
+      }],
+    })
+    expect(state.pendingClarifications[0]).toMatchObject({
+      run_id: 'run-a', request_id: 'req-1', paused: true,
+    })
   })
 
   // The workspace agents (log-analysis / project-expert / package-search) wrap

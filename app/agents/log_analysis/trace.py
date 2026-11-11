@@ -126,6 +126,7 @@ class AgentTraceEvent(TypedDict, total=False):
     # clarification_request / clarification_resolved
     request_id: str
     questions: List[Dict[str, Any]]
+    paused: bool
     publication_review: Dict[str, Any]
     outcome: str
     reason: str

@@ -303,7 +303,9 @@ class ChatRunService:
             "events": list(job.events),
             "pending_permissions": list(job.pending_permissions.values()),
             "pending_clarifications": (
-                list(job.pending_clarifications.values())
+                []
+                if job.status in TERMINAL_RUN_STATUSES
+                else list(job.pending_clarifications.values())
                 or cls._derive_pending_clarifications(job.trace_events)
             ),
             "started_at": job.started_at,
@@ -583,7 +585,6 @@ class ChatRunService:
             # AskUserQuestion 澄清偏好：来自用户 profile（匿名用户用默认值）。
             "clarification_enabled": bool(getattr(user, "clarification_enabled", True)),
             "clarification_max_rounds": int(getattr(user, "clarification_max_rounds", 5)),
-            "clarification_on_timeout": str(getattr(user, "clarification_on_timeout", "cancel")),
         }
         job.task = asyncio.create_task(self._run_device_job(job, ctx_kwargs))
         # Surface a synthetic ``run_start`` SSE frame so subscribers can pick up
@@ -615,19 +616,9 @@ class ChatRunService:
         owner_scope = job.owner_scope
         remember = bool(ctx_kwargs.pop("remember", True))
 
-        def _cancel_run() -> None:
-            """Run-level cancel used by AskUserQuestion clarification timeout
-            (``on_timeout == "cancel"``). Cancels this run's task so the agent
-            loop finalises as ``cancelled`` via DeviceAgent's CancelledError path."""
-            try:
-                self.cancel(run_id, owner_scope)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("chat_run: clarification cancel_run failed run_id=%s: %s", run_id, exc)
-
         ctx = DeviceAgentContext(
             broker_register=self.register_broker,
             broker_unregister=self.unregister_broker,
-            cancel_run=_cancel_run,
             **ctx_kwargs,
         )
 

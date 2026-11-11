@@ -12,6 +12,9 @@ from dataclasses import is_dataclass, replace
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+from app.agents.clarification_pause import (
+    SegmentUsage, cancelled_message, continuation_prompt, current_pause,
+)
 from app.agents.openai_bridge import OpenAIConfig, openai_bridge
 
 
@@ -45,9 +48,66 @@ def workspace_image_blocks(cwd: str) -> list[dict]:
              "data": image.data}} for image in attachments]
 
 
-async def _claude_query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
-    from claude_agent_sdk import query as sdk_query
+async def _claude_segments(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
+    from claude_agent_sdk import HookMatcher, ResultMessage, query as sdk_query
 
+    pause = current_pause.get()
+    if pause is None or "ask" not in (getattr(options, "mcp_servers", None) or {}):
+        async with aclosing(sdk_query(prompt=prompt, options=options)) as stream:
+            async for message in stream:
+                yield message
+        return
+
+    stopped = False
+
+    async def stop_for_clarification(_data, _tool_use_id, _context):
+        nonlocal stopped
+        if pause.pending:
+            stopped = True
+            return {"continue_": False, "stopReason": "Waiting for user clarification"}
+        return {}
+
+    hooks = dict(options.hooks or {})
+    hooks["PostToolUse"] = [
+        *hooks.get("PostToolUse", []),
+        HookMatcher(matcher="^mcp__ask__AskUserQuestion$", hooks=[stop_for_clarification]),
+    ]
+    extra_args = dict(options.extra_args or {})
+    extra_args.pop("no-session-persistence", None)
+    options = replace(options, hooks=hooks, extra_args=extra_args)
+    remaining_turns = options.max_turns
+    usage = SegmentUsage()
+
+    while True:
+        checkpoint = None
+        stopped = False
+        async with aclosing(sdk_query(prompt=prompt, options=options)) as stream:
+            async for message in stream:
+                if isinstance(message, ResultMessage):
+                    if pause.pending:
+                        checkpoint = message
+                        continue
+                    message = usage.apply(message)
+                yield message
+
+        if not pause.pending:
+            return
+        if not stopped or checkpoint is None or not checkpoint.session_id:
+            raise RuntimeError("Claude stopped without a session to resume / Claude 未返回可恢复的会话")
+        usage.add(checkpoint)
+        answers = await pause.wait()
+        if answers is None:
+            yield cancelled_message()
+            return
+        if remaining_turns is not None:
+            remaining_turns -= checkpoint.num_turns
+            if remaining_turns <= 0:
+                raise RuntimeError("Maximum Agent turns reached / 达到 Agent 最大轮次")
+        prompt = continuation_prompt(answers)
+        options = replace(options, resume=checkpoint.session_id, max_turns=remaining_turns)
+
+
+async def _claude_query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
     callback = getattr(options, "can_use_tool", None)
     if is_dataclass(options) and callback is not None:
         from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
@@ -66,7 +126,7 @@ async def _claude_query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
 
     env = dict(getattr(options, "env", {}) or {})
     if env.get("RAVEN_API_PROTOCOL") != "openai_responses":
-        async with aclosing(sdk_query(prompt=prompt, options=options)) as stream:
+        async with aclosing(_claude_segments(prompt=prompt, options=options)) as stream:
             async for message in stream:
                 yield message
         return
@@ -92,7 +152,7 @@ async def _claude_query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
         env.update({"ANTHROPIC_BASE_URL": base_url, "ANTHROPIC_API_KEY": token,
                     "ANTHROPIC_AUTH_TOKEN": "", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"})
         adapted = replace(options, env=env)
-        async with aclosing(sdk_query(prompt=prompt, options=adapted)) as stream:
+        async with aclosing(_claude_segments(prompt=prompt, options=adapted)) as stream:
             async for message in stream:
                 yield message
 

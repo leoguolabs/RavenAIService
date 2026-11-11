@@ -1,11 +1,11 @@
 <template>
-  <div class="rw-clarify">
+  <div class="rw-clarify" :class="{ 'rw-clarify--paused': pending.paused }">
     <div class="rw-clarify-head">
       <HelpCircle class="rw-clarify-icon" aria-hidden="true" />
       <div>
         <h3 class="rw-clarify-title">{{ title }}</h3>
         <p class="rw-clarify-sub">
-          {{ t(publicationReview ? 'aiChat.clarification.publicationSubtitle' : 'aiChat.clarification.subtitle') }}
+          {{ t(subtitle) }}
         </p>
       </div>
     </div>
@@ -83,9 +83,14 @@ const publicationReview = computed(() => props.pending.purpose === 'package_buil
 const title = computed(() =>
   t(publicationReview.value ? 'aiChat.clarification.publicationTitle' : 'aiChat.clarification.title'),
 )
-const submitLabel = computed(() =>
-  publicationReview.value ? 'aiChat.clarification.publicationSubmit' : 'aiChat.clarification.submit',
-)
+const subtitle = computed(() => {
+  if (publicationReview.value) return 'aiChat.clarification.publicationSubtitle'
+  return props.pending.paused ? 'aiChat.clarification.pausedSubtitle' : 'aiChat.clarification.subtitle'
+})
+const submitLabel = computed(() => {
+  if (publicationReview.value) return 'aiChat.clarification.publicationSubmit'
+  return props.pending.paused ? 'aiChat.clarification.resume' : 'aiChat.clarification.submit'
+})
 
 const isSelected = (qi: number, label: string): boolean =>
   (props.pending.draftSelected[qi] || []).includes(label)
@@ -113,6 +118,7 @@ const toggleOption = (qi: number, label: string, multi?: boolean): void => {
   display: flex;
   flex-direction: column;
 }
+.rw-clarify.rw-clarify--paused { max-height: min(45vh, 420px); }
 .rw-clarify-head {
   display: flex;
   flex: 0 0 auto;

@@ -509,7 +509,6 @@ class PackageSearchChatService:
                     user=user,
                     run_id=run_id,
                     session_id=effective_session_id,
-                    cancel_run=lambda sid=effective_session_id: self.cancel(sid),
                 ),
                 input_manifest=input_manifest,
                 project_catalog=project_catalog,
@@ -830,9 +829,11 @@ class PackageSearchChatService:
         if not isinstance(seq_counter, SeqCounter):
             seq_counter = SeqCounter()
             ctx.metadata["trace_seq_counter"] = seq_counter
-        broker = PermissionBroker()
+        existing_broker = chat_run_service.get_broker_by_run_id(job.run_id)
+        broker = existing_broker if existing_broker is not None else PermissionBroker()
         job.mandatory_broker = broker
-        chat_run_service.register_broker(job.run_id, broker)
+        if existing_broker is None:
+            chat_run_service.register_broker(job.run_id, broker)
         try:
             return await request_mandatory_clarification(
                 review_questions(review),
@@ -851,10 +852,11 @@ class PackageSearchChatService:
                 },
             )
         finally:
-            chat_run_service.unregister_broker(job.run_id)
+            if existing_broker is None:
+                chat_run_service.unregister_broker(job.run_id)
+                broker.close()
             if job.mandatory_broker is broker:
                 job.mandatory_broker = None
-            broker.close()
 
     def _bind_confirmed_project(
         self,
@@ -1185,8 +1187,13 @@ class PackageSearchChatService:
             return True
         job.cancel_requested = True
         job.cancel_event.set()
+        from app.services.chat_run_service import chat_run_service
+
+        broker = chat_run_service.get_broker_by_run_id(job.run_id)
+        if broker is not None:
+            broker.close()
         mandatory_broker = job.mandatory_broker
-        if mandatory_broker is not None:
+        if mandatory_broker is not None and mandatory_broker is not broker:
             # close() settles every pending clarification Future with a deny
             # decision and is safe across event loops/threads.
             mandatory_broker.close()

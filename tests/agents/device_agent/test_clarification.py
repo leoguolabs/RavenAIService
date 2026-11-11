@@ -7,11 +7,11 @@ the resulting proxy directly — no claude-agent-sdk required.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, List
-from unittest.mock import MagicMock
+from typing import List
 
 import pytest
 
+from app.agents.clarification_pause import ClarificationPause, current_pause, with_execution_timeout
 from app.agents.device_agent.clarification import make_ask_user_question_tool
 from app.agents.device_agent.permissions import PermissionBroker
 from app.agents.device_agent.trace import (
@@ -31,14 +31,11 @@ def _text(result: dict) -> str:
     return result["content"][0]["text"]
 
 
-def _make(broker, *, timeout=1.0, on_timeout="cancel", max_rounds=5, cancel_run=None):
+def _make(broker, *, max_rounds=5):
     events: List[dict] = []
     proxy = make_ask_user_question_tool(
         broker=broker,
-        timeout_seconds=timeout,
-        on_timeout=on_timeout,
         max_rounds=max_rounds,
-        cancel_run=cancel_run,
         emit=events.append,
         seq_counter=SeqCounter(),
         task_id="t1",
@@ -47,6 +44,16 @@ def _make(broker, *, timeout=1.0, on_timeout="cancel", max_rounds=5, cancel_run=
         tool_decorator=_noop_decorator,
     )
     return proxy, events
+
+
+@pytest.fixture(autouse=True)
+def pause():
+    pause = ClarificationPause()
+    token = current_pause.set(pause)
+    try:
+        yield pause
+    finally:
+        current_pause.reset(token)
 
 
 _QUESTION = {
@@ -61,7 +68,7 @@ _QUESTION = {
 
 class TestHappyPath:
     @pytest.mark.asyncio
-    async def test_answered_returns_formatted_text(self):
+    async def test_answered_returns_formatted_text(self, pause):
         broker = PermissionBroker()
         proxy, events = _make(broker)
 
@@ -74,17 +81,18 @@ class TestHappyPath:
             broker.resolve(req_id, {"answers": [{"question_index": 0, "selected_labels": ["nginx"]}]})
 
         asyncio.create_task(resolver())
-        result = await proxy({"questions": [_QUESTION]})
+        await proxy({"questions": [_QUESTION]})
+        assert events == []
+        text = await pause.wait()
 
         types = [e["type"] for e in events]
         assert types == [CLARIFICATION_REQUEST, CLARIFICATION_RESOLVED]
         assert events[1]["outcome"] == "answered"
-        text = _text(result)
         assert "要重启哪个服务？" in text
         assert "nginx" in text
 
     @pytest.mark.asyncio
-    async def test_multi_question_and_custom_text(self):
+    async def test_multi_question_and_custom_text(self, pause):
         broker = PermissionBroker()
         proxy, events = _make(broker)
         q2 = {"header": "范围", "question": "范围？", "options": []}
@@ -101,43 +109,40 @@ class TestHappyPath:
             ]})
 
         asyncio.create_task(resolver())
-        result = await proxy({"questions": [_QUESTION, q2]})
-        text = _text(result)
+        await proxy({"questions": [_QUESTION, q2]})
+        text = await pause.wait()
         assert events[0]["questions"][1]["question"] == "范围？"
         assert events[0]["questions"][1]["options"] == []
         assert "先看日志再决定" in text
 
 
-class TestTimeout:
+class TestPause:
     @pytest.mark.asyncio
-    async def test_continue_mode_returns_continue_hint(self):
+    @pytest.mark.parametrize("cancel", [False, True])
+    async def test_wait_outlives_execution_deadline(self, pause, cancel):
         broker = PermissionBroker()
-        cancel_run = MagicMock()
-        proxy, events = _make(broker, timeout=0.05, on_timeout="continue", cancel_run=cancel_run)
-        result = await proxy({"questions": [_QUESTION]})
-        assert events[-1]["type"] == CLARIFICATION_RESOLVED
-        assert events[-1]["outcome"] == "timeout"
-        cancel_run.assert_not_called()
-        assert "继续" in _text(result)
+        proxy, events = _make(broker)
 
-    @pytest.mark.asyncio
-    async def test_cancel_mode_calls_cancel_run(self):
-        broker = PermissionBroker()
-        cancel_run = MagicMock()
-        proxy, events = _make(broker, timeout=0.05, on_timeout="cancel", cancel_run=cancel_run)
-        result = await proxy({"questions": [_QUESTION]})
-        assert events[-1]["outcome"] == "cancelled"
-        assert events[-1]["reason"] == "timeout"
-        cancel_run.assert_called_once()
-        assert "取消" in _text(result)
+        async def run():
+            await proxy({"questions": [_QUESTION]})
+            return await pause.wait()
 
-    @pytest.mark.asyncio
-    async def test_cancel_mode_without_callback_degrades_to_continue(self):
-        broker = PermissionBroker()
-        proxy, events = _make(broker, timeout=0.05, on_timeout="cancel", cancel_run=None)
-        result = await proxy({"questions": [_QUESTION]})
-        assert events[-1]["outcome"] == "timeout"
-        assert "继续" in _text(result)
+        task = asyncio.create_task(with_execution_timeout(run(), timeout=0.05))
+        await asyncio.sleep(0.10)
+        assert not task.done()
+        assert len(events) == 1 and events[0]["paused"] is True
+        request_id = events[0]["request_id"]
+
+        if cancel:
+            broker.close()
+            assert await task is None
+            assert events[-1]["outcome"] == "cancelled"
+        else:
+            decision = {"answers": [{"question_index": 0, "selected_labels": ["nginx"]}]}
+            assert broker.resolve(request_id, decision)
+            assert not broker.resolve(request_id, decision)
+            assert "nginx" in await task
+            assert events[-1]["outcome"] == "answered"
 
 
 class TestGuards:
@@ -158,7 +163,7 @@ class TestGuards:
         assert _text(result)
 
     @pytest.mark.asyncio
-    async def test_second_call_capped_when_max_rounds_one(self):
+    async def test_second_call_capped_when_max_rounds_one(self, pause):
         broker = PermissionBroker()
         proxy, events = _make(broker, max_rounds=1)
 
@@ -171,6 +176,7 @@ class TestGuards:
 
         asyncio.create_task(resolver())
         await proxy({"questions": [_QUESTION]})
+        await pause.wait()
         # Second call exceeds the cap → no new request event, cap message returned.
         before = len(events)
         result = await proxy({"questions": [_QUESTION]})

@@ -6,6 +6,7 @@ import time
 
 from app.services.chat_run_service import (
     ChatRunJob,
+    RUN_STATUS_CANCELLED,
     RUN_STATUS_RUNNING,
     chat_run_service,
 )
@@ -30,12 +31,17 @@ def test_snapshot_includes_pending_clarifications():
     job.pending_clarifications["req-1"] = {
         "type": "clarification_request",
         "request_id": "req-1",
+        "paused": True,
         "questions": [{"question": "which?", "options": [{"label": "a"}, {"label": "b"}]}],
     }
     payload = chat_run_service._snapshot_payload(job)  # noqa: SLF001
     assert "pending_clarifications" in payload
     assert len(payload["pending_clarifications"]) == 1
     assert payload["pending_clarifications"][0]["request_id"] == "req-1"
+    assert payload["pending_clarifications"][0]["paused"] is True
+
+    job.mark_status(RUN_STATUS_CANCELLED)
+    assert chat_run_service._snapshot_payload(job)["pending_clarifications"] == []
 
 
 def test_snapshot_empty_pending_clarifications_by_default():

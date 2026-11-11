@@ -64,7 +64,7 @@ keys gracefully.
 | `thinking_end`    | `step_id`, `text`, `duration_seconds`                                                                                        | `text` is the full thinking text (≤ 4 KB excerpt).                                     |
 | `answer_delta`    | `text_chunk`, `step_id` (optional)                                                                                           | Incremental chunk of the assistant's **final answer body** (≤ 4 KB UTF-8). Concatenating every `answer_delta.text_chunk` of a run in `seq` order MUST equal `run_complete.final_text` (under the same masking). Distinct from `thinking_delta` (folded reasoning) and `step_delta` (tool output). |
 | `system_notice`   | `kind`, `subtype`, `detail`                                                                                                  | Used for `heartbeat`, `cancel_requested`, SDK system messages, and `subtype: "endpoint_switch"` (see below). |
-| `clarification_request`  | `request_id`, `questions`, `run_id`, `session_id`; optional `mandatory`, `purpose`, `plan_hash`, `publication_review` | Blocks until `POST /chat/clarifications/{request_id}/resolve`, timeout, or run end. Configuration Manager packaging uses `mandatory=true`, `purpose="package_build_confirmation"`, and a structured release summary in `publication_review`. New clients render direct publication actions. Only non-empty release warnings open a dialog. |
+| `clarification_request`  | `request_id`, `questions`, `run_id`, `session_id`; optional `paused`, `mandatory`, `purpose`, `plan_hash`, `publication_review` | Ordinary questions carry `paused=true` after the executor ends its current segment. The same run resumes from its checkpoint after `POST /chat/clarifications/{request_id}/resolve`. Configuration Manager packaging uses `mandatory=true`, `purpose="package_build_confirmation"`, and a structured release summary in `publication_review`. New clients render direct publication actions. Only non-empty release warnings open a dialog. |
 | `clarification_resolved` | `request_id`, `outcome` (`answered`/`timeout`/`cancelled`/`rejected`), `reason`; optional `mandatory`, `purpose`        | Always follows its `clarification_request`; clears the question card.                   |
 
 The shared SDK translator omits `thinking_tokens` system notices when their
@@ -106,10 +106,18 @@ loading, not that the model made a Skill tool call or achieved a writing score.
 Any chat-facing agent — `device`, `log_analysis`, `project_expert`,
 `package_search` — may pause mid-run and ask the user to disambiguate an
 unclear instruction. The capability is gated on the user's **global**
-preference (`User.clarification_enabled` / `_max_rounds` / `_on_timeout`),
+preference (`User.clarification_enabled` / `_max_rounds`),
 never on which agent is running; wiring lives in one place,
 [app/agents/clarification.py](../app/agents/clarification.py), and each agent
 calls `ClarificationBinding.setup()` exactly once per run.
+
+
+An ordinary question is available in the active-run snapshot during the wait.
+The executor has ended the current model loop and the execution timeout is
+suspended. The answer starts another segment with the same run ID, trace
+sequence, conversation context and workspace. Cancel ends the run and clears
+its question. Pending runs are scoped to the backend process lifetime. A
+backend restart marks them stale using the existing run recovery policy.
 
 Configuration Manager has one deliberate exception: when component files are
 submitted for full-package creation, the **service** emits a mandatory

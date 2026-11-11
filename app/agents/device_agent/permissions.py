@@ -152,6 +152,12 @@ def make_can_use_tool(
         tool_input: Any,
         context: Any = None,  # noqa: ARG001  SDK 透传上下文，本期未使用
     ) -> Dict[str, Any]:
+        from app.agents.clarification import ASK_SDK_NAME
+
+        # The clarification MCP tool only asks a question. Some executors
+        # still call this broker for tools the Agent has already allowed.
+        if tool_name == ASK_SDK_NAME:
+            return {"behavior": "allow"}
         meta = tool_meta_map.get(tool_name)
         risk = classify_risk(tool_name, meta, rules)
 

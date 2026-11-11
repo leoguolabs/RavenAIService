@@ -2258,7 +2258,7 @@ const openShareModal = () => {
               <StreamingAnswer
                 :content="msg.content === THINKING_PLACEHOLDER ? '' : getAgentMessageView(msg.content).displayMarkdown"
                 :animate="!!msg.animateAnswer"
-                :running="!!msg.traceRunning"
+                :running="!!msg.traceRunning && !currentClarification?.paused"
                 @progress="scrollToBottom"
                 @busy="answerDisplayBusy[msg.id] = $event"
                 @settled="msg.animateAnswer = false"
@@ -2323,6 +2323,13 @@ const openShareModal = () => {
 
     <!-- Composer -->
     <div class="rw-composer-wrap">
+      <ClarificationCard
+        v-if="currentClarification?.paused"
+        :key="currentClarification.request_id"
+        :pending="currentClarification"
+        class="rw-clarification-inline"
+        @submit="submitClarificationAnswers"
+      />
       <div
         v-if="currentClarification?.publication_review"
         :class="publicationNeedsReview ? 'rw-modal-backdrop rw-hitl-backdrop' : 'rw-publication-inline'"
@@ -2721,7 +2728,7 @@ const openShareModal = () => {
     </div>
 
     <!-- AskUserQuestion clarification modal -->
-    <div v-if="currentClarification && !currentClarification.publication_review" class="rw-modal-backdrop rw-hitl-backdrop">
+    <div v-if="currentClarification && !currentClarification.paused && !currentClarification.publication_review" class="rw-modal-backdrop rw-hitl-backdrop">
       <div class="rw-modal rw-hitl-modal rw-clarification-modal">
         <ClarificationCard
           :pending="currentClarification"
@@ -3124,6 +3131,7 @@ const openShareModal = () => {
 .rw-ai-text :deep(a:hover) { text-decoration: underline; }
 
 /* Composer */
+.rw-clarification-inline { margin-bottom: 12px; }
 .rw-composer-wrap { flex-shrink: 0; padding: 12px 32px 24px; background: var(--rw-canvas); }
 .rw-publication-inline { max-width: 820px; margin: 0 auto 10px; }
 .rw-composer {

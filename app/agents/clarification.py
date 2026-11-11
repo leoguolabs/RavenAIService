@@ -5,12 +5,12 @@
 device / log_analysis / project_expert / package_search 四个面向对话的 agent
 都从这里获得同一套工具、同一段提示词、同一份用户偏好解析逻辑。
 
-与 ``device_agent/permissions.py`` 的工具审批（HITL）同构：调用即阻塞 agent
-loop，发出 ``clarification_request`` trace 事件，等待 HTTP 端点
-``POST /chat/clarifications/{request_id}/resolve`` 把用户答案写回
-:class:`PermissionBroker` 的 Future，随后把答案作为工具返回值回喂模型继续。
+与 ``device_agent/permissions.py`` 的工具审批共用 broker。工具请求暂停，
+在当前执行段结束后发出 ``clarification_request`` trace 事件。HTTP 端点
+``POST /chat/clarifications/{request_id}/resolve`` 将答案交给原 run 的 broker，
+执行器随后利用已有上下文开启下一段执行。
 
-设计要点（详见 openspec design.md Decision 1/2/6/9）：
+设计要点见 OpenSpec 变更 pause-agent-for-clarification。
 
 - **触发权归模型**：是否调用 ``AskUserQuestion`` 完全由模型决定；不清晰才问。
 - **复用 broker**：同一 run 内 permission 与 clarification 共享一个
@@ -20,9 +20,7 @@ loop，发出 ``clarification_request`` trace 事件，等待 HTTP 端点
 - **跨 loop**：workspace agent 跑在 ``asyncio.to_thread`` 起的独立 loop 中，
   broker 的 settle 逻辑已按跨 loop 情形处理，本模块无需额外关心。
 - **多问题**：一次调用支持 1..N 个问题，每问 2–4 预设选项 + 隐式自由输入。
-- **超时**：等待时长由 ``settings.agent_clarification_timeout_seconds`` 决定
-  （代码常量，默认 5 分钟）；超时行为 ``on_timeout ∈ {cancel, continue}``
-  决定取消本轮 run 还是让模型继续。
+- **等待**：普通提问保持可回答，直到用户回答或取消。服务端强制发布确认有独立超时。
 - **每轮上限**：``max_rounds`` 限制单次 run 的提问次数，达上限后直接返回提示。
 """
 
@@ -34,6 +32,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.agents.clarification_pause import PAUSED_TOOL_RESULT, current_pause
 from app.agents.hitl_broker import PermissionBroker
 from app.agents.log_analysis.trace import (
     CLARIFICATION_REQUEST,
@@ -67,36 +66,10 @@ DEFAULT_MAX_ROUNDS = 5
 
 @dataclass(frozen=True)
 class ClarificationPrefs:
-    """用户「Agent 澄清提问」偏好的规范化视图。
-
-    三个字段与 ``User.clarification_*`` 一一对应；``timeout_seconds`` 是代码
-    常量（非用户可改）。所有 agent 必须经由 :meth:`from_user` /
-    :meth:`from_mapping` 读取，避免各处 ``getattr`` 默认值漂移。
-    """
+    """用户「Agent 澄清提问」偏好。"""
 
     enabled: bool = True
     max_rounds: int = DEFAULT_MAX_ROUNDS
-    on_timeout: str = "cancel"
-    timeout_seconds: float = float(DEFAULT_TIMEOUT_SECONDS)
-
-    @staticmethod
-    def _timeout_from_settings() -> float:
-        try:
-            from app.config import settings
-        except Exception:  # pragma: no cover - config always importable in app
-            return float(DEFAULT_TIMEOUT_SECONDS)
-        value = getattr(settings, "agent_clarification_timeout_seconds", None)
-        if not value:
-            # Legacy key kept for deployments whose .env still sets it.
-            value = getattr(
-                settings,
-                "device_agent_clarification_timeout_seconds",
-                DEFAULT_TIMEOUT_SECONDS,
-            )
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return float(DEFAULT_TIMEOUT_SECONDS)
 
     @classmethod
     def from_user(cls, user: Any) -> "ClarificationPrefs":
@@ -106,23 +79,6 @@ class ClarificationPrefs:
             max_rounds=int(
                 getattr(user, "clarification_max_rounds", DEFAULT_MAX_ROUNDS) or 0
             ),
-            on_timeout=str(
-                getattr(user, "clarification_on_timeout", "cancel") or "cancel"
-            ),
-            timeout_seconds=cls._timeout_from_settings(),
-        )
-
-    @classmethod
-    def from_mapping(cls, data: Optional[Dict[str, Any]]) -> "ClarificationPrefs":
-        """从已序列化的偏好字典构造（跨线程/跨任务传递时使用）。"""
-        data = data or {}
-        return cls(
-            enabled=bool(data.get("enabled", True)),
-            max_rounds=int(data.get("max_rounds", DEFAULT_MAX_ROUNDS) or 0),
-            on_timeout=str(data.get("on_timeout", "cancel") or "cancel"),
-            timeout_seconds=float(
-                data.get("timeout_seconds") or cls._timeout_from_settings()
-            ),
         )
 
     @classmethod
@@ -130,18 +86,29 @@ class ClarificationPrefs:
         """非交互入口（Celery 批处理等）——没有人能作答，一律不提问。"""
         return cls(enabled=False)
 
-    def to_mapping(self) -> Dict[str, Any]:
-        return {
-            "enabled": self.enabled,
-            "max_rounds": self.max_rounds,
-            "on_timeout": self.on_timeout,
-            "timeout_seconds": self.timeout_seconds,
-        }
-
     @property
     def active(self) -> bool:
         """真正会向用户提问：既要开关打开，也要还允许至少提问 1 次。"""
         return bool(self.enabled) and int(self.max_rounds) > 0
+
+
+def _mandatory_timeout_seconds() -> float:
+    try:
+        from app.config import settings
+    except Exception:  # pragma: no cover - config always importable in app
+        return float(DEFAULT_TIMEOUT_SECONDS)
+    value = getattr(settings, "agent_clarification_timeout_seconds", None)
+    if not value:
+        # Legacy key kept for deployments whose .env still sets it.
+        value = getattr(
+            settings,
+            "device_agent_clarification_timeout_seconds",
+            DEFAULT_TIMEOUT_SECONDS,
+        )
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(DEFAULT_TIMEOUT_SECONDS)
 
 
 class MandatoryClarificationError(RuntimeError):
@@ -547,7 +514,7 @@ async def request_mandatory_clarification(
     timeout = (
         float(timeout_seconds)
         if timeout_seconds is not None
-        else ClarificationPrefs._timeout_from_settings()
+        else _mandatory_timeout_seconds()
     )
     try:
         decision = await asyncio.wait_for(future, timeout=max(0.1, timeout))
@@ -648,10 +615,7 @@ async def request_mandatory_clarification(
 def make_ask_user_question_tool(
     *,
     broker: PermissionBroker,
-    timeout_seconds: float,
-    on_timeout: str = "cancel",
     max_rounds: int = DEFAULT_MAX_ROUNDS,
-    cancel_run: Optional[CancelRunFn] = None,
     emit: Optional[EmitFn] = None,
     seq_counter: Optional[SeqCounter] = None,
     task_id: str = "",
@@ -663,19 +627,13 @@ def make_ask_user_question_tool(
 
     Args:
         broker: 与 resolve 端点共享的 per-run broker。
-        timeout_seconds: 用户作答等待时长（秒）。
-        on_timeout: ``"cancel"`` 取消本轮 run；``"continue"`` 让模型基于已知信息继续。
         max_rounds: 单次 run 最多发起的 ``AskUserQuestion`` 次数。
-        cancel_run: 取消本轮 run 的回调（``cancel`` 模式超时时调用）；缺省时降级为继续。
         emit/seq_counter/task_id/run_id/session_id: trace 事件上下文。
         tool_decorator: ``claude_agent_sdk.tool`` 装饰器（由调用方注入，便于测试）。
     """
 
     # Per-run 提问计数（闭包内可变）。
     counter: Dict[str, int] = {"count": 0}
-    normalized_on_timeout = (
-        "continue" if str(on_timeout).strip().lower() == "continue" else "cancel"
-    )
 
     def _emit_request(request_id: str, questions: List[Dict[str, Any]]) -> None:
         if emit is None or seq_counter is None:
@@ -688,6 +646,7 @@ def make_ask_user_question_tool(
                 seq_counter=seq_counter,
                 request_id=request_id,
                 questions=questions,
+                paused=True,
                 run_id=run_id,
                 session_id=session_id,
             ),
@@ -720,6 +679,10 @@ def make_ask_user_question_tool(
                 "AskUserQuestion 未提供有效问题；请基于已知信息继续，不要重复调用。"
             )
 
+        pause = current_pause.get()
+        if pause is None:
+            raise RuntimeError("Clarification requires a resumable Agent executor")
+
         # 每轮提问上限：达上限后不再阻塞用户。
         if counter["count"] >= max(0, int(max_rounds)):
             logger.info(
@@ -740,32 +703,24 @@ def make_ask_user_question_tool(
             logger.warning("AskUserQuestion: broker closed: %s", exc)
             _emit_resolved(request_id, "cancelled", reason="broker_closed")
             return _wrap_text("澄清通道不可用；请基于已知信息继续。")
-        _emit_request(request_id, questions)
 
-        try:
-            decision = await asyncio.wait_for(future, timeout=timeout_seconds)
-        except asyncio.TimeoutError:
-            broker.cancel(request_id, reason="timeout")
-            if normalized_on_timeout == "continue" or cancel_run is None:
-                _emit_resolved(request_id, "timeout", reason="timeout")
-                return _wrap_text(
-                    "用户未在限定时间内回答澄清问题；请基于已知信息给出最合理的处理"
-                    "或最佳猜测，继续完成任务。"
-                )
-            # cancel 模式：取消本轮 run。
-            _emit_resolved(request_id, "cancelled", reason="timeout")
+        async def wait_for_answer() -> Optional[str]:
+            _emit_request(request_id, questions)
             try:
-                cancel_run()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("AskUserQuestion: cancel_run failed: %s", exc)
-            return _wrap_text("用户未在限定时间内回答；本轮已取消。")
-        except asyncio.CancelledError:
-            broker.cancel(request_id, reason="cancelled")
-            raise
+                decision = await future
+            except asyncio.CancelledError:
+                broker.cancel(request_id, reason="cancelled")
+                _emit_resolved(request_id, "cancelled", reason="cancelled")
+                raise
+            answers = decision.get("answers")
+            if not answers:
+                _emit_resolved(request_id, "cancelled", reason=decision.get("reason"))
+                return None
+            _emit_resolved(request_id, "answered")
+            return _format_answers(questions, answers)
 
-        answers = decision.get("answers") if isinstance(decision, dict) else None
-        _emit_resolved(request_id, "answered")
-        return _wrap_text(_format_answers(questions, answers))
+        pause.pending.append(wait_for_answer)
+        return _wrap_text(PAUSED_TOOL_RESULT)
 
     return _ask
 
@@ -773,10 +728,7 @@ def make_ask_user_question_tool(
 def build_clarification_mcp_server(
     *,
     broker: PermissionBroker,
-    timeout_seconds: float,
-    on_timeout: str = "cancel",
     max_rounds: int = DEFAULT_MAX_ROUNDS,
-    cancel_run: Optional[CancelRunFn] = None,
     emit: Optional[EmitFn] = None,
     seq_counter: Optional[SeqCounter] = None,
     task_id: str = "",
@@ -794,10 +746,7 @@ def build_clarification_mcp_server(
 
     proxy = make_ask_user_question_tool(
         broker=broker,
-        timeout_seconds=timeout_seconds,
-        on_timeout=on_timeout,
         max_rounds=max_rounds,
-        cancel_run=cancel_run,
         emit=emit,
         seq_counter=seq_counter,
         task_id=task_id,
@@ -862,7 +811,6 @@ def setup_clarification(
     run_id: Optional[str] = None,
     session_id: Optional[str] = None,
     locale: Optional[str] = None,
-    cancel_run: Optional[CancelRunFn] = None,
     broker: Optional[PermissionBroker] = None,
     register_broker: Optional[Callable[[str, PermissionBroker], None]] = None,
     unregister_broker: Optional[Callable[[str], None]] = None,
@@ -879,7 +827,6 @@ def setup_clarification(
         emit/seq_counter/task_id: trace 事件上下文，与 agent 主事件序列共用同一
             个 ``seq_counter``，否则前端按 ``(run_id, seq)`` 去重会丢弃提问卡片。
         run_id: resolve 端点按它定位 broker；缺失则无法回传答案，直接禁用。
-        cancel_run: ``on_timeout="cancel"`` 时调用；缺省降级为 ``continue`` 语义。
         broker: 已有 broker（DeviceAgent 与工具审批共用一个）；缺省时新建。
         register_broker/unregister_broker: 通常是
             ``chat_run_service.register_broker`` / ``unregister_broker``。
@@ -910,10 +857,7 @@ def setup_clarification(
     try:
         server, sdk_tool_name = build_clarification_mcp_server(
             broker=broker,
-            timeout_seconds=prefs.timeout_seconds,
-            on_timeout=prefs.on_timeout,
             max_rounds=int(prefs.max_rounds),
-            cancel_run=cancel_run,
             emit=emit,
             seq_counter=seq_counter,
             task_id=task_id,
@@ -938,11 +882,9 @@ def setup_clarification(
         close_cb = lambda: unregister_broker(run_id)  # noqa: E731
 
     logger.info(
-        "clarification: enabled run_id=%s max_rounds=%s on_timeout=%s timeout=%ss",
+        "clarification: enabled run_id=%s max_rounds=%s",
         run_id,
         prefs.max_rounds,
-        prefs.on_timeout,
-        prefs.timeout_seconds,
     )
 
     return ClarificationRuntime(
@@ -962,14 +904,13 @@ class ClarificationBinding:
 
     ``LogAnalysisAgent`` / ``ProjectExpertAgent`` / ``PackageSearchAgent`` 的
     ``run()`` 只接收这一个可选参数：服务层知道 run_id / owner / 用户偏好 /
-    如何取消本轮，agent 知道 emit 与 seq_counter，两边在 :meth:`setup` 汇合。
+    broker 如何注册，agent 知道 emit 与 seq_counter，两边在 :meth:`setup` 汇合。
     传 ``None``（Celery 等非交互入口的默认值）即完全不提问。
     """
 
     prefs: ClarificationPrefs
     run_id: str
     session_id: Optional[str] = None
-    cancel_run: Optional[CancelRunFn] = None
     register_broker: Optional[Callable[[str, PermissionBroker], None]] = None
     unregister_broker: Optional[Callable[[str], None]] = None
 
@@ -990,7 +931,6 @@ class ClarificationBinding:
             run_id=self.run_id,
             session_id=self.session_id,
             locale=locale,
-            cancel_run=self.cancel_run,
             register_broker=self.register_broker,
             unregister_broker=self.unregister_broker,
             workflow_agent=workflow_agent,
@@ -1003,7 +943,6 @@ class ClarificationBinding:
         user: Any,
         run_id: str,
         session_id: Optional[str],
-        cancel_run: Optional[CancelRunFn] = None,
     ) -> Optional["ClarificationBinding"]:
         """服务层标准构造：读用户偏好 + 挂到 ``chat_run_service`` 的 broker 表。
 
@@ -1019,7 +958,6 @@ class ClarificationBinding:
             prefs=prefs,
             run_id=run_id,
             session_id=session_id,
-            cancel_run=cancel_run,
             register_broker=chat_run_service.register_broker,
             unregister_broker=chat_run_service.unregister_broker,
         )

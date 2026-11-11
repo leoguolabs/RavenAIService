@@ -414,7 +414,6 @@ class LogAnalysisChatService:
                     user=user,
                     run_id=run_id,
                     session_id=effective_session_id,
-                    cancel_run=lambda sid=effective_session_id: self.cancel(sid),
                 ),
             )
             self._jobs[effective_session_id] = job
@@ -1048,6 +1047,11 @@ class LogAnalysisChatService:
             return True
         job.cancel_requested = True
         job.cancel_event.set()
+        from app.services.chat_run_service import chat_run_service
+
+        broker = chat_run_service.get_broker_by_run_id(job.run_id)
+        if broker is not None:
+            broker.close()
         job.events.append(
             {
                 "event": "log_analysis_status",

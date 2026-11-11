@@ -19,6 +19,7 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
+from app.agents.clarification_pause import current_pause
 from app.agents.openai_bridge import _LoopbackServer
 
 TOOL_NAMES = {
@@ -72,6 +73,9 @@ class Control:
         self.pending_context = [str(instruction)] if instruction else []
         self.pending_tool_ids = {}
         self.last_assistant_message = ""
+        self.clarification = current_pause.get()
+        self.paused_for_clarification = False
+        self.model_invocations = 0
 
     async def hooks(self, event, name, args, tool_id, output=None):
         result = {}
@@ -138,9 +142,13 @@ class Control:
                         return {"decision": "continue", "reason": result.get("reason", "Complete Raven checks")}
             return {"decision": "allow"}
         if event == "PreInvocation":
+            if self.clarification is not None and self.clarification.pending:
+                self.paused_for_clarification = True
+                return {"terminationBehavior": "terminate", "injectSteps": []}
             if self.options.max_turns and int(payload.get("invocationNum", 0)) >= self.options.max_turns:
                 return {"terminationBehavior": "terminate", "injectSteps": [{"errorMessage": {
                     "userMessage": "Raven maximum Agent turns reached"}}]}
+            self.model_invocations += 1
             contexts, self.pending_context = self.pending_context, []
             return {"injectSteps": [{"systemMessage": {"systemMessage": value}} for value in contexts]}
         call = payload.get("toolCall", {})

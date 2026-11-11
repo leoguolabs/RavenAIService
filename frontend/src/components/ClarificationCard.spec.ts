@@ -58,6 +58,17 @@ describe('ClarificationCard', () => {
     )
   })
 
+  it('explains how to resume a paused run', async () => {
+    setI18nLocale('en')
+    const pending = { ...pendingWithQuestions(1), paused: true }
+    const app = createSSRApp({ render: () => h(ClarificationCard, { pending }) })
+    app.use(i18n)
+
+    const html = await renderToString(app)
+    expect(html).toContain('The Agent is paused.')
+    expect(html).toContain('Submit and resume')
+  })
+
   it('labels the package plan as a publication review', async () => {
     setI18nLocale('en')
     const pending = pendingWithQuestions(1)

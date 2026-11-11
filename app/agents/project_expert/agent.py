@@ -679,10 +679,12 @@ class ProjectExpertAgent:
         """
         from app.config import settings
 
+        from app.agents.clarification_pause import with_execution_timeout
+
         timeout = settings.anthropic_request_timeout_seconds
         try:
             return asyncio.run(
-                asyncio.wait_for(
+                with_execution_timeout(
                     self.run(
                         ctx,
                         cancel_event=cancel_event,
@@ -690,6 +692,7 @@ class ProjectExpertAgent:
                         clarification_binding=clarification_binding,
                     ),
                     timeout=float(timeout),
+                    cancel_event=cancel_event,
                 )
             )
         except asyncio.TimeoutError:

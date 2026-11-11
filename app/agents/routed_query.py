@@ -85,6 +85,7 @@ import time
 from dataclasses import replace
 from typing import Any, AsyncIterator, Callable, List, Optional, Set, Tuple
 
+from app.agents.clarification_pause import ClarificationPause, current_pause
 from app.services import model_router
 from app.services.model_router import (
     AllEndpointsUnavailable,
@@ -415,6 +416,8 @@ async def _pump(
     queue: "asyncio.Queue[Tuple[str, Any]]",
     credits: "asyncio.Queue[None]",
     admission: TaskAdmission,
+    *,
+    can_pause: bool,
 ) -> None:
     """Own the SDK generator; the consumer only ever reads the queue.
 
@@ -429,6 +432,7 @@ async def _pump(
     from the trace by a cancel that arrived after it.
     """
     iterator = agen.__aiter__()
+    token = current_pause.set(ClarificationPause() if can_pause else None)
     try:
         async with admission_scope(admission):
             while True:
@@ -447,6 +451,8 @@ async def _pump(
         await queue.put((_ERR, exc))
     else:
         await queue.put((_END, None))
+    finally:
+        current_pause.reset(token)
 
 
 async def _close_attempt(
@@ -613,7 +619,10 @@ async def routed_query(
             credits: "asyncio.Queue[None]" = asyncio.Queue()
             agen = sdk_query(prompt=prompt, options=options)
             pump: "asyncio.Task[None]" = asyncio.ensure_future(
-                _pump(agen, queue, credits, admission)
+                _pump(
+                    agen, queue, credits, admission,
+                    can_pause="ask" in (getattr(options, "mcp_servers", None) or {}),
+                )
             )
 
             started = _now()

@@ -19,6 +19,7 @@ from claude_agent_sdk import (
 from claude_agent_sdk.types import StreamEvent
 
 from app.agents.antigravity_control import control_bridge
+from app.agents.clarification_pause import cancelled_message, continuation_prompt, current_pause
 from app.agents.openai_agents_tools import TOOLS, WorkspaceTools
 
 
@@ -131,6 +132,7 @@ def build_tools(control, emit, model):
 
 async def query(*, prompt, options):
     from agents import Agent, ModelSettings, OpenAIResponsesModel, RunConfig, Runner
+    from agents.agent import ToolsToFinalOutputResult
     from agents.exceptions import MaxTurnsExceeded
     from openai import AsyncOpenAI
 
@@ -141,6 +143,13 @@ async def query(*, prompt, options):
     max_tokens = options.env.get("CLAUDE_CODE_MAX_OUTPUT_TOKENS")
     max_turns = options.max_turns or 100
     queue = asyncio.Queue(maxsize=128)
+    pause = current_pause.get()
+
+    def stop_for_clarification(_context, _results):
+        return ToolsToFinalOutputResult(
+            is_final_output=bool(pause.pending),
+            final_output="Waiting for user clarification",
+        )
 
     async def emit(message):
         await queue.put(("message", message))
@@ -151,7 +160,7 @@ async def query(*, prompt, options):
         stops = 0
         usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         try:
-            async with asyncio.timeout(timeout), control_bridge(options) as (control, _, _token):
+            async with asyncio.timeout(timeout) as deadline, control_bridge(options) as (control, _, _token):
                 system = options.system_prompt
                 instructions = system.get("append", "") if isinstance(system, dict) else (system or "")
                 # Raven's own prompt advertises materialized Skills. The generic
@@ -162,6 +171,7 @@ async def query(*, prompt, options):
                     agent = Agent(name="Raven", instructions=instructions,
                         model=OpenAIResponsesModel(model=model, openai_client=client),
                         tools=build_tools(control, emit, model),
+                        tool_use_behavior=stop_for_clarification if pause is not None else "run_llm_again",
                         model_settings=ModelSettings(parallel_tool_calls=False, store=False,
                             max_tokens=int(max_tokens) if max_tokens else None))
                     inputs = await input_items(prompt, options.cwd)
@@ -192,6 +202,13 @@ async def query(*, prompt, options):
                                 text = ItemHelpers.text_message_output(event.item)
                                 if text:
                                     await emit(AssistantMessage(content=[TextBlock(text=text)], model=model))
+                        if pause is not None and pause.pending:
+                            answers = await pause.wait(segment_timeout=deadline)
+                            if answers is None:
+                                await emit(cancelled_message())
+                                return
+                            inputs = run.to_input_list() + [{"role": "user", "content": continuation_prompt(answers)}]
+                            continue
                         control.last_assistant_message = str(run.final_output or "")
                         stops += 1
                         decision = await control.native_hook("Stop", {
