@@ -130,6 +130,9 @@ async def models() -> list[dict]:
 
 
 def gateway_endpoint(agent_kind: str = ""):
+    if agent_kind == "title_generator":
+        # The title service owns its Magpie calls, including provider fallback.
+        return None
     config = get_config()
     if not config.enabled:
         return None

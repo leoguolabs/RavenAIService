@@ -10,6 +10,14 @@ from functools import lru_cache
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+# Each group contains one model. Magpie does not expand a group's members'
+# provider fallback chains, so these requests stay within the title routes.
+TITLE_YINHE_GROUP = "raven-title-yinhe"
+TITLE_DEEPSEEK_GROUP = "raven-title-deepseek"
+TITLE_YINHE_MODEL = "raven-yinhe/yinhe-thinking"
+TITLE_DEEPSEEK_MODEL = "raven-deepseek/deepseek-v4-flash"
+
+
 class TaskRoutingPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     enabled: bool = False

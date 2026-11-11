@@ -79,6 +79,12 @@ Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema�
 
 银河真实调用还可能把 Antigravity 的 MCP `Arguments` 编码为 JSON 字符串。控制桥接层只将合法 JSON 对象解析后交给原有权限检查；畸形 JSON、数组或空值返回工具错误，不触发工具执行，拒绝权限和调用 ID 的关联保持不变。
 
+### 会话标题独立路由
+
+启用 Magpie 时，即时标题和回答后的会话标题都通过非流式补全生成。先请求仅含 `raven-yinhe/yinhe-thinking` 的 `group/raven-title-yinhe`。银河未能在 2 秒内返回完整标题、请求失败或没有返回文本时，改用仅含 `raven-deepseek/deepseek-v4-flash` 的 `group/raven-title-deepseek`。两个组均无分类器和规则，并关闭组级自动重试。Magpie 不展开组成员自身的备用链。标题不会申请 OpenAI 准入，也不读写正文的银河冷却。两个模型都无法提供标题时，沿用即时摘要截取用户输入、会话标题保留原值的行为。
+
+升级现有部署时，先用新版代码在现有 Compose 网络执行 `python scripts/configure-magpie-task-routing.py --titles-only` 检查计划，追加 `--apply` 仅保存这两个组，再切换后端。脚本会保留旧标题组的私有备份。已有组按备份恢复，新建组可在旧后端恢复后删除。使用默认银河和 DeepSeek 模型执行完整配置时也会创建标题组。
+
 ### OpenAI 真实余额门槛
 
 可选层 `docker-compose.magpie-balance.yml` 在 Magpie 与 OpenAI 之间运行内部 `openai-balance-guard`，不发布宿主端口。设置 `OPENAI_BALANCE_TASK_CALLER_SHA256` 启用任务模式。可能使用该 OpenAI 供应商的 Agent 在启动执行器前核验准入。门禁从 Magpie 账本读取该 OpenAI 供应商的已计价花费，从上次实查余额扣减此后的用量。第一次任务和上次实查满 **12 小时**后的首个任务会查询 OpenAI，单次预算为 **2 秒**。空闲时没有定时请求。

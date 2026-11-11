@@ -1,15 +1,123 @@
 """Unit tests for :mod:`app.services.title_generator_service`.
 
-These cover the *fallback* paths — the parts that must not raise when input
-is empty, the LLM call fails, or the prompt-config template is missing.
-The happy LLM path is exercised end-to-end via the chat integration tests.
+These cover title normalization, user-facing fallback and isolated Magpie routing.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+
+import httpx
 import pytest
 
+from app.services import agent_runtime_service as runtime
 from app.services import title_generator_service as tg
+
+
+@pytest.fixture
+def title_gateway(monkeypatch):
+    config = runtime.RuntimeConfig(enabled=True, api_key="caller-key",
+        model="raven-openai/gpt-6.1-sol", executor="openai_agents")
+    monkeypatch.setattr(runtime, "get_config", lambda: config)
+    records = []
+
+    async def record(**values):
+        records.append(values)
+
+    monkeypatch.setattr(tg, "_record_title_usage", record)
+    client = httpx.AsyncClient
+
+    def connect(handler):
+        monkeypatch.setattr(tg.httpx, "AsyncClient",
+            lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs))
+
+    return connect, records
+
+
+@pytest.mark.parametrize("yinhe", ["ok", "slow", "http_error", "empty", "transport_error"])
+async def test_magpie_title_routes_only_to_yinhe_and_deepseek(monkeypatch, title_gateway, yinhe):
+    from app.services import magpie_routing_policy, openai_task_admission
+
+    connect, records = title_gateway
+    calls = []
+
+    async def unexpected(*args):
+        pytest.fail("Titles must not use shared cooldown or OpenAI admission")
+
+    monkeypatch.setattr(magpie_routing_policy, "cooling", unexpected)
+    monkeypatch.setattr(magpie_routing_policy, "trip", unexpected)
+    monkeypatch.setattr(openai_task_admission.TaskAdmission, "prepare", unexpected)
+    if yinhe == "slow":
+        monkeypatch.setattr(tg, "_TITLE_YINHE_SECONDS", 0.02)
+
+    async def reply(request):
+        payload = json.loads(request.content)
+        calls.append(payload["model"])
+        assert request.url.path == "/v1/chat/completions"
+        assert request.headers["authorization"] == "Bearer caller-key"
+        assert openai_task_admission.ADMISSION_HEADER not in request.headers
+        assert request.headers["X-Magpie-Agent"] == "raven-title_generator"
+        assert payload["stream"] is False and "tools" not in payload
+        assert "网络一直断连" in payload["messages"][-1]["content"]
+        provider, model = "raven-deepseek", "deepseek-v4-flash"
+        if payload["model"] == "group/raven-title-yinhe":
+            if yinhe == "slow":
+                await asyncio.sleep(60)
+            if yinhe == "http_error":
+                return httpx.Response(503)
+            if yinhe == "empty":
+                return httpx.Response(200, json={"choices": []})
+            if yinhe == "transport_error":
+                raise httpx.ConnectError("unavailable")
+            provider, model = "raven-yinhe", "yinhe-thinking"
+        return httpx.Response(200, headers={"X-Magpie-Provider": provider, "X-Magpie-Model": model},
+            json={"choices": [{"message": {"content": "网络故障排查"}}],
+                  "usage": {"prompt_tokens": 12, "completion_tokens": 4}})
+
+    connect(reply)
+    assert await tg.summarize_user_message("网络一直断连，请帮我排查") == "网络故障排查"
+    assert calls == (["group/raven-title-yinhe"] if yinhe == "ok"
+                     else ["group/raven-title-yinhe", "group/raven-title-deepseek"])
+    assert len(records) == 1
+    assert records[0]["model"] == ("raven-yinhe/yinhe-thinking" if yinhe == "ok"
+                                   else "raven-deepseek/deepseek-v4-flash")
+    assert records[0]["token_usage"]["input_tokens"] == 12
+    assert records[0]["status"] == "succeeded"
+
+
+async def test_magpie_title_preserves_text_fallback_when_both_routes_fail(title_gateway):
+    connect, records = title_gateway
+    calls = []
+
+    async def unavailable(request):
+        calls.append(json.loads(request.content)["model"])
+        return httpx.Response(404)
+
+    connect(unavailable)
+    assert await tg.summarize_user_message("请检查侧边栏标题异常", max_length=6) == "请检查侧边栏"
+    assert calls == ["group/raven-title-yinhe", "group/raven-title-deepseek"]
+    assert records[0]["status"] == "failed"
+
+
+async def test_cancelling_magpie_title_does_not_start_backup(title_gateway):
+    connect, records = title_gateway
+    started = asyncio.Event()
+    calls = []
+
+    async def waiting(request):
+        calls.append(json.loads(request.content)["model"])
+        started.set()
+        await asyncio.sleep(60)
+
+    connect(waiting)
+    title = asyncio.create_task(tg.summarize_user_message("网络故障"))
+    await asyncio.wait_for(started.wait(), timeout=1)
+    title.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await title
+    assert calls == ["group/raven-title-yinhe"]
+    assert not records
 
 
 class _TextBlock:

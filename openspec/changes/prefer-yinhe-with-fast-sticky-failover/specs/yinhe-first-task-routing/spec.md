@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Local preference without intent classification
-Every default invocation outside shared cooldown SHALL first request the Yinhe-only group. Managed legacy groups SHALL have no classifier or intent rules; cloud fallback SHALL use a fixed order.
+Every default Agent invocation outside shared cooldown SHALL first request the Yinhe-only group. Managed legacy groups SHALL have no classifier or intent rules; cloud fallback SHALL use a fixed order.
 
 #### Scenario: Task complexity has no effect
 - **WHEN** a new simple or complex task starts outside cooldown
@@ -31,3 +31,14 @@ The change SHALL preserve full tool history, billing protection, executor select
 #### Scenario: User cancellation while waiting for local headers
 - **WHEN** the task is cancelled before local headers arrive
 - **THEN** its pending request is cancelled and no fallback request is started
+
+### Requirement: Independent title generation
+When Magpie is enabled, instantaneous and post-answer titles SHALL try Yinhe before DeepSeek using separate singleton groups. Title generation SHALL NOT route to OpenAI, request OpenAI admission or consult or set the shared Raven Agent cooldown.
+
+#### Scenario: Yinhe cannot provide a title promptly
+- **WHEN** the title's Yinhe attempt fails, returns no title text or fails to complete within two seconds
+- **THEN** Raven tries DeepSeek and records the model that supplies the title
+
+#### Scenario: Both title routes fail
+- **WHEN** neither route returns a title
+- **THEN** the instant summary falls back to the user's text and post-answer generation keeps the existing title

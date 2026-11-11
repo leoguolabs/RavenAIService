@@ -8,6 +8,7 @@ The user now prefers the internal Yinhe model for every task, with faster abando
 - Bound the local attempt from request dispatch to first meaningful output at 0.5 seconds, including delayed HTTP headers.
 - Tighten the generation observation window to 0.5 seconds, minimum estimated rate to 20 tokens/s, idle limit to 2 seconds, and shared cooldown to 120 seconds.
 - Preserve streams already delivered, full continuation context, per-task fallback pinning, and the OpenAI real-balance guard.
+- Give titles a single-completion route from Yinhe to DeepSeek, with neither OpenAI candidates nor shared Raven task cooldown.
 
 ## Capabilities
 

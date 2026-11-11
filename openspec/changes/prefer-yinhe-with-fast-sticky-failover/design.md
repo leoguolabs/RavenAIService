@@ -15,6 +15,7 @@ The deployed Raven bridge already pins the actual model and avoids replay after 
 - Local HTTP failures also switch before delivery. Non-streamed local replies must complete within the same budget. External task cancellation closes resources and never initiates fallback.
 - Keep the existing stream commitment boundary: buffer a 0.5-second speed observation, then deliver; after delivery, slowness marks the next request for cloud without replay. Require 20 estimated tokens/s, cap idle at 2 seconds, and share a 120-second cooldown.
 - Reuse the existing policy schema. Explicit model overrides still opt out; current six agents inherit the default. Preserve the newer executor selection and scope image updates to the three routing files.
+- With Magpie enabled, titles use the chat completions API directly with a two-second deadline for the complete Yinhe reply. Use separate singleton groups for Yinhe and DeepSeek, since Magpie groups do not expand their members' provider fallback chains. This path runs without an Agent executor or shared Raven cooldown and retains the existing text fallback and usage metrics.
 
 ## Risks / Trade-offs
 
@@ -25,3 +26,5 @@ The deployed Raven bridge already pins the actual model and avoids replay after 
 ## Migration Plan
 
 Run focused regressions, layer changed files onto the currently running backend image, update only local backend/workers/beat, then apply backed-up route configuration. Verify live tool continuation, actual fallback pinning and absence of classifier rules. Roll back with the private runtime/group backup and recorded previous image if necessary.
+
+For the title-only upgrade, provision the two groups with the script's `--titles-only` mode before rolling out the backend. Preview first and preserve existing title-group settings in the script's private backup.

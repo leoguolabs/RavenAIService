@@ -15,6 +15,7 @@ def test_config_is_redacted_and_selection_is_independent(monkeypatch):
     assert endpoint.executor == "antigravity_cli"
     assert endpoint.model == "yinhe/thinking"
     assert runtime.gateway_endpoint("device_agent").executor == "claude_sdk"
+    assert runtime.gateway_endpoint("title_generator") is None
 
 
 @pytest.mark.parametrize(("configured", "expected"), [

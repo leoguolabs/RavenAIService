@@ -1,8 +1,7 @@
-"""Lightweight title / summary helper backed by Claude Agent SDK.
+"""Lightweight title / summary helper.
 
-Routes short, low-latency requests through the Anthropic small/fast model
-(e.g. ``claude-haiku`` / ``deepseek-v4-flash``) by overriding the ``model``
-parameter in :func:`app.agents.anthropic_client.build_options`.
+With Magpie enabled, title generation uses a single chat completion with its
+own Yinhe and DeepSeek routes. Other deployments use the SDK small/fast model.
 
 Two public entry points:
 
@@ -24,9 +23,14 @@ import time
 import uuid
 from typing import Any, Optional
 
+import httpx
+
+from app.services.magpie_routing_policy import TITLE_DEEPSEEK_GROUP, TITLE_YINHE_GROUP
+
 logger = logging.getLogger(__name__)
 
 
+_TITLE_YINHE_SECONDS = 2.0
 _SUMMARY_PROMPT = (
     "你是会话标题生成助手。请根据下面用户输入的内容，生成一个简短的中文摘要标题，"
     "长度不超过 {max_length} 个字，必须概括用户的核心诉求或问题。\n"
@@ -142,25 +146,16 @@ async def _run_query(
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> str:
-    """Run one short ``query()`` round with the small/fast model.
+    """Generate one title and record the outcome for the actual model.
 
-    Returns the concatenated assistant text. Raises on failure; callers
-    are expected to wrap in a fallback. AI usage is recorded best-effort on
-    both the success and failure paths (tasks 3.8 / 3.9).
+    Callers supply the user-facing fallback when inference fails.
     """
-    from app.agents.anthropic_client import build_options
-    from app.agents.routed_query import routed_query
     from app.agents.usage import accumulate_usage, new_token_usage
     from app.config import settings
+    from app.services.agent_runtime_service import get_config
 
-    try:
-        import claude_agent_sdk  # noqa: F401  (fail fast with a clear message)
-    except ImportError as exc:  # pragma: no cover
-        raise RuntimeError(
-            "claude-agent-sdk is required. Install with: pip install claude-agent-sdk>=0.1"
-        ) from exc
-
-    model = _resolve_small_fast_model()
+    runtime = get_config()
+    model = None if runtime.enabled else _resolve_small_fast_model()
     max_tokens = int(getattr(settings, "anthropic_small_fast_max_tokens", 1024))
     timeout_s = int(
         getattr(settings, "anthropic_small_fast_request_timeout_seconds", 30)
@@ -172,29 +167,67 @@ async def _run_query(
     # module-global provider would name the primary even when the backup answered.
     served: dict[str, Any] = {"provider": str(settings.anthropic_provider), "model": model}
 
-    with tempfile.TemporaryDirectory(prefix="title-gen-") as tmpdir:
+    async def _magpie_title() -> str:
+        from app.agents.magpie_task_routing import model_ref
 
-        def _make_options(endpoint: Any) -> Any:
-            # Each slot has its own small/fast model id — a DeepSeek model name
-            # is meaningless on the internal gateway and vice versa.
-            slot_model = endpoint.small_fast_model if endpoint is not None else model
-            return build_options(
-                system_prompt=system_prompt,
-                allowed_tools=[],
-                cwd=tmpdir,
-                max_turns=1,
-                permission_mode="bypassPermissions",
-                model=slot_model,
-                max_tokens=max_tokens,
-                request_timeout_seconds=timeout_s,
-                endpoint=endpoint,
-            )
+        messages = [{"role": "user", "content": prompt}]
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+        headers = {
+            "Authorization": f"Bearer {runtime.api_key}",
+            "User-Agent": "RavenAI/title_generator",
+            "X-Magpie-Agent": "raven-title_generator",
+            "X-Magpie-Session": str(uuid.uuid4()),
+        }
+        async with httpx.AsyncClient(timeout=timeout_s, trust_env=False, headers=headers) as client:
+            async def complete(group: str) -> str:
+                route = f"group/{group}"
+                served.update(provider="magpie", model=route)
+                response = await client.post(
+                    f"{runtime.base_url}/v1/chat/completions",
+                    json={"model": route, "messages": messages, "max_tokens": max_tokens, "stream": False},
+                )
+                response.raise_for_status()
+                completion = response.json()
+                try:
+                    title = completion["choices"][0]["message"]["content"]
+                except (IndexError, KeyError, TypeError):
+                    title = None
+                if not isinstance(title, str) or not title.strip():
+                    raise ValueError("Magpie returned no title text")
+                actual = model_ref(response)
+                if actual:
+                    served.update(provider=actual.split("/", 1)[0], model=actual)
+                accumulate_usage(completion.get("usage"), token_usage)
+                return title
 
-        def _on_endpoint(endpoint: Any) -> None:
-            served["provider"] = endpoint.provider
-            served["model"] = endpoint.small_fast_model or endpoint.model
+            try:
+                return await asyncio.wait_for(complete(TITLE_YINHE_GROUP), timeout=_TITLE_YINHE_SECONDS)
+            except (TimeoutError, httpx.HTTPError, ValueError):
+                return await complete(TITLE_DEEPSEEK_GROUP)
 
-        async def _drive() -> list[Any]:
+    async def _legacy_title() -> str:
+        from app.agents.anthropic_client import build_options
+        from app.agents.routed_query import routed_query
+
+        with tempfile.TemporaryDirectory(prefix="title-gen-") as tmpdir:
+            def _make_options(endpoint: Any) -> Any:
+                return build_options(
+                    system_prompt=system_prompt,
+                    allowed_tools=[],
+                    cwd=tmpdir,
+                    max_turns=1,
+                    permission_mode="bypassPermissions",
+                    model=endpoint.small_fast_model if endpoint is not None else model,
+                    max_tokens=max_tokens,
+                    request_timeout_seconds=timeout_s,
+                    endpoint=endpoint,
+                )
+
+            def _on_endpoint(endpoint: Any) -> None:
+                served["provider"] = endpoint.provider
+                served["model"] = endpoint.small_fast_model or endpoint.model
+
             collected: list[Any] = []
             async for message in routed_query(
                 prompt=prompt,
@@ -205,36 +238,35 @@ async def _run_query(
             ):
                 collected.append(message)
                 accumulate_usage(getattr(message, "usage", None), token_usage)
-            return collected
+            return _extract_text_from_messages(collected)
 
-        try:
-            messages = await asyncio.wait_for(_drive(), timeout=max(timeout_s + 5, 10))
-        except Exception as exc:  # noqa: BLE001
-            error_kind = (
-                "timeout" if isinstance(exc, asyncio.TimeoutError) else type(exc).__name__
-            )
-            await _record_title_usage(
-                model=served["model"],
-                provider=served["provider"],
-                token_usage=token_usage,
-                duration_seconds=time.monotonic() - start_ts,
-                status="failed",
-                error_kind=error_kind,
-                user_id=user_id,
-                session_id=session_id,
-            )
-            raise
+    try:
+        query = _magpie_title if runtime.enabled else _legacy_title
+        title = await asyncio.wait_for(query(), timeout=max(timeout_s + 5, 10))
+    except Exception as exc:  # noqa: BLE001
+        error_kind = "timeout" if isinstance(exc, TimeoutError) else type(exc).__name__
         await _record_title_usage(
             model=served["model"],
             provider=served["provider"],
             token_usage=token_usage,
             duration_seconds=time.monotonic() - start_ts,
-            status="succeeded",
-            error_kind=None,
+            status="failed",
+            error_kind=error_kind,
             user_id=user_id,
             session_id=session_id,
         )
-        return _extract_text_from_messages(messages)
+        raise
+    await _record_title_usage(
+        model=served["model"],
+        provider=served["provider"],
+        token_usage=token_usage,
+        duration_seconds=time.monotonic() - start_ts,
+        status="succeeded",
+        error_kind=None,
+        user_id=user_id,
+        session_id=session_id,
+    )
+    return title
 
 
 def _normalize_title(raw: str, max_length: int) -> str:

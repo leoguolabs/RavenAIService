@@ -1,6 +1,9 @@
+import json
 import runpy
 from pathlib import Path
+from types import SimpleNamespace
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -61,3 +64,45 @@ def test_local_first_groups_remove_classifier_and_preserve_cloud_order():
         assert group["affinity"] == "session"
     assert cloud["members"] == ["cloud/strong", "cloud/light"]
     assert all("local" not in model and "yinhe" not in model for model in cloud["members"])
+
+
+async def test_titles_only_provisions_singleton_groups_without_saving_main_runtime(monkeypatch, tmp_path):
+    from app.services import agent_runtime_service as runtime
+
+    script = runpy.run_path(str(Path(__file__).parents[2] / "scripts/configure-magpie-task-routing.py"))
+    existing = [{"id": "raven-task-cloud", "members": ["raven-openai/gpt-6.1-sol"]}]
+    models = [{"id": "raven-yinhe/yinhe-thinking"}, {"id": "raven-deepseek/deepseek-v4-flash"}]
+    saved = []
+
+    async def api(request):
+        if request.url.path == "/api/groups":
+            return httpx.Response(200, json={"models": models, "groups": existing})
+        if request.url.path == "/api/groups/save":
+            saved.append(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    def unexpected(*args):
+        pytest.fail("Title provisioning must not change the main runtime")
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient",
+        lambda **kwargs: client(transport=httpx.MockTransport(api), **kwargs))
+    monkeypatch.setattr(runtime, "get_config", unexpected)
+    monkeypatch.setattr(runtime, "save", unexpected)
+    monkeypatch.setattr(runtime, "models", unexpected)
+    key = tmp_path / "key"
+    key.write_text("test-web-key")
+    args = SimpleNamespace(titles_only=True, admin_url="http://magpie", web_key_file=key,
+                           backup_dir=tmp_path / "backups", apply=False)
+
+    preview = await script["configure"](args)
+    assert not saved
+    assert [(group["id"], group["members"]) for group in preview["groups"]] == [
+        ("raven-title-yinhe", ["raven-yinhe/yinhe-thinking"]),
+        ("raven-title-deepseek", ["raven-deepseek/deepseek-v4-flash"]),
+    ]
+    assert all(group["classifier"] == "" and group["rules"] == [] for group in preview["groups"])
+    args.apply = True
+    result = await script["configure"](args)
+    assert saved == preview["groups"]
+    assert json.loads(Path(result["private_backup"]).read_text()) == {"groups": []}
