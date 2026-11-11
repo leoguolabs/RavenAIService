@@ -158,8 +158,7 @@ async def _fake_query_plain_skill_answer(*_args, **_kwargs) -> AsyncIterator[Any
 
 
 def _patch_agent_common(fake_query):
-    fake_sdk = SimpleNamespace(query=fake_query)
-    return patch.dict("sys.modules", {"claude_agent_sdk": fake_sdk})
+    return patch("claude_agent_sdk.query", fake_query)
 
 
 def _make_ctx(tmp_path: Path) -> WorkspaceContext:

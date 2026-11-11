@@ -6,6 +6,8 @@
 
 在 RavenAI 父仓库初始化 `Magpie` 子模块（`git@github.com:leoguolabs/magpie.git`）。服务目录的 `docker-compose.magpie.yml` 使用 `../Magpie` 构建网关，`magpie_data` 保存账户、OAuth 状态及路由配置。后台镜像安装 SHA-512 校验的 Antigravity CLI 1.5.2，支持 Linux ARM64/AMD64；不读取或修改桌面的 CLI 登录状态。
 
+Claude Agent SDK 在 `requirements.txt` 固定为 `0.2.180`，包含其配套 Claude Code CLI。Magpie 基于上游 `v0.1.3734`，保留 RavenAI 客户端名称和图标适配；构建时使用父仓库记录的子模块提交。更新源码和依赖声明不会更新运行中的容器，部署需另行重建相应镜像。
+
 在 RavenAIService 目录生成一次 Web 管理密钥。父目录仅当前用户可访问；文件需要允许容器内 Magpie 用户读取。不要覆盖已有密钥，不要提交文件。
 
 ```sh

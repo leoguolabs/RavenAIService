@@ -28,7 +28,7 @@ xlrd>=2.0.1
 
 # Agent framework and LLM clients
 openai-agents==0.24.0  # Official Agents SDK, validated with Magpie Responses
-claude-agent-sdk>=0.2  # >=0.2.82 provides include_partial_messages / StreamEvent for answer_delta streaming
+claude-agent-sdk==0.2.180  # Pin the validated SDK and its bundled Claude Code CLI
 
 # HTTP client for the OCR bypass call (OpenAI-compatible chat/completions). Already
 # installed transitively via FastAPI/Starlette; declared explicitly because
