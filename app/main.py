@@ -253,13 +253,15 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """创建FastAPI应用实例"""
-    
+
+    docs_enabled = settings.environment == "development" and settings.api_docs_enabled
     app = FastAPI(
         title="日志暂存服务",
         description="一个用于临时存储和管理日志文件的服务",
         version="1.0.0",
-        docs_url="/docs" if settings.environment == "development" else None,
-        redoc_url="/redoc" if settings.environment == "development" else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
         lifespan=lifespan
     )
     

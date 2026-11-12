@@ -43,6 +43,6 @@ print_endpoints() {
   echo "访问入口："
   echo "  前端控制台: http://localhost:${port}"
   echo "  后端健康检查: http://localhost:${port}/health"
-  echo "  API 文档: http://localhost:${port}/docs"
+  echo "  API 文档: Docker 入口禁用（本地开发开启方式见 QUICKSTART.md）"
   echo "  Raven 包管理: http://localhost:${port}/raven/"
 }

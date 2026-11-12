@@ -12,6 +12,15 @@ import pytest
 from app.config import Settings
 
 
+def test_api_docs_disabled_by_default_and_explicit_env_override(monkeypatch):
+    monkeypatch.delenv("API_DOCS_ENABLED", raising=False)
+    assert Settings(_env_file=None).api_docs_enabled is False
+    monkeypatch.setenv("API_DOCS_ENABLED", "true")
+    assert Settings(_env_file=None).api_docs_enabled is True
+    monkeypatch.setenv("API_DOCS_ENABLED", "false")
+    assert Settings(_env_file=None).api_docs_enabled is False
+
+
 def test_package_search_defaults():
     s = Settings()
     assert s.package_search_max_turns == 8

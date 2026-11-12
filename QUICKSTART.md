@@ -33,8 +33,18 @@
 
 - 前端控制台：http://localhost:8085
 - 后端健康检查：http://localhost:8085/health
-- API 文档：http://localhost:8085/docs
 - Raven 包管理：http://localhost:8085/raven/
+
+接口文档默认关闭。Docker Nginx 入口始终对 `/openapi.json`、`/docs`、`/redoc`
+及其子路径返回 404，业务 API 不受影响。本地开发需要文档时，在本地 `.env` 中设置
+`ENVIRONMENT=development` 和 `API_DOCS_ENABLED=true`，启动仅绑定本机的开发后端：
+
+```bash
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+然后访问 http://127.0.0.1:8000/docs。`production` 环境始终关闭文档。
+关闭文档只需保持 `API_DOCS_ENABLED=false`，无需切换会影响数据库等配置的 `ENVIRONMENT`。
 
 如需修改宿主机端口：
 

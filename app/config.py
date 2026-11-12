@@ -104,6 +104,8 @@ class Settings(BaseSettings):
     # 服务配置
     host: str = "0.0.0.0"
     port: int = 8085
+    # 接口文档默认关闭；仅 development 环境显式开启后提供。
+    api_docs_enabled: bool = False
     serve_frontend: bool = False
     frontend_dist_dir: Optional[str] = None
 
