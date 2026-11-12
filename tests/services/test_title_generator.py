@@ -60,7 +60,7 @@ async def test_magpie_title_routes_only_to_yinhe_and_deepseek(monkeypatch, title
         assert request.headers["X-Magpie-Agent"] == "raven-title_generator"
         assert payload["stream"] is False and "tools" not in payload
         assert "网络一直断连" in payload["messages"][-1]["content"]
-        provider, model = "raven-deepseek", "deepseek-v4-flash"
+        provider, model = "raven-deepseek", "deepseek-flash"
         if payload["model"] == "group/raven-title-yinhe":
             if yinhe == "slow":
                 await asyncio.sleep(60)
@@ -81,7 +81,7 @@ async def test_magpie_title_routes_only_to_yinhe_and_deepseek(monkeypatch, title
                      else ["group/raven-title-yinhe", "group/raven-title-deepseek"])
     assert len(records) == 1
     assert records[0]["model"] == ("raven-yinhe/yinhe-thinking" if yinhe == "ok"
-                                   else "raven-deepseek/deepseek-v4-flash")
+                                   else "raven-deepseek/deepseek-flash")
     assert records[0]["token_usage"]["input_tokens"] == 12
     assert records[0]["status"] == "succeeded"
 

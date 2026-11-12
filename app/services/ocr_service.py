@@ -424,10 +424,10 @@ async def enrich_message(
             status="failed", image_count=len(image_list), error_kind=exc.reason
         )
 
-    from app.config import settings
-    if settings.anthropic_provider == "openai":
-        # Originals enter the main model through provider_query, not a second
-        # recognition request. Do not emit a misleading OCR failure/result.
+    from app.services.chat_image_store import native_image_transport_enabled
+    if native_image_transport_enabled():
+        # Magpie selects native vision or an independent description per route.
+        # Direct OpenAI also receives the original bytes in provider_query.
         return original, OcrMeta(status="native", image_count=len(image_list))
 
     if not is_configured():

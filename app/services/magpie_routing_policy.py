@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 TITLE_YINHE_GROUP = "raven-title-yinhe"
 TITLE_DEEPSEEK_GROUP = "raven-title-deepseek"
 TITLE_YINHE_MODEL = "raven-yinhe/yinhe-thinking"
-TITLE_DEEPSEEK_MODEL = "raven-deepseek/deepseek-v4-flash"
+TITLE_DEEPSEEK_MODEL = "raven-deepseek/deepseek-flash"
 
 
 class TaskRoutingPolicy(BaseModel):

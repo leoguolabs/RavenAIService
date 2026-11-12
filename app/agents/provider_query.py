@@ -186,7 +186,8 @@ async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
     config = GatewayConfig(base_url=env["ANTHROPIC_BASE_URL"], api_key=env["ANTHROPIC_API_KEY"],
         model=options.model, executor=executor, session_id=str(uuid.uuid4()), agent_kind=agent_kind,
         timeout_seconds=float(env.get("API_TIMEOUT_MS", "3600000")) / 1000,
-        task_routing=get_config().task_routing)
+        task_routing=get_config().task_routing,
+        images=workspace_image_blocks(str(options.cwd)) if executor == "antigravity_cli" else [])
     yield SystemMessage(subtype="raven_executor", data={"executor": executor, "agent_key": agent_kind,
         "requested_model": options.model})
     async with gateway_bridge(config, on_route, on_error) as (base_url, token):

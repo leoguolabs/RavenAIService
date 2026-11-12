@@ -37,7 +37,10 @@ def _records_to_history_dicts(records: List[Any]) -> List[Dict[str, str]]:
             role = "user"
         if role == "ai":
             role = "assistant"
-        out.append({"role": role, "content": str(getattr(record, "content", ""))})
+        entry = {"role": role, "content": str(getattr(record, "content", ""))}
+        if getattr(record, "images_json", None):
+            entry["images_json"] = record.images_json
+        out.append(entry)
     return out
 
 

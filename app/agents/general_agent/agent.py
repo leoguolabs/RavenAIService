@@ -286,7 +286,7 @@ class GeneralAgent:
         try:
             with tempfile.TemporaryDirectory(prefix="general-agent-") as tmpdir:
                 from app.services import chat_image_store
-                chat_image_store.materialize_session_images(ctx.session_id, ctx.images_json, tmpdir)
+                chat_image_store.materialize_session_images(ctx.session_id, ctx.images_json, tmpdir, ctx.history)
                 available_skills: List[str] = []
                 materialized_skills: List[str] = []
                 skill_overviews: List[Dict[str, str]] = []

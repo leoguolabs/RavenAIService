@@ -83,7 +83,7 @@ Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema�
 
 ### 会话标题独立路由
 
-启用 Magpie 时，即时标题和回答后的会话标题都通过非流式补全生成。先请求仅含 `raven-yinhe/yinhe-thinking` 的 `group/raven-title-yinhe`。银河未能在 2 秒内返回完整标题、请求失败或没有返回文本时，改用仅含 `raven-deepseek/deepseek-v4-flash` 的 `group/raven-title-deepseek`。两个组均无分类器和规则，并关闭组级自动重试。Magpie 不展开组成员自身的备用链。标题不会申请 OpenAI 准入，也不读写正文的银河冷却。两个模型都无法提供标题时，沿用即时摘要截取用户输入、会话标题保留原值的行为。
+启用 Magpie 时，即时标题和回答后的会话标题都通过非流式补全生成。先请求仅含 `raven-yinhe/yinhe-thinking` 的 `group/raven-title-yinhe`。银河未能在 2 秒内返回完整标题、请求失败或没有返回文本时，改用仅含 `raven-deepseek/deepseek-flash` 的 `group/raven-title-deepseek`。两个组均无分类器和规则，并关闭组级自动重试。Magpie 不展开组成员自身的备用链。标题不会申请 OpenAI 准入，也不读写正文的银河冷却。两个模型都无法提供标题时，沿用即时摘要截取用户输入、会话标题保留原值的行为。
 
 升级现有部署时，先用新版代码在现有 Compose 网络执行 `python scripts/configure-magpie-task-routing.py --titles-only` 检查计划，追加 `--apply` 仅保存这两个组，再切换后端。脚本会保留旧标题组的私有备份。已有组按备份恢复，新建组可在旧后端恢复后删除。使用默认银河和 DeepSeek 模型执行完整配置时也会创建标题组。
 
@@ -106,7 +106,7 @@ Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema�
 确认服务健康后，先在 Magpie 自己的私有数据卷备份 `providers.json`，再执行：
 
 ```sh
-magpie provider fallback raven-openai raven-deepseek/deepseek-v4-flash
+magpie provider fallback raven-openai raven-deepseek/deepseek-flash
 magpie provider set raven-openai \
   responses=http://openai-balance-guard:8099/v1 \
   balance=http://openai-balance-guard:8099/balance \
@@ -163,3 +163,12 @@ PYTHONPATH=/app RUNTIME_SETTINGS_PATH=/run/runtime.private.json \
 独立部署用不同 Compose project、端口、数据卷和管理员配置；不要复用运行中的实验卷。此功能不修改默认关闭的 Claude SDK 性能实验开关，不构成该性能实验的验收。生产升级需要另行部署授权。
 
 本轮本地镜像和完整 E2E 在 ARM64 上验收。AMD64 下载包的 SHA-512 校验通过，但本机跨架构执行未通过，因此不将其记为 AMD64 运行验收；部署 AMD64 主机时需执行镜像构建中的版本检查及上述 E2E。
+
+
+## 图片输入
+
+启用 Magpie 后，Raven 保存并传递原图，跳过 Raven 的独立 OCR 预处理。此行为由网关开关决定，旧主供应商为银河时也生效。OpenAI Agents SDK 和 Claude SDK 将图片块放入请求；Antigravity 的 Gemini 请求由本次运行的桥接层补入经过后端校验的图片。
+
+Sol 与官方 `raven-deepseek/deepseek-flash` 直接接收图片。银河等纯文本模型由 Magpie「Settings → Models → Image recognition」指定的视觉模型生成描述，自动模式使用可用视觉模型。需要继续使用 Qwen 时，在 Magpie 添加对应视觉端点并选择它。该设置关闭且候选均为纯文本时，图片请求会明确失败。
+
+已有部署需把 DeepSeek provider 的模型列表、路由组和 fallback 中的旧 Flash ID 更新为 `deepseek-flash`，刷新 Raven 模型目录，并核对图片输入能力。自定义代理仍应按实际端点能力设置。已有会话的原图按授权历史元数据恢复，当前图片优先，总数受现有图片数量限制约束。

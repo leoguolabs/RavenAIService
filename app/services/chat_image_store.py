@@ -1,28 +1,8 @@
-"""On-disk store for images a user attaches to a chat turn.
+"""Persist authorized chat attachments and prepare original bytes for Agent input.
 
-Companion to :mod:`app.services.ocr_service`. OCR turns the images into text for
-the agent prompt; this module keeps the *bytes* so the frontend can render the
-thumbnails in the user's bubble — both optimistically at send time and when the
-conversation is reloaded from history.
-
-Layout and lifecycle:
-
-- Bytes land at ``<CHAT_IMAGE_STORE_DIR>/<session_id>/<image_id>.<ext>``. The
-  session directory is removed when the session is deleted (see
-  ``chat_history_service.delete_session``), so retention follows the
-  conversation with no extra sweeper.
-- Only *metadata* (``id`` / ``media_type`` / ``name`` / ``size``) is persisted,
-  in ``chat_messages.images_json``. Bytes are served by the authorized
-  ``/api/v1/ai-chat/chat-images/{session_id}/{image_id}`` endpoint, which checks
-  that the session belongs to the caller.
-- ``materialize_into_workspace`` optionally copies the originals into an agent
-  run's workspace as groundwork for a future multimodal path. It is gated on the
-  provider's ``supports_image_input`` capability: a non-vision upstream (DeepSeek
-  and ``custom`` today) fails the whole run if an agent ever ``Read``s an image
-  file, so those providers never get an ``images/`` directory to stumble into.
-
-All writes are best-effort — a storage failure degrades to "no thumbnails" and
-never blocks the chat turn, which still proceeds on the OCR text.
+Images live under the session directory and share its retention policy. Metadata
+contains no local paths. Gateway and direct OpenAI execution require originals;
+legacy OCR execution can still proceed when thumbnail storage fails.
 """
 
 from __future__ import annotations
@@ -117,8 +97,7 @@ def save_turn_images(
     image_list = list(images or [])
     if not image_list:
         return []
-    from app.config import settings
-    native = settings.anthropic_provider == "openai"
+    native = native_image_transport_enabled()
 
     session_dir = _base_dir() / _sanitize_session(session_id)
     try:
@@ -218,6 +197,14 @@ def delete_session_images(session_id: Optional[str]) -> None:
     logger.info("chat_image_store: removed image dir for session=%s", _sanitize_session(session_id))
 
 
+def native_image_transport_enabled() -> bool:
+    """Magpie decides vision per route; direct OpenAI also consumes originals."""
+    from app.config import settings
+    from app.services.agent_runtime_service import get_config
+
+    return get_config().enabled or settings.anthropic_provider == "openai"
+
+
 def workspace_materialization_enabled() -> bool:
     """Whether originals may be copied into an agent workspace.
 
@@ -228,7 +215,7 @@ def workspace_materialization_enabled() -> bool:
     from app.agents.anthropic_client import PROVIDER_PROFILES
     from app.config import settings
 
-    if getattr(settings, "anthropic_provider", "") == "openai":
+    if native_image_transport_enabled():
         return True
     if not getattr(settings, "chat_image_workspace_materialize", True):
         return False
@@ -236,28 +223,37 @@ def workspace_materialization_enabled() -> bool:
     return bool(profile and profile.supports_image_input)
 
 
-def materialize_session_images(session_id: str, raw_meta: Optional[str], workspace_dir: Any) -> None:
+def materialize_session_images(session_id: str, raw_meta: Optional[str], workspace_dir: Any,
+                               history: Optional[list] = None) -> None:
     """Restore only API-authorized session attachments into this run's workspace."""
     from app.config import settings
 
+    # History metadata comes from authorized DB records. Client history omits it.
+    metadata = parse_meta_json(raw_meta)
+    known = {item["id"] for item in metadata}
+    limit = settings.ocr_max_images
+    for turn in reversed(history or []):
+        for item in parse_meta_json(turn.get("images_json")):
+            if item["id"] not in known and len(metadata) < limit:
+                metadata.append(item)
+                known.add(item["id"])
     stored = []
-    for item in parse_meta_json(raw_meta):
+    for item in metadata:
         path = resolve_path(session_id, item.get("id", ""))
         if path is None:
-            if settings.anthropic_provider == "openai":
+            if native_image_transport_enabled():
                 raise ValueError("Original image unavailable / 截图原件不可用")
             continue
         stored.append(StoredImage(id=item["id"], media_type=item["media_type"],
             name=item.get("name", ""), size=path.stat().st_size, path=str(path)))
     result = materialize_into_workspace(stored, workspace_dir)
-    if stored and settings.anthropic_provider == "openai" and result is None:
+    if stored and native_image_transport_enabled() and result is None:
         raise ValueError("Unable to prepare original images / 无法准备截图原件")
 
 
 def native_image_input_required(workspace_dir: Any) -> bool:
-    """A native-image turn must never fail over to a text-only endpoint."""
-    from app.config import settings
-    return settings.anthropic_provider == "openai" and (
+    """Require image transport; Magpie handles text-only candidates internally."""
+    return native_image_transport_enabled() and (
         Path(workspace_dir) / "images" / "manifest.json"
     ).is_file()
 
@@ -267,17 +263,14 @@ def materialize_into_workspace(
 ) -> Optional[str]:
     """Copy stored originals into ``<workspace>/images/`` with a manifest.
 
-    Groundwork for a future multimodal agent path: the bytes are placed where a
-    vision-capable agent could ``Read`` them, but no prompt references the
-    directory yet, so this is inert for current runs. Returns the created
-    directory path, or ``None`` when nothing was materialized (disabled, no
-    vision support, no images, or an I/O failure — all non-fatal).
+    Gateway and OpenAI executors attach these bytes to model requests. Legacy
+    providers may read them when their capability allows it. Native transport
+    fails explicitly if any required original cannot be prepared.
 
     Cleanup is inherited: every caller's workspace is a per-run temp directory
     already removed in a ``finally`` block.
     """
-    from app.config import settings
-    native = settings.anthropic_provider == "openai"
+    native = native_image_transport_enabled()
     if stored and not workspace_dir and native:
         raise ValueError("Image workspace unavailable / 图片工作区不可用")
     if not stored or not workspace_dir:

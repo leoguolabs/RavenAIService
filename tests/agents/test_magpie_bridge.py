@@ -160,3 +160,28 @@ async def test_executor_preserves_gateway_error_instead_of_generic_exit(monkeypa
         _ = [message async for message in provider_query.query(prompt='test', options=options)]
     assert 'HTTP 404' in str(error.value) and executor in str(error.value)
     assert 'private-key' not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_antigravity_original_images_survive_multiple_requests_without_duplicates():
+    import json
+    observed = []
+    async def upstream(request):
+        observed.append(json.loads(request.content))
+        return httpx.Response(200, json={})
+    async def on_route(value):
+        pass
+    config = GatewayConfig("http://gateway", "key", "group/test", "antigravity_cli", "s",
+        images=[{"type": "image", "source": {"media_type": "image/png", "data": "b3JpZ2luYWw="}}])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as upstream_client:
+        app = create_gateway_app(config, "token", upstream_client, on_route)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://run") as client:
+            payload = {"contents": [{"role": "user", "parts": [{"text": "Read the image"}]}]}
+            for _ in range(2):
+                response = await client.post("/v1beta/models/group/test:generateContent",
+                    headers={"x-api-key": "token"}, json=payload)
+                assert response.status_code == 200
+                payload = observed[-1]
+    assert len(observed[0]["contents"][0]["parts"]) == 2
+    assert observed[0] == observed[1]
+    assert observed[0]["contents"][0]["parts"][1]["inlineData"]["data"] == "b3JpZ2luYWw="

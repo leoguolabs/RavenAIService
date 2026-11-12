@@ -10,9 +10,13 @@ from app.models.chat import ImageAttachment
 from app.services import chat_image_store, ocr_service
 
 
+@pytest.mark.parametrize("gateway,provider", [(False, "openai"), (True, "yinhe"), (True, "deepseek")])
 @pytest.mark.asyncio
-async def test_openai_bypasses_even_configured_ocr_and_uses_original_bytes(monkeypatch, tmp_path):
-    monkeypatch.setattr("app.config.settings.anthropic_provider", "openai")
+async def test_native_transport_bypasses_configured_ocr_and_uses_original_bytes(monkeypatch, tmp_path, gateway, provider):
+    from app.services.agent_runtime_service import RuntimeConfig
+    monkeypatch.setattr("app.services.agent_runtime_service.get_config",
+        lambda: RuntimeConfig(enabled=gateway, api_key="test", model="group/test"))
+    monkeypatch.setattr("app.config.settings.anthropic_provider", provider)
     monkeypatch.setattr("app.config.settings.ocr_enabled", True)
     monkeypatch.setattr("app.config.settings.chat_image_workspace_materialize", False)
     monkeypatch.setattr(chat_image_store, "_base_dir", lambda: tmp_path / "store")
@@ -44,8 +48,12 @@ def test_image_manifest_refuses_escape_symlinks_and_missing_originals(tmp_path):
         workspace_image_blocks(str(tmp_path))
 
 
-def test_native_images_fail_explicitly_on_missing_source_or_bad_storage(monkeypatch, tmp_path):
-    monkeypatch.setattr("app.config.settings.anthropic_provider", "openai")
+@pytest.mark.parametrize("gateway", [False, True])
+def test_native_images_fail_explicitly_on_missing_source_or_bad_storage(monkeypatch, tmp_path, gateway):
+    from app.services.agent_runtime_service import RuntimeConfig
+    monkeypatch.setattr("app.services.agent_runtime_service.get_config",
+        lambda: RuntimeConfig(enabled=gateway, api_key="test", model="group/test"))
+    monkeypatch.setattr("app.config.settings.anthropic_provider", "yinhe" if gateway else "openai")
     missing = chat_image_store.StoredImage(id="x", media_type="image/png", name="x.png",
                                           size=1, path=str(tmp_path / "missing.png"))
     with pytest.raises(ValueError, match="Original image unavailable"):
@@ -54,3 +62,21 @@ def test_native_images_fail_explicitly_on_missing_source_or_bad_storage(monkeypa
     (tmp_path / "not-a-directory").write_text("blocked")
     with pytest.raises(ValueError, match="Unable to store"):
         chat_image_store.save_turn_images([ImageAttachment(media_type="image/png", data="aGk=")], session_id="s")
+
+
+def test_authorized_history_images_reach_followup_with_current_images_first(monkeypatch, tmp_path):
+    from app.services.agent_runtime_service import RuntimeConfig
+    monkeypatch.setattr("app.services.agent_runtime_service.get_config",
+        lambda: RuntimeConfig(enabled=True, api_key="test", model="group/test"))
+    monkeypatch.setattr(chat_image_store, "_base_dir", lambda: tmp_path / "store")
+    monkeypatch.setattr("app.config.settings.ocr_max_images", 2)
+    def saved(data):
+        return chat_image_store.to_meta_json(chat_image_store.save_turn_images(
+            [ImageAttachment(media_type="image/png", data=base64.b64encode(data).decode())], session_id="s"))
+    old, recent, current = saved(b"old"), saved(b"recent"), saved(b"current")
+    chat_image_store.materialize_session_images("s", current, tmp_path / "run",
+        [{"images_json": old}, {"images_json": recent}, {"images_json": current}])
+    blocks = workspace_image_blocks(str(tmp_path / "run"))
+    assert [base64.b64decode(b["source"]["data"]) for b in blocks] == [b"current", b"recent"]
+    with pytest.raises(ValueError, match="Original image unavailable"):
+        chat_image_store.materialize_session_images("other-session", current, tmp_path / "other")

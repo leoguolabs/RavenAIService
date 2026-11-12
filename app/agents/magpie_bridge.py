@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import secrets
 import socket
 from contextlib import asynccontextmanager
@@ -58,6 +59,7 @@ class GatewayConfig:
     agent_kind: str = ""
     timeout_seconds: float = 3600
     task_routing: TaskRoutingPolicy = field(default_factory=TaskRoutingPolicy)
+    images: list[dict] = field(default_factory=list, repr=False)
 
 
 def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncClient,
@@ -98,6 +100,23 @@ def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncCli
             headers[ADMISSION_HEADER] = admission_proof
         params = [(key, value) for key, value in request.query_params.multi_items() if key != "key"]
         body = await request.body()
+        if config.images and request.method == "POST" and path.startswith("v1beta/models/"):
+            payload = json.loads(body)
+            contents = payload.get("contents", [])
+            user = next((item for item in contents if item.get("role") == "user"), None)
+            if user is None:
+                return JSONResponse({"error": "Image input requires a user message"}, status_code=400)
+            present = {
+                part.get("inlineData", part.get("inline_data", {})).get("data")
+                for item in contents for part in item.get("parts", [])
+            }
+            for image in config.images:
+                source = image["source"]
+                if source["data"] not in present:
+                    user.setdefault("parts", []).append({"inlineData": {
+                        "mimeType": source["media_type"], "data": source["data"]}})
+                    present.add(source["data"])
+            body = json.dumps(payload).encode()
         prepared = None
         try:
             if task_route and request.method == "POST" and inference_path(path):

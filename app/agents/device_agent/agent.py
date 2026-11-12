@@ -314,7 +314,7 @@ class DeviceAgent:
                 session_id, run_id=ctx.run_id, owner_scope=ctx.owner_scope
             )
             from app.services import chat_image_store
-            chat_image_store.materialize_session_images(session_id, ctx.images_json, workspace_path)
+            chat_image_store.materialize_session_images(session_id, ctx.images_json, workspace_path, ctx.history)
 
             available_skills: List[str] = []
             materialized: List[str] = []

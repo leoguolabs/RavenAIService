@@ -71,7 +71,7 @@ async def test_titles_only_provisions_singleton_groups_without_saving_main_runti
 
     script = runpy.run_path(str(Path(__file__).parents[2] / "scripts/configure-magpie-task-routing.py"))
     existing = [{"id": "raven-task-cloud", "members": ["raven-openai/gpt-6.1-sol"]}]
-    models = [{"id": "raven-yinhe/yinhe-thinking"}, {"id": "raven-deepseek/deepseek-v4-flash"}]
+    models = [{"id": "raven-yinhe/yinhe-thinking"}, {"id": "raven-deepseek/deepseek-flash"}]
     saved = []
 
     async def api(request):
@@ -99,7 +99,7 @@ async def test_titles_only_provisions_singleton_groups_without_saving_main_runti
     assert not saved
     assert [(group["id"], group["members"]) for group in preview["groups"]] == [
         ("raven-title-yinhe", ["raven-yinhe/yinhe-thinking"]),
-        ("raven-title-deepseek", ["raven-deepseek/deepseek-v4-flash"]),
+        ("raven-title-deepseek", ["raven-deepseek/deepseek-flash"]),
     ]
     assert all(group["classifier"] == "" and group["rules"] == [] for group in preview["groups"])
     args.apply = True
