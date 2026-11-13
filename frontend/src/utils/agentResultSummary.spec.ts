@@ -1,5 +1,37 @@
 import { describe, expect, it } from 'vitest'
-import { extractVisualAnalysis, parseAgentMessage } from './agentResultSummary'
+import { extractVisualAnalysis, parseAgentMessage, splitLogAnalysisResult } from './agentResultSummary'
+
+describe('splitLogAnalysisResult', () => {
+  const preamble = [
+    '**日志分析 Agent** 已完成本轮分析。',
+    '',
+    '- 日志包：`1113-sct-oam-1.tar.gz`',
+    '- 问题：比较两次运行的日志。',
+    '## 回答里请包含版本目录',
+    '- 状态：`ok`',
+    '- 模型：`raven-openai/gpt-6.1-sol`，耗时：110.21s',
+    '- 上下文：已保留本次解压日志与代码工作区，可在当前对话继续追问。',
+  ].join('\n')
+
+  it('keeps every result section outside the collapsible summary', () => {
+    const body = '## 回答\n\n运行目录已切换。\n\n## 摘要\n\n两次目录不同。\n\n## 关键词\n`flash`'
+    expect(splitLogAnalysisResult(`${preamble}\n\n${body}`.replace(/\n/g, '\r\n'))).toEqual({
+      summaryMarkdown: preamble,
+      bodyMarkdown: body,
+    })
+  })
+
+  it('keeps an error field in the summary even when there is no answer', () => {
+    const summaryMarkdown = `${preamble.replace('`ok`', '`error`')}\n- 错误类型：\`timeout\``
+    expect(splitLogAnalysisResult(summaryMarkdown)).toEqual({ summaryMarkdown, bodyMarkdown: '' })
+  })
+
+  it('leaves ordinary replies, other agents, and incomplete preambles alone', () => {
+    expect(splitLogAnalysisResult('## 回答\n\n普通回复')).toBeNull()
+    expect(splitLogAnalysisResult(preamble.replace('日志分析 Agent', '项目专家 Agent'))).toBeNull()
+    expect(splitLogAnalysisResult(preamble.split('\n')[0])).toBeNull()
+  })
+})
 
 describe('parseAgentMessage', () => {
   it('moves the completion preamble out of a specialist answer', () => {

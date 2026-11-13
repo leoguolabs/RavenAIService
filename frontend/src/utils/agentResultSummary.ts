@@ -30,6 +30,29 @@ const FIELD_RE = /^-\s+([^：:]+)[：:]\s*(.*)$/
 const resultMarkdown = new MarkdownIt()
 const HIDDEN_RESULT_SECTION_RE = /^(?:\u6458\u8981|\u5173\u952e\u8bcd|summary|keywords)$/i
 
+/** Split the stored log-analysis preamble while preserving the full transcript Markdown. */
+export function splitLogAnalysisResult(content: string) {
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
+  const title = lines[0]?.trim().match(COMPLETION_LINE_RE)?.[1].trim()
+  if (!title || !/^(?:\u65e5\u5fd7\u5206\u6790|Log Analysis) Agent$/i.test(title)) return null
+
+  // The question can contain Markdown headings. The formatter appends these
+  // fields after the question, before any result sections.
+  const contextIndex = lines.findIndex((line, index) =>
+    /^- (?:\u4e0a\u4e0b\u6587|Context)[：:]/i.test(line) &&
+    /^- (?:\u6a21\u578b|Model)[：:]/i.test(lines[index - 1] || '') &&
+    /^- (?:\u72b6\u6001|Status)[：:]/i.test(lines[index - 2] || ''),
+  )
+  if (contextIndex === -1) return null
+
+  const hasErrorType = /^- (?:\u9519\u8bef\u7c7b\u578b|Error type)[：:]/i.test(lines[contextIndex + 1] || '')
+  const bodyStart = contextIndex + (hasErrorType ? 2 : 1)
+  return {
+    summaryMarkdown: lines.slice(0, bodyStart).join('\n'),
+    bodyMarkdown: lines.slice(bodyStart).join('\n').trimStart(),
+  }
+}
+
 /** Hide generated result sections without treating code examples as headings. */
 function omitResultMetadataSections(content: string): string {
   const lines = content.split('\n')

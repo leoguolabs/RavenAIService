@@ -13,6 +13,7 @@ import { useAppStore } from '@/stores/app'
 import { resolveAdminNavKey, type AdminNavItem } from '@/utils/adminNav'
 import { useAdminScope } from '@/composables/useAdminScope'
 import AgentTraceStream from '@/components/AgentTraceStream.vue'
+import { splitLogAnalysisResult } from '@/utils/agentResultSummary'
 import { renderMarkdown } from '@/utils/markdownRenderer'
 import type { AgentTraceEvent } from '@/types/agentTrace'
 import type {
@@ -253,6 +254,11 @@ const combinedTokens = (event: MetricsRawEvent) =>
 
 const renderConversationAi = (content: string) =>
   renderMarkdown(content || '', { wrapperClass: 'markdown-content text-ink' })
+
+const conversationMessages = computed(() => conversation.value?.messages.map((message) => ({
+  message,
+  logResult: message.role === 'ai' ? splitLogAnalysisResult(message.content) : null,
+})) ?? [])
 
 const conversationTraceEvents = (events?: unknown[] | null): AgentTraceEvent[] =>
   Array.isArray(events) ? (events as AgentTraceEvent[]) : []
@@ -1353,7 +1359,7 @@ onMounted(() => {
         <div v-else-if="conversationLoadError" class="metrics-empty follow-up-error" role="alert">{{ conversationLoadError }}</div>
         <div v-else-if="conversation" ref="conversationThreadRef" class="admin-conversation-thread" @click="onConversationClick">
           <div
-            v-for="(message, index) in conversation.messages"
+            v-for="({ message, logResult }, index) in conversationMessages"
             :key="`${message.created_at || 'message'}-${index}`"
             :class="['admin-conversation-message', message.role === 'user' ? 'is-user' : 'is-ai']"
           >
@@ -1389,7 +1395,15 @@ onMounted(() => {
                 :events="conversationTraceEvents(message.trace_events)"
                 :running="false"
               />
-              <div class="admin-ai-content" v-html="renderConversationAi(message.content)"></div>
+              <details v-if="logResult" class="admin-ai-run-summary">
+                <summary>{{ t('agentTrace.runSummary') }}</summary>
+                <div class="admin-ai-content" v-html="renderConversationAi(logResult.summaryMarkdown)"></div>
+              </details>
+              <div
+                v-if="!logResult || logResult.bodyMarkdown"
+                class="admin-ai-content"
+                v-html="renderConversationAi(logResult?.bodyMarkdown ?? message.content)"
+              ></div>
             </template>
           </div>
           <div v-if="!conversation.messages.length" class="metrics-empty">{{ t('admin.metrics.emptyConversation') }}</div>
@@ -2214,6 +2228,28 @@ onMounted(() => {
 
 .admin-ai-trace {
   margin: 0.15rem 0 0.35rem;
+}
+
+.admin-ai-run-summary > summary {
+  width: fit-content;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--admin-hairline);
+  border-radius: 0.4rem;
+  color: var(--admin-body);
+  background: var(--admin-canvas-soft);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.admin-ai-run-summary > summary:hover {
+  border-color: var(--admin-hairline-strong);
+  color: var(--admin-ink);
+}
+
+.admin-ai-run-summary > .admin-ai-content {
+  margin: 0.6rem 0 0.4rem;
+  padding-inline: 0.55rem;
+  border-inline-start: 1px solid var(--admin-hairline);
 }
 
 .admin-ai-content {
