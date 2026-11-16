@@ -163,6 +163,12 @@ export const userApi = {
   updateProfile: (payload: UserProfileUpdatePayload): Promise<ApiResponse<UserProfile>> =>
     userClient.patch('/api/v1/users/auth/me', payload),
 
+  changePassword: (currentPassword: string, newPassword: string): Promise<ApiResponse<void>> =>
+    userClient.post('/api/v1/users/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+
   getPendingAnnouncement: (): Promise<ApiResponse<SystemAnnouncement | null>> =>
     userClient.get('/api/v1/announcements/pending'),
 

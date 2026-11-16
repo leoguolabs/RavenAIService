@@ -49,7 +49,7 @@ def verify_password(password: str, stored: str) -> bool:
             return hmac.compare_digest(derived, digest_hex)
         except Exception:
             return False
-    return hmac.compare_digest(password, stored)
+    return hmac.compare_digest(password.encode("utf-8"), stored.encode("utf-8"))
 
 
 class UserAuthManager:

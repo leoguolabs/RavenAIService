@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { MessageCircleQuestion, Save, Search, ShieldCheck, UserRound } from 'lucide-vue-next'
+import { KeyRound, MessageCircleQuestion, Save, Search, ShieldCheck, UserRound } from 'lucide-vue-next'
 import { useAppStore } from '@/stores/app'
 import { useUserStore } from '@/stores/user'
 import { useChatSessionStore } from '@/stores/chatSession'
@@ -156,8 +156,15 @@ const passwordInputRef = ref<HTMLInputElement | null>(null)
 const confirmPasswordInputRef = ref<HTMLInputElement | null>(null)
 const isLoggingIn = ref(false)
 const showSettingsModal = ref(false)
-const activeSettingsSection = ref<'account' | 'agent'>('account')
+const activeSettingsSection = ref<'account' | 'password' | 'agent'>('account')
 const isSavingProfile = ref(false)
+const isChangingPassword = ref(false)
+const passwordError = ref('')
+const passwordForm = reactive({
+  currentPassword: '',
+  newPassword: '',
+  confirmation: '',
+})
 const profileForm = reactive({
   displayName: '',
   email: '',
@@ -224,6 +231,55 @@ const openSettingsModal = () => {
 
 const closeSettingsModal = () => {
   showSettingsModal.value = false
+}
+
+const clearPasswordForm = () => {
+  passwordForm.currentPassword = ''
+  passwordForm.newPassword = ''
+  passwordForm.confirmation = ''
+  passwordError.value = ''
+}
+
+watch([showSettingsModal, activeSettingsSection], clearPasswordForm)
+
+const handleChangePassword = async () => {
+  if (isChangingPassword.value || !isLoggedIn.value) return
+  const { currentPassword, newPassword, confirmation } = passwordForm
+  const newPasswordLength = [...newPassword].length
+  if ([...currentPassword].length > 256 || newPasswordLength > 256) {
+    passwordError.value = t('workbench.auth.validation.passwordTooLong')
+    return
+  }
+  if (newPasswordLength < 6) {
+    passwordError.value = t('workbench.auth.validation.passwordTooShort')
+    return
+  }
+  if (newPassword !== confirmation) {
+    passwordError.value = t('workbench.auth.validation.passwordMismatch')
+    return
+  }
+
+  passwordError.value = ''
+  isChangingPassword.value = true
+  const token = userStore.token
+  const failedMessage = t('workbench.settingsPanel.password.failed')
+  try {
+    const response = await userApi.changePassword(currentPassword, newPassword)
+    if (!response.success) throw new Error(response.message || failedMessage)
+    if (userStore.token !== token) return
+    clearPasswordForm()
+    appStore.showNotification({ title: t('workbench.settingsPanel.password.changed'), type: 'success' })
+  } catch (error) {
+    if (userStore.token !== token) return
+    const message = parseAuthError(error, failedMessage)
+    if (showSettingsModal.value && activeSettingsSection.value === 'password') {
+      passwordError.value = message
+    } else {
+      appStore.showNotification({ title: failedMessage, message, type: 'error' })
+    }
+  } finally {
+    isChangingPassword.value = false
+  }
 }
 
 const handleSaveProfile = async () => {
@@ -430,6 +486,7 @@ watch(isLoggedIn, async (loggedIn) => {
     try { await announcementStore.checkPending() } catch { /* retry on next trigger */ }
   } else {
     showSearchBox.value = false
+    closeSettingsModal()
     sessionStore.reset()
     announcementStore.reset()
   }
@@ -982,6 +1039,18 @@ const handleUserLogout = () => {
               <button
                 type="button"
                 class="rw-settings-nav-item"
+                :class="{ active: activeSettingsSection === 'password' }"
+                :aria-current="activeSettingsSection === 'password' ? 'page' : undefined"
+                @click="activeSettingsSection = 'password'"
+              >
+                <span class="rw-settings-nav-icon"><KeyRound :size="17" stroke-width="1.8" /></span>
+                <span class="rw-settings-nav-copy">
+                  <strong>{{ t('workbench.settingsPanel.password.title') }}</strong>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="rw-settings-nav-item"
                 :class="{ active: activeSettingsSection === 'agent' }"
                 :aria-current="activeSettingsSection === 'agent' ? 'page' : undefined"
                 @click="activeSettingsSection = 'agent'"
@@ -1001,7 +1070,11 @@ const handleUserLogout = () => {
             </div>
           </aside>
 
-          <form class="rw-settings-form" @submit.prevent="handleSaveProfile">
+          <form
+            :key="activeSettingsSection === 'password' ? 'password' : 'profile'"
+            class="rw-settings-form"
+            @submit.prevent="activeSettingsSection === 'password' ? handleChangePassword() : handleSaveProfile()"
+          >
             <div class="rw-settings-content">
               <section v-if="activeSettingsSection === 'account'" class="rw-settings-pane" aria-labelledby="rw-account-settings-title">
                 <div class="rw-settings-pane-head">
@@ -1048,6 +1121,59 @@ const handleUserLogout = () => {
                 </div>
               </section>
 
+              <section
+                v-else-if="activeSettingsSection === 'password'"
+                class="rw-settings-pane"
+                aria-labelledby="rw-password-settings-title"
+              >
+                <div class="rw-settings-pane-head">
+                  <h4 id="rw-password-settings-title">{{ t('workbench.settingsPanel.password.title') }}</h4>
+                  <p id="rw-new-password-hint">{{ t('workbench.settingsPanel.password.hint') }}</p>
+                </div>
+
+                <input type="hidden" name="username" autocomplete="username" :value="userStore.profile?.username || ''" />
+                <div class="rw-settings-field-grid" @input="passwordError = ''">
+                  <label class="rw-form-field rw-form-field--wide">
+                    <span class="rw-form-label">{{ t('workbench.settingsPanel.password.current') }}</span>
+                    <input
+                      v-model="passwordForm.currentPassword"
+                      type="password"
+                      name="current_password"
+                      class="rw-input"
+                      autocomplete="current-password"
+                      :disabled="isChangingPassword"
+                      required
+                    />
+                  </label>
+                  <label class="rw-form-field">
+                    <span class="rw-form-label">{{ t('workbench.settingsPanel.password.new') }}</span>
+                    <input
+                      v-model="passwordForm.newPassword"
+                      type="password"
+                      name="new_password"
+                      class="rw-input"
+                      autocomplete="new-password"
+                      aria-describedby="rw-new-password-hint"
+                      :disabled="isChangingPassword"
+                      required
+                    />
+                  </label>
+                  <label class="rw-form-field">
+                    <span class="rw-form-label">{{ t('workbench.settingsPanel.password.confirmation') }}</span>
+                    <input
+                      v-model="passwordForm.confirmation"
+                      type="password"
+                      name="confirm_password"
+                      class="rw-input"
+                      autocomplete="new-password"
+                      :disabled="isChangingPassword"
+                      required
+                    />
+                  </label>
+                  <p v-if="passwordError" class="rw-form-error rw-form-field--wide" role="alert">{{ passwordError }}</p>
+                </div>
+              </section>
+
               <section v-else class="rw-settings-pane" aria-labelledby="rw-agent-settings-title">
                 <div class="rw-settings-pane-head">
                   <span class="rw-settings-eyebrow">{{ t('workbench.settingsPanel.categories.agent') }}</span>
@@ -1084,7 +1210,15 @@ const handleUserLogout = () => {
 
             <div class="rw-settings-actions">
               <button type="button" class="rw-btn-ghost" @click="closeSettingsModal">{{ t('common.cancel') }}</button>
-              <button type="submit" class="rw-btn-primary rw-save-profile-btn" :disabled="isSavingProfile">
+              <button
+                v-if="activeSettingsSection === 'password'"
+                type="submit"
+                class="rw-btn-primary rw-save-profile-btn"
+                :disabled="isChangingPassword"
+              >
+                {{ isChangingPassword ? t('workbench.settingsPanel.saving') : t('workbench.settingsPanel.password.title') }}
+              </button>
+              <button v-else type="submit" class="rw-btn-primary rw-save-profile-btn" :disabled="isSavingProfile">
                 <Save v-if="!isSavingProfile" :size="14" stroke-width="1.8" />
                 {{ isSavingProfile ? t('workbench.settingsPanel.saving') : t('workbench.settingsPanel.save') }}
               </button>
@@ -2059,7 +2193,7 @@ const handleUserLogout = () => {
   }
   .rw-settings-nav {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 7px;
     padding: 0;
   }
@@ -2089,6 +2223,9 @@ const handleUserLogout = () => {
 @media (max-width: 520px) {
   .rw-modal-backdrop {
     padding: 8px;
+  }
+  .rw-settings-nav-icon {
+    display: none;
   }
   .rw-settings-field-grid {
     grid-template-columns: 1fr;

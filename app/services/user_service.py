@@ -10,9 +10,10 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.i18n import normalize as normalize_locale
 from app.i18n.messages import t
@@ -309,6 +310,41 @@ class UserService(BaseService):
         await db.flush()
         await db.refresh(user)
         return user
+
+    async def change_password(
+        self,
+        db: AsyncSession,
+        user: User,
+        *,
+        current_password: str,
+        new_password: str,
+        locale: str,
+    ) -> None:
+        current_hash = user.password_hash
+        if not await run_in_threadpool(verify_password, current_password, current_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=t("auth.current_password_incorrect", locale),
+            )
+        if current_password == new_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=t("auth.new_password_unchanged", locale),
+            )
+
+        new_hash = await run_in_threadpool(hash_password, new_password)
+        # An admin reset or another change may have superseded this password.
+        result = await db.execute(
+            update(User)
+            .where(User.id == user.id, User.is_active.is_(True), User.password_hash == current_hash)
+            .values(password_hash=new_hash)
+            .returning(User.id)
+        )
+        if result.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=t("auth.password_change_conflict", locale),
+            )
 
     async def set_password(self, db: AsyncSession, user_id: str, new_password: str) -> Optional[User]:
         user = await self.get_by_id(db, user_id)

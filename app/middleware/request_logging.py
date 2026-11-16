@@ -17,6 +17,12 @@ from app.utils.metrics import record_http_request
 logger = logging.getLogger(__name__)
 
 SENSITIVE_HEADER_NAMES = {"authorization", "cookie", "set-cookie"}
+SENSITIVE_BODY_PATHS = {
+    "/admin/auth/login",
+    "/api/v1/users/auth/login",
+    "/api/v1/users/auth/register",
+    "/api/v1/users/auth/change-password",
+}
 
 
 def _route_template(request: Request) -> str:
@@ -136,7 +142,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         }
         
         # 获取请求体（如果启用且不是文件上传）
-        if self.include_body and request.method in ["POST", "PUT", "PATCH"]:
+        if (
+            self.include_body
+            and request.method in ["POST", "PUT", "PATCH"]
+            and request.url.path.rstrip("/") not in SENSITIVE_BODY_PATHS
+        ):
             content_type = request.headers.get("content-type", "")
             
             # 不记录文件上传请求的body

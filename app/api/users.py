@@ -10,12 +10,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 from app.i18n.deps import LOCALE_HEADER, resolve_locale
 from app.i18n.messages import t
+from app.models.base import BaseResponse
 from app.models.conversation_share import ShareInfo, ShareInfoResponse
 from app.models.database import get_db
 from app.models.user import (
@@ -119,11 +120,15 @@ async def require_admin(
 # ==================== Auth endpoints ====================
 
 
+NEW_PASSWORD_MIN_LENGTH = 6
+PASSWORD_MAX_LENGTH = 256
+
+
 class UserLoginRequest(BaseModel):
     """登录请求"""
 
     username: str = Field(..., min_length=1, max_length=128)
-    password: str = Field(..., min_length=1, max_length=256)
+    password: str = Field(..., min_length=1, max_length=PASSWORD_MAX_LENGTH)
 
     @field_validator("username", mode="before")
     @classmethod
@@ -140,7 +145,7 @@ class UserRegisterRequest(BaseModel):
     """普通用户注册请求"""
 
     username: str = Field(..., min_length=3, max_length=128)
-    password: str = Field(..., min_length=6, max_length=256)
+    password: str = Field(..., min_length=NEW_PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
     display_name: Optional[str] = Field(None, max_length=128)
     email: str = Field(..., min_length=3, max_length=255)
 
@@ -259,6 +264,38 @@ async def get_profile(current_user=Depends(get_current_user)) -> UserDetailRespo
         message="ok",
         data=UserProfile.model_validate(current_user, from_attributes=True),
     )
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: SecretStr = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
+    new_password: SecretStr = Field(min_length=NEW_PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
+
+    @field_validator("current_password", "new_password")
+    @classmethod
+    def validate_encoding(cls, value: SecretStr) -> SecretStr:
+        try:
+            value.get_secret_value().encode("utf-8")
+        except UnicodeEncodeError:
+            raise ValueError("Password must contain valid Unicode characters") from None
+        return value
+
+
+@router.post("/auth/change-password", response_model=BaseResponse)
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user=Depends(get_current_user),
+    locale: str = Depends(get_request_locale),
+    db: AsyncSession = Depends(get_db),
+) -> BaseResponse:
+    await user_service.change_password(
+        db,
+        current_user,
+        current_password=payload.current_password.get_secret_value(),
+        new_password=payload.new_password.get_secret_value(),
+        locale=locale,
+    )
+    await db.commit()
+    return BaseResponse(message=t("auth.password_changed", locale))
 
 
 class UpdateProfileRequest(BaseModel):

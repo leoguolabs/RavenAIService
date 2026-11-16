@@ -49,6 +49,10 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         # ----- users & chat sessions (app/api/users.py) -----
         "auth.login_success": "登录成功",
         "auth.register_success": "注册成功",
+        "auth.password_changed": "密码已修改",
+        "auth.current_password_incorrect": "当前密码不正确",
+        "auth.new_password_unchanged": "新密码不能与当前密码相同",
+        "auth.password_change_conflict": "账号状态或密码已变更，请确认后重试",
         "auth.email_invalid": "请输入有效的邮箱地址",
         "auth.account_disabled": "该账号已被管理员停用，请联系管理员处理。",
         "user.not_found": "用户不存在",
@@ -196,6 +200,10 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         # ----- users & chat sessions (app/api/users.py) -----
         "auth.login_success": "Login successful",
         "auth.register_success": "Registration successful",
+        "auth.password_changed": "Password changed",
+        "auth.current_password_incorrect": "The current password is incorrect",
+        "auth.new_password_unchanged": "The new password must differ from the current password",
+        "auth.password_change_conflict": "The account or password changed. Check it and try again.",
         "auth.email_invalid": "Please enter a valid email address",
         "auth.account_disabled": "This account has been disabled by an administrator. Please contact them for help.",
         "user.not_found": "User not found",
