@@ -1856,6 +1856,11 @@ export default {
       confirm: '确认发布',
       cancel: '取消发布',
     },
+    code: {
+      copy: '复制代码',
+      copied: '代码已复制',
+      copyFailed: '复制代码失败，请手动复制',
+    },
     table: {
       markdownCopied: '已复制表格 Markdown 源码',
       copyFailed: '复制失败，请手动选择表格内容',

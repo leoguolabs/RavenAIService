@@ -54,6 +54,44 @@ describe('markdown table copy button', () => {
   })
 })
 
+describe('markdown code copy button', () => {
+  it('adds one control per code block and leaves inline code and Mermaid alone', () => {
+    const content = [
+      'Use `inline` code:',
+      '',
+      '```sh',
+      '  echo "one & two"',
+      '```',
+      '',
+      '```',
+      'plain code',
+      '```',
+      '',
+      'Indented example:',
+      '',
+      '    indented code',
+      '',
+      '```mermaid',
+      'graph TD;A-->B;',
+      '```',
+    ].join('\n')
+    const html = renderMarkdown(content, { copyCode: true })
+
+    expect(html.match(/class="code-copy-btn"/g)).toHaveLength(3)
+    expect(html).toContain('<code>inline</code>')
+    expect(html).toContain('<pre class="hljs language-sh">')
+    expect(html).toContain('<pre><code>indented code\n</code></pre>')
+    expect(html).toContain('class="mermaid-container"')
+  })
+
+  it('keeps controls out of default and announcement rendering', () => {
+    const content = '```sh\nfree -h\n```'
+
+    expect(renderMarkdown(content)).not.toContain('code-copy-btn')
+    expect(renderAnnouncementMarkdown(content)).not.toContain('code-copy-btn')
+  })
+})
+
 describe('announcement markdown renderer', () => {
   it('renders common Markdown and preserves operational line breaks', () => {
     const html = renderAnnouncementMarkdown('**Maintenance**\nStarts at 22:00\n\n- Save your work')

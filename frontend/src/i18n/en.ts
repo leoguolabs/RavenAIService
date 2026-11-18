@@ -1861,6 +1861,11 @@ export default {
       confirm: 'Confirm publication',
       cancel: 'Cancel publication',
     },
+    code: {
+      copy: 'Copy code',
+      copied: 'Code copied',
+      copyFailed: 'Could not copy code. Please copy it manually.',
+    },
     table: {
       markdownCopied: 'Table markdown copied',
       copyFailed: 'Copy failed, please select the table content manually',

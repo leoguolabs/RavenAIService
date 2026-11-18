@@ -229,6 +229,22 @@ function createMarkdownRenderer(config: MarkdownRendererConfig): MarkdownIt {
     }
   })
 
+  // 复制按钮位于可横向滚动的 pre 外，Mermaid 继续使用自己的源码操作。
+  for (const type of ['fence', 'code_block'] as const) {
+    const renderBlock = md.renderer.rules[type]!
+    md.renderer.rules[type] = (tokens, idx, options, env, self) => {
+      const html = renderBlock(tokens, idx, options, env, self)
+      if (!env?.copyCode || html.includes('<div class="mermaid-container"')) return html
+
+      const label = escapeHtml(i18n.global.t('aiChat.code.copy'))
+      return (
+        `<div class="markdown-code-block">${html}` +
+        `<button class="code-copy-btn" type="button" title="${label}" aria-label="${label}"></button>` +
+        '</div>\n'
+      )
+    }
+  }
+
   // 自定义表格渲染规则：
   // 外层 .table-block 提供定位上下文与「复制 Markdown」按钮（按钮必须在
   // .table-wrapper 的横向滚动容器之外，否则会随表格一起滚动出视野）；
@@ -315,6 +331,7 @@ export function renderMarkdown(
   options: {
     cleanXml?: boolean      // 是否清理XML标签，默认true
     wrapperClass?: string   // 包装div的class名称
+    copyCode?: boolean      // 仅在支持代码复制交互的视图中启用
   } = {}
 ): string {
   const {
@@ -337,7 +354,7 @@ export function renderMarkdown(
 
   // 渲染markdown（env.source 供表格渲染规则按行号切片出原始 markdown 源码）
   const md = getMarkdownRenderer()
-  const html = md.render(cleaned, { source: cleaned })
+  const html = md.render(cleaned, { source: cleaned, copyCode: options.copyCode })
 
   // 包装在容器中
   return `<div class="${wrapperClass}">${html}</div>`
