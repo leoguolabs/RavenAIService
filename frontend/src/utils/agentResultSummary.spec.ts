@@ -73,7 +73,7 @@ describe('parseAgentMessage', () => {
     })
   })
 
-  it('hides summary and keywords while retaining later diagnosis and recommendations', () => {
+  it('hides log-analysis metadata, including root cause hypotheses, and keeps recommendations', () => {
     const view = parseAgentMessage([
       '**日志分析 Agent** 已完成本轮分析。',
       '',
@@ -81,6 +81,8 @@ describe('parseAgentMessage', () => {
       '',
       '## 回答',
       '正文结论。',
+      '### 根因假设',
+      '正文中的分析。',
       '',
       '## 摘要',
       '不展示的重复摘要。',
@@ -89,6 +91,7 @@ describe('parseAgentMessage', () => {
       '',
       '## 根因假设',
       '- 配置缺失。',
+      '  证据：读取配置时报错。',
       '',
       '## 建议',
       '- 检查配置。',
@@ -96,7 +99,7 @@ describe('parseAgentMessage', () => {
       '## 关键词',
       '`config` `timeout`',
     ].join('\n'))
-    expect(view.displayMarkdown).toBe('正文结论。\n\n## 根因假设\n- 配置缺失。\n\n## 建议\n- 检查配置。')
+    expect(view.displayMarkdown).toBe('正文结论。\n### 根因假设\n正文中的分析。\n\n## 建议\n- 检查配置。')
     expect(view.completionSummary).toMatchObject({ model: 'yinhe-thinking', duration: '69.96s' })
   })
 
@@ -114,6 +117,9 @@ describe('parseAgentMessage', () => {
       '',
       '### 摘要',
       '正文中的子标题。',
+      '',
+      '## 根因假设',
+      '项目专家的回答。',
     ].join('\n')
     const view = parseAgentMessage('**项目专家 Agent** 已完成本轮分析。\n\n' + answer + '\n\n## 关键词\n`hidden`')
     expect(view.displayMarkdown).toBe(answer.replace('## 回答\n', ''))

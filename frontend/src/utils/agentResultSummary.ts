@@ -25,6 +25,7 @@ export type VisualAnalysis = {
 
 const COMPLETION_LINE_RE =
   /^\*\*(.+?\bAgent)\*\*\s+(\u5df2\u5b8c\u6210(?:\u672c\u8f6e)?(?:\u5206\u6790|\u68c0\u7d22|\u6253\u5305|\u6574\u5305\u6253\u5305|\u6574\u5305\u6784\u5efa|\u5904\u7406)|completed (?:(?:this|the current) (?:analysis|search|packaging|package build|run)|(?:the )?full-package build))[\u3002.]*$/i
+const LOG_ANALYSIS_AGENT_RE = /^(?:\u65e5\u5fd7\u5206\u6790|Log Analysis) Agent$/i
 const SECTION_HEADING_RE = /^##\s+(.+?)\s*$/
 const FIELD_RE = /^-\s+([^：:]+)[：:]\s*(.*)$/
 const resultMarkdown = new MarkdownIt()
@@ -34,7 +35,7 @@ const HIDDEN_RESULT_SECTION_RE = /^(?:\u6458\u8981|\u5173\u952e\u8bcd|summary|ke
 export function splitLogAnalysisResult(content: string) {
   const lines = content.replace(/\r\n/g, '\n').split('\n')
   const title = lines[0]?.trim().match(COMPLETION_LINE_RE)?.[1].trim()
-  if (!title || !/^(?:\u65e5\u5fd7\u5206\u6790|Log Analysis) Agent$/i.test(title)) return null
+  if (!title || !LOG_ANALYSIS_AGENT_RE.test(title)) return null
 
   // The question can contain Markdown headings. The formatter appends these
   // fields after the question, before any result sections.
@@ -54,15 +55,18 @@ export function splitLogAnalysisResult(content: string) {
 }
 
 /** Hide generated result sections without treating code examples as headings. */
-function omitResultMetadataSections(content: string): string {
+function omitResultMetadataSections(content: string, isLogAnalysis: boolean): string {
   const lines = content.split('\n')
   const tokens = resultMarkdown.parse(content, {})
   const sections = tokens.flatMap((token, index) => {
     if (token.type !== 'heading_open' || token.level !== 0 || !token.map) return []
     if (token.tag !== 'h1' && token.tag !== 'h2') return []
+    const heading = tokens[index + 1]?.content.trim() || ''
     return [{
       start: token.map[0],
-      hidden: token.tag === 'h2' && HIDDEN_RESULT_SECTION_RE.test(tokens[index + 1]?.content.trim() || ''),
+      hidden: token.tag === 'h2' && (
+        HIDDEN_RESULT_SECTION_RE.test(heading) || (isLogAnalysis && heading === '\u6839\u56e0\u5047\u8bbe')
+      ),
     }]
   })
   const hiddenRanges = sections.flatMap((section, index) => section.hidden
@@ -147,11 +151,12 @@ export function parseAgentMessage(content: string): AgentMessageView {
   }
   const displayMarkdown =
     answerStart === -1 ? '' : lines.slice(answerStart).join('\n').trim()
+  const title = titleMatch[1].trim()
 
   return {
-    displayMarkdown: omitResultMetadataSections(displayMarkdown),
+    displayMarkdown: omitResultMetadataSections(displayMarkdown, LOG_ANALYSIS_AGENT_RE.test(title)),
     completionSummary: {
-      title: titleMatch[1].trim(),
+      title,
       fields,
       model,
       duration,
