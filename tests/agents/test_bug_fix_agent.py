@@ -6,6 +6,11 @@ provider/API-base inference, and the system-prompt contract guarantees.
 
 from __future__ import annotations
 
+import subprocess
+from contextlib import asynccontextmanager
+from dataclasses import replace
+from types import SimpleNamespace
+
 import pytest
 
 from app.agents.bug_fix import agent as bf_agent
@@ -495,6 +500,74 @@ async def test_terminal_sdk_error_without_exception(monkeypatch):
     assert "ak-fixture-key" not in str(result)
 
 
+@pytest.mark.parametrize("use_magpie", [False, True])
+async def test_git_commits_use_the_active_model_instead_of_worker_identity(monkeypatch, tmp_path, use_magpie):
+    from app.agents import antigravity_executor, magpie_bridge, provider_query
+    from app.agents.antigravity_control import Control
+    from app.services import agent_runtime_service
+    from app.services.model_router import _resolve
+    from app.services.model_settings_service import BUG_FIX_SLOT
+
+    config = tmp_path / "gitconfig"
+    config.write_text("[user]\n\tname = 宿主机用户\n\temail = worker@example.test\n", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for role in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{role}_NAME", "宿主机用户")
+        monkeypatch.setenv(f"GIT_{role}_EMAIL", "worker@example.test")
+
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    models = ["advanced-test-model"]
+    report_route = None
+    if use_magpie:
+        models = ["RavenAI Bug Fix Agent", "backup/repair-model", "second/model's $(printf wrong)"]
+        endpoint = replace(_resolve(BUG_FIX_SLOT), provider="magpie", model="group/auto", executor="antigravity_cli")
+        monkeypatch.setattr(agent_runtime_service, "gateway_endpoint", lambda _: endpoint)
+
+        @asynccontextmanager
+        async def gateway(_config, on_route, _on_error):
+            nonlocal report_route
+            report_route = on_route
+            yield "http://localhost", "test-token"
+
+        monkeypatch.setattr(magpie_bridge, "gateway_bridge", gateway)
+    else:
+        monkeypatch.setattr(agent_runtime_service, "gateway_endpoint", lambda _: None)
+
+    async def execute(*, prompt, options):
+        control = Control(options)
+        for index, name in enumerate(models):
+            if report_route and index:
+                # The executor can call Bash before the run consumes the route event.
+                await report_route({"model": name})
+            command = "cd repo && git commit -q --allow-empty -m fix && git log -1 --format='%an <%ae>%n%cn <%ce>'"
+            if use_magpie:
+                decision = await control.native_hook("PreToolUse", {
+                    "toolCall": {"name": "run_command", "args": {"CommandLine": command}},
+                })
+                assert decision["decision"] == "auto_approve"
+                command = decision["overwrite"]["CommandLine"]
+            else:
+                allowed, args, _ = await control.authorize("Bash", {"command": command}, "fixture")
+                assert allowed
+                command = args["command"]
+            result = subprocess.run(
+                ["/bin/bash", "-c", command], cwd=tmp_path,
+                check=True, capture_output=True, text=True,
+            )
+            assert result.stdout.splitlines() == [f"{name} <bot@ravenai.local>"] * 2
+        yield SimpleNamespace(content='{"status":"failed","error_kind":"fixture","merge_requests":[]}')
+
+    monkeypatch.setattr(provider_query, "_claude_query", execute)
+    monkeypatch.setattr(antigravity_executor, "query", execute)
+    ctx = replace(_make_ctx("identity"), temp_dir=str(tmp_path), repo_dir=str(repo))
+    result = await bf_agent.BugFixCodingAgent().run(ctx)
+    assert result["error_kind"] == "fixture"
+    assert result["model"] == models[-1]
+    assert subprocess.check_output(["git", "config", "--global", "user.name"], text=True).strip() == "宿主机用户"
+
+
 @pytest.mark.parametrize("repo_url", [
     "ssh://git@gitlab.example.com:2225/team/repo.git", "git@gitlab.example.com:team/repo.git",
 ])
@@ -507,7 +580,7 @@ async def test_ssh_bug_fix_uses_worker_git_identity_without_provider_keys(monkey
     monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=yes")
     monkeypatch.setenv("OPENAI_API_KEY", "do-not-forward")
 
-    async def query(*, prompt, options):
+    async def query(*, prompt, options, on_routed_model):
         assert "-o merge_request.create" in options.system_prompt["append"]
         result = await WorkspaceTools(options).call("Bash", {"command": (
             'printf "%s\\n" "$SSH_AUTH_SOCK" "$GIT_SSH_COMMAND" "${OPENAI_API_KEY-unset}" "${ANTHROPIC_API_KEY-unset}"'

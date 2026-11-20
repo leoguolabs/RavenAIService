@@ -36,6 +36,12 @@ The agent's system prompt SHALL instruct it to apply the **minimal-change princi
 
 The agent SHALL create a separate branch (cut from the default branch), an independent commit, a push, and a separate Merge Request for **each mutually independent** problem listed in `proposed_fixes`. Multiple changes SHALL be combined into a single Merge Request ONLY when they share one root cause and must be merged together. Branch names SHALL use a consistent prefix that encodes the task and an index (for example `bugfix/ai-<task_id>-<index>`). Commit messages SHALL reference the source log id and the fix item title.
 
+#### Scenario: Automated commits identify the model
+
+- **WHEN** the agent commits a fix from its workspace
+- **THEN** both the Git author and committer use the active model name and `bot@ravenai.local`, overriding any identity inherited from the worker
+- **AND** with Magpie routing, subsequent commits use the model reported by the latest inference route, with `RavenAI Bug Fix Agent` as the fallback when only a routing group is known
+
 #### Scenario: Multiple independent problems yield multiple MRs
 
 - **WHEN** a task's `proposed_fixes` contains two independent problems

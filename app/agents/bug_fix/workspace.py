@@ -30,6 +30,9 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+GIT_BOT_NAME = "RavenAI Bug Fix Agent"
+GIT_BOT_EMAIL = "bot@ravenai.local"
+
 
 class BugFixWorkspaceError(Exception):
     """Bug 修复工作区相关错误基类。"""
@@ -49,11 +52,6 @@ class BugFixWorkspaceContext:
     logs_dir: Optional[str] = None  # temp_dir/logs/；来源日志同步成功时非 None
     metadata: Dict[str, Any] = field(default_factory=dict)
     repo_url: str = field(default="", repr=False)
-
-
-def _git_identity() -> Dict[str, str]:
-    """提交身份。固定为系统账号，便于在 MR/提交历史中识别自动修复来源。"""
-    return {"name": "RavenAI Bug Fix Agent", "email": "bot@ravenai.local"}
 
 
 def _sync_source_logs(
@@ -138,12 +136,15 @@ def prepare(
         temp_dir.mkdir(parents=True, exist_ok=True)
 
         clone_url = build_clone_url(repo_url, git_token or None)
+        # 仓库级兜底身份，覆盖宿主机 Git 配置中的三个身份段。
+        identity = {"name": GIT_BOT_NAME, "email": GIT_BOT_EMAIL}
+        clone_cmd = ["git", "clone", "--depth", "1"]
+        for role in ("user", "author", "committer"):
+            for key, value in identity.items():
+                clone_cmd.extend(["--config", f"{role}.{key}={value}"])
         # 浅克隆默认分支以加速；--single-branch 限制只取默认分支。
         cmd = [
-            "git",
-            "clone",
-            "--depth",
-            "1",
+            *clone_cmd,
             "--single-branch",
             "--branch",
             default_branch,
@@ -158,14 +159,7 @@ def prepare(
         )
         if proc.returncode != 0:
             # 退化：某些仓库默认分支名不确定时，去掉 --branch 再试一次。
-            fallback = [
-                "git",
-                "clone",
-                "--depth",
-                "1",
-                clone_url,
-                str(repo_dir),
-            ]
+            fallback = [*clone_cmd, clone_url, str(repo_dir)]
             proc = subprocess.run(
                 fallback, capture_output=True, text=True, timeout=600
             )
@@ -181,16 +175,6 @@ def prepare(
         )
         if branch_result.returncode == 0 and branch_result.stdout.strip():
             default_branch = branch_result.stdout.strip()
-
-        # 配置提交身份（仅在该 clone 内生效）。
-        identity = _git_identity()
-        for key, value in (("user.name", identity["name"]), ("user.email", identity["email"])):
-            subprocess.run(
-                ["git", "-C", str(repo_dir), "config", key, value],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
 
         context_metadata = {}
         if source_context:

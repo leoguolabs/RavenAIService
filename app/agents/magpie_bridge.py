@@ -164,7 +164,7 @@ def create_gateway_app(config: GatewayConfig, token: str, client: httpx.AsyncCli
         provider = response.headers.get("x-magpie-provider", "")
         model = response.headers.get("x-magpie-model", "")
         if (response.is_success and provider and model and (provider, model) != last_route
-                and (not task_route or inference_path(path))):
+                and request.method == "POST" and inference_path(path)):
             try:
                 await on_route({"executor": config.executor, "provider": provider, "model": model,
                           "requested_model": config.model, "agent_key": config.agent_kind})

@@ -16,11 +16,12 @@ import json
 import logging
 import os
 import re
+import shlex
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.agents.bug_fix.workspace import BugFixWorkspaceContext
+from app.agents.bug_fix.workspace import GIT_BOT_EMAIL, GIT_BOT_NAME, BugFixWorkspaceContext
 from app.agents.log_analysis.trace import mask_input, mask_tokens
 
 logger = logging.getLogger(__name__)
@@ -244,7 +245,7 @@ class BugFixCodingAgent:
         from app.config import settings
 
         try:
-            from claude_agent_sdk import query  # noqa: F401
+            from claude_agent_sdk import HookMatcher
         except ImportError as exc:
             raise RuntimeError(
                 "claude-agent-sdk is required. Install with: pip install claude-agent-sdk>=0.1"
@@ -309,6 +310,29 @@ class BugFixCodingAgent:
                            error_kind="bug_fix_model_unconfigured",
                            error="请在后台配置 BugFix 独立模型端点和密钥 / Configure the dedicated BugFix endpoint and key in Admin")
         effective_model = endpoint.model
+
+        def set_routed_model(model: str) -> None:
+            nonlocal effective_model
+            effective_model = model
+
+        async def set_commit_identity(data, _tool_use_id, _context):
+            tool_input = data["tool_input"]
+            command = tool_input.get("command")
+            if not command:
+                return {}
+            # Git 的显式身份变量优先于用户配置。逐次注入，跟随运行中发生的模型切换。
+            name = re.sub(r"[\x00-\x1f\x7f<>]", " ", effective_model).strip()
+            if not name or (endpoint.provider == "magpie" and name.startswith("group/")):
+                name = GIT_BOT_NAME
+            assignments = shlex.join([
+                f"GIT_AUTHOR_NAME={name}", f"GIT_AUTHOR_EMAIL={GIT_BOT_EMAIL}",
+                f"GIT_COMMITTER_NAME={name}", f"GIT_COMMITTER_EMAIL={GIT_BOT_EMAIL}",
+            ])
+            return {"hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "updatedInput": {**tool_input, "command": f"export {assignments} || exit 1\n{command}"},
+            }}
+
         if not endpoint.profile.supports_image_input:
             system_prompt["append"] += (
                 "\n当前模型不支持原图输入。截图原件保存在 images/ 供追溯，"
@@ -321,6 +345,7 @@ class BugFixCodingAgent:
             allowed_tools=list(ALLOWED_TOOLS),
             cwd=ctx.temp_dir,
             permission_mode="bypassPermissions",
+            hooks={"PreToolUse": [HookMatcher(matcher="^Bash$", hooks=[set_commit_identity])]},
             max_turns=settings.bug_fix_agent_max_turns,
             endpoint=endpoint,
             max_tokens=settings.bug_fix_agent_max_tokens,
@@ -347,10 +372,8 @@ class BugFixCodingAgent:
         run_error: Optional[Exception] = None
         try:
             async with asyncio.timeout(settings.bug_fix_agent_request_timeout_seconds):
-                async for message in _query(prompt=user_prompt, options=options):
+                async for message in _query(prompt=user_prompt, options=options, on_routed_model=set_routed_model):
                     _emit_for_message(message, state=state)
-                    if getattr(message, "subtype", None) == "raven_route":
-                        effective_model = message.data.get("model") or effective_model
                     _log_message(ctx.task_id, message)
                     if getattr(message, "is_error", False):
                         errors = getattr(message, "errors", None) or []

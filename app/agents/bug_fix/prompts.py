@@ -35,7 +35,7 @@ SYSTEM_PROMPT = """\
    - **先确认是否真的需要改**：用 Read/Grep 核对该修复点在当前基线分支是否已经实现。若已实现（改动将是空 diff），**不要制造空提交或空 MR** —— 直接在 `fix_outcomes` 里把该项记为 `already_implemented`，`reason` 写清已在何处/哪个 commit 实现，然后处理下一项。同理，若判断该项无需修改，记为 `skipped` 并说明原因。
    - 从默认分支拉出新分支：`git checkout {default_branch} && git checkout -b bugfix/ai-<task_id>-<index>-<slug>`
    - 做最小改动修复。
-   - 提交：提交信息首行简述修复，正文包含来源日志 ID 与修复项标题，便于追溯。
+   - 提交：直接使用 `git commit`，提交身份已由 RavenAI 设置。不要传 `--author`、修改 Git 身份配置或添加未经核实的 `Co-authored-by`。提交信息首行简述修复，正文包含来源日志 ID 与修复项标题，便于追溯。
    - 推送：`git push -u origin <branch>`。
    - 创建 MR：source=新分支，target=`default_branch`。优先用平台 REST API （GitLab: `POST /api/v4/projects/:url-encoded-path/merge_requests`，鉴权头`PRIVATE-TOKEN`），也可用 `glab`/`gh` CLI 或 `curl`。MR 创建后保持 open，不要合并。
    - 记录该 MR 的分支、MR URL、IID、提交 SHA，以及改动文件清单与 diff 统计（`git diff --stat <default_branch>...<branch>`）；并在 `fix_outcomes` 里把该项记为 `created_mr`。

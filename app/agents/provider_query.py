@@ -10,7 +10,7 @@ import uuid
 from contextlib import aclosing
 from dataclasses import is_dataclass, replace
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Callable
 
 from app.agents.clarification_pause import (
     SegmentUsage, cancelled_message, continuation_prompt, current_pause,
@@ -157,7 +157,7 @@ async def _claude_query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
                 yield message
 
 
-async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
+async def query(*, prompt: Any, options: Any, on_routed_model: Callable[[str], None] | None = None) -> AsyncIterator[Any]:
     """Run the selected backend; gateway notices share the same event ordering."""
     env = dict(getattr(options, "env", {}) or {})
     if env.get("RAVEN_GATEWAY") != "magpie":
@@ -175,6 +175,8 @@ async def query(*, prompt: Any, options: Any) -> AsyncIterator[Any]:
     events: asyncio.Queue = asyncio.Queue(maxsize=128)
     # A route is reported only when it changes; headers precede response bytes.
     async def on_route(data: dict) -> None:
+        if on_routed_model is not None:
+            on_routed_model(data["model"])
         await events.put(("message", SystemMessage(subtype="raven_route", data=data)))
 
     last_gateway_error = None

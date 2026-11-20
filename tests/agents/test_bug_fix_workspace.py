@@ -9,6 +9,7 @@ must never fail the fix task).
 from __future__ import annotations
 
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -140,5 +141,34 @@ def test_prepare_without_source_log(tmp_path, monkeypatch, _fake_clone):
         assert ctx.logs_dir is None
         task_data = json.loads(Path(ctx.task_json_path).read_text(encoding="utf-8"))
         assert task_data["logs_dir"] is None
+    finally:
+        bf_ws.cleanup(ctx)
+
+
+def test_fallback_clone_sets_local_git_identities(tmp_path, monkeypatch):
+    monkeypatch.setattr(bf_ws.settings, "code_repo_clone_base_dir", str(tmp_path / "base"))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for role in ("AUTHOR", "COMMITTER"):
+        for field in ("NAME", "EMAIL"):
+            monkeypatch.delenv(f"GIT_{role}_{field}", raising=False)
+    (tmp_path / "gitconfig").write_text(
+        '[author]\n\tname = Human\n\temail = human@example.test\n'
+        '[committer]\n\tname = Human\n\temail = human@example.test\n',
+        encoding="utf-8",
+    )
+    source = tmp_path / "source"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(source)], check=True)
+    subprocess.run(["git", "-C", str(source), "commit", "-q", "--allow-empty", "-m", "seed"], check=True)
+
+    ctx = bf_ws.prepare(
+        bug_fix_task_id="identity", repo_url=source.as_uri(), default_branch="missing",
+        git_token=None, title="fix", summary=None, proposed_fixes=[],
+    )
+    try:
+        assert ctx.default_branch == "main"
+        for role in ("AUTHOR", "COMMITTER"):
+            identity = subprocess.check_output(["git", "var", f"GIT_{role}_IDENT"], cwd=ctx.repo_dir, text=True)
+            assert identity.startswith("RavenAI Bug Fix Agent <bot@ravenai.local> ")
     finally:
         bf_ws.cleanup(ctx)

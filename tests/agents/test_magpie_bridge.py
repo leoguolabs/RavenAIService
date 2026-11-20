@@ -15,8 +15,9 @@ async def test_gateway_credentials_route_headers_and_stream():
 
     async def upstream(request):
         observed.append(request)
+        model = "backup/actual-model" if request.url.path == "/v1/messages" else "backup/token-counter"
         return httpx.Response(200, headers={"content-type": "text/event-stream",
-            "X-Magpie-Provider": "backup", "X-Magpie-Model": "backup/actual-model"},
+            "X-Magpie-Provider": "backup", "X-Magpie-Model": model},
             content=b'data: {"model":"requested-alias"}\n\n')
 
     async def on_route(value):
@@ -33,12 +34,14 @@ async def test_gateway_credentials_route_headers_and_stream():
                                              headers={admission.ADMISSION_HEADER: "spoofed"})
                 assert response.status_code == 200
                 assert 'requested-alias' in response.text
+            response = await client.post("/v1/messages/count_tokens?key=run-secret", json={"model": "group/auto"})
+            assert response.status_code == 200
     assert len(routed) == 1
     assert routed[0]["provider"] == "backup"
     assert routed[0]["model"] == "backup/actual-model"
     assert routed[0]["requested_model"] == "group/auto"
     assert observed[0].headers["authorization"] == "Bearer upstream-secret"
-    assert [r.headers[admission.ADMISSION_HEADER] for r in observed] == ["task-proof"] * 2
+    assert [r.headers[admission.ADMISSION_HEADER] for r in observed] == ["task-proof"] * 3
     assert "key=" not in str(observed[0].url)
     assert "upstream-secret" not in repr(config)
 

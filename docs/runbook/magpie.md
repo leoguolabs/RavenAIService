@@ -49,6 +49,8 @@ Admin API 为 `GET/PUT /admin/agent-runtime` 和 `GET /admin/agent-runtime/model
 
 三种执行器共享工作区、项目提示词、materialized Skills 和 Raven MCP handler。Antigravity 使用独立临时 HOME、结构化 stdin/stdout、PreInvocation/PreToolUse/Stop hook；工具权限及澄清仍由 Raven 管理。未知原生工具默认拒绝，避免 CLI 升级绕过现有权限规则。第三方 stdio/HTTP MCP 配置暂不直接透传，只桥接 Raven 拥有的 SDK MCP server。模型能力来自 Magpie 模型目录；改变模型能力后刷新目录。
 
+Bug 修复 Agent 创建的 Git 提交以当前模型名同时记录作者和提交者，邮箱为 `bot@ravenai.local`。Magpie 返回实际推理模型后，后续提交使用该模型名。只有路由组名可用时，提交显示 `RavenAI Bug Fix Agent`。
+
 Antigravity 的首次调用注入已注册 MCP 工具的名称及参数 schema，使设备 Agent 无需先通过 Read/Bash 查找 CLI 内部工具说明。真正的 MCP 调用、原生文件读写和 shell 权限仍经过原有 Raven 审批；这不会把任意文件或命令自动放行。
 
 设备结果校验兼容 Claude SDK 的 content 列表与 Antigravity 的完整 MCP 结果对象。Claude 的 `allowed_tools` 仅自动批准已判定为 read 的设备工具；write/destructive/未知工具必须进入 Raven broker，回传决策会转成 SDK 所需的类型。`--deny` / `--approve-write` 可用本地设备桩交叉检查拒绝后零执行、批准后仅执行一次。
