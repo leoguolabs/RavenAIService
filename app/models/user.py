@@ -413,6 +413,7 @@ class ChatMessageRecord(BaseModel):
     run_id: Optional[str] = None
     run_status: Optional[str] = None
     run_agent_kind: Optional[str] = None
+    run_model: Optional[str] = None
     trace_events: Optional[list[dict[str, Any]]] = None
     # Attached-image metadata for a user turn; bytes are fetched separately via
     # the authorized chat-images endpoint. Empty/absent for image-free turns.

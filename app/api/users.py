@@ -5,7 +5,6 @@ User authentication, management, and chat history APIs.
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -646,15 +645,9 @@ async def get_chat_messages(
         session_id=session_id,
         limit=limit,
     )
-    runs_result = await db.execute(
-        select(ChatAgentRun)
-        .where(
-            ChatAgentRun.user_id == current_user.id,
-            ChatAgentRun.session_id == session_id,
-        )
-        .order_by(ChatAgentRun.finished_at.asc(), ChatAgentRun.started_at.asc())
+    runs_by_message, unmatched_runs = await chat_history_service.match_assistant_runs(
+        db, user_id=current_user.id, session_id=session_id, records=records,
     )
-    unmatched_runs = list(runs_result.scalars().all())
     messages: list[ChatMessageRecord] = []
     for record in records:
         message = ChatMessageRecord.model_validate(record, from_attributes=True)
@@ -662,25 +655,13 @@ async def get_chat_messages(
         # from the authorized chat-images endpoint to re-render thumbnails.
         images = chat_image_store.parse_meta_json(getattr(record, "images_json", None))
         message.images = images or None
-        if record.role == "ai" and record.content:
-            matched_index: int | None = None
-            for idx, run in enumerate(unmatched_runs):
-                if (run.answer or "") == record.content:
-                    matched_index = idx
-                    break
-            if matched_index is not None:
-                run = unmatched_runs.pop(matched_index)
-                trace_events = None
-                try:
-                    parsed = json.loads(run.trace_events_json or "[]")
-                    if isinstance(parsed, list):
-                        trace_events = parsed
-                except Exception:  # noqa: BLE001
-                    trace_events = None
-                message.run_id = run.id
-                message.run_status = run.status
-                message.run_agent_kind = run.agent_kind
-                message.trace_events = trace_events
+        run = runs_by_message.get(record.id)
+        if run is not None:
+            message.run_id = run.id
+            message.run_status = run.status
+            message.run_agent_kind = run.agent_kind
+            message.run_model = run.model
+            message.trace_events = chat_history_service.parse_run_trace(run)
         messages.append(message)
     # Older packaging failures only wrote a terminal run row, leaving an empty
     # conversation. Recover those turns without a migration or duplicate writes.
@@ -689,10 +670,6 @@ async def get_chat_messages(
             continue
         if limit and messages and run.started_at < messages[0].created_at:
             continue
-        try:
-            trace = json.loads(run.trace_events_json or "[]")
-        except (TypeError, ValueError):
-            trace = []
         common = {"session_id": session_id, "created_at": run.started_at,
                   "updated_at": run.finished_at or run.started_at}
         if run.user_message and not any(
@@ -709,7 +686,7 @@ async def get_chat_messages(
                 + (run.error or run.status)
             ),
             run_id=run.id, run_status=run.status, run_agent_kind=run.agent_kind,
-            trace_events=trace if isinstance(trace, list) else [],
+            run_model=run.model, trace_events=chat_history_service.parse_run_trace(run) or [],
         ))
     messages.sort(key=lambda item: item.created_at)
     # fetch_messages 已校验会话归属；仅返回当前用户 Fork 的可恢复选择，不暴露目录。

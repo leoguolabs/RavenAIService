@@ -4,7 +4,9 @@ Persistence helpers for user chat history.
 
 from __future__ import annotations
 
+from collections import defaultdict, deque
 from datetime import datetime
+import json
 import uuid
 from typing import List, Optional, Sequence
 
@@ -14,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat import ChatMessage as ChatMessageSchema
 from app.models.user import (
+    ChatAgentRun,
     ChatMessage,
     ChatSession,
     ChatSessionSearchData,
@@ -264,6 +267,42 @@ class ChatHistoryService(BaseService):
             stmt = stmt.limit(limit)
         result = await db.execute(stmt)
         return result.scalars().all()
+
+    async def match_assistant_runs(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: str,
+        session_id: str,
+        records: Sequence[ChatMessage],
+    ) -> tuple[dict[str, ChatAgentRun], list[ChatAgentRun]]:
+        """Match stored replies to same-session runs, consuming repeated answers in order."""
+        result = await db.execute(
+            select(ChatAgentRun)
+            .where(ChatAgentRun.user_id == user_id, ChatAgentRun.session_id == session_id)
+            .order_by(ChatAgentRun.finished_at.asc(), ChatAgentRun.started_at.asc(), ChatAgentRun.id.asc())
+        )
+        runs = list(result.scalars().all())
+        by_answer: dict[str, deque[ChatAgentRun]] = defaultdict(deque)
+        for run in runs:
+            if run.answer:
+                by_answer[run.answer].append(run)
+
+        matches = {
+            record.id: by_answer[record.content].popleft()
+            for record in records
+            if record.role == "ai" and by_answer.get(record.content)
+        }
+        matched_ids = {run.id for run in matches.values()}
+        return matches, [run for run in runs if run.id not in matched_ids]
+
+    @staticmethod
+    def parse_run_trace(run: ChatAgentRun) -> list[dict] | None:
+        try:
+            trace = json.loads(run.trace_events_json or "[]")
+        except (TypeError, ValueError):
+            return None
+        return trace if isinstance(trace, list) else None
 
     async def delete_session(self, db: AsyncSession, *, user_id: str, session_id: str) -> bool:
         session = await self._get_session(db, user_id, session_id, include_deleted=True)

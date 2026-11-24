@@ -410,7 +410,8 @@ async def get_event_conversation(
         # Admins audit turns that were driven by pasted screenshots (OCR feeds
         # the agent text, not the picture), so the originals have to be part of
         # what they see. Bytes come from ``get_event_chat_image`` below.
-        include_images=True,
+        include_admin_details=True,
+        event_run_id=event.run_id,
     )
     user = (await _fetch_users(db, [chat_session.user_id])).get(chat_session.user_id)
     detail = AdminConversationDetail(

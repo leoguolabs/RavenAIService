@@ -30,7 +30,7 @@ from fastapi.testclient import TestClient
 
 # Import the models package so every table is registered on Base.metadata.
 import app.models  # noqa: F401
-from app.api import admin_metrics
+from app.api import admin_metrics, users
 from app.api.admin import require_admin
 from app.api.users import get_current_user
 from app.config import settings
@@ -607,6 +607,49 @@ def test_admin_event_conversation_rejects_unlinked_event(
     resp = client.get(f"/admin/metrics/events/{event.id}/conversation")
     assert resp.status_code == 404
     assert resp.json()["detail"] == "该事件未关联对话会话"
+
+
+def test_event_conversation_marks_its_reply_and_preserves_each_runs_model(
+    client: TestClient, app: FastAPI, auth_state: Dict[str, Any],
+) -> None:
+    app.include_router(users.router)
+    user = _make_user("model-history-owner")
+    auth_state["user"] = user
+    chat_session = ChatSession(id=str(uuid.uuid4()), user_id=user.id, title="模型切换")
+    _seed([user, chat_session])
+    runs, messages = [], []
+    now = datetime.utcnow()
+    for index, model in enumerate((
+        "deepseek-flash", "raven-openai/gpt-6.2-sol", "raven-yinhe/yinhe-thinking",
+    )):
+        started_at = now + timedelta(minutes=index)
+        finished_at = started_at + timedelta(seconds=2)
+        answer = "重复的回复" if index < 2 else "随后的回复"
+        runs.append(ChatAgentRun(
+            id=str(uuid.uuid4()), session_id=chat_session.id, user_id=user.id,
+            agent_kind="project_expert", status="succeeded", answer=answer,
+            model=model, started_at=started_at, finished_at=finished_at,
+        ))
+        messages.append(ChatMessage(
+            session_id=chat_session.id, role="ai", content=answer, created_at=finished_at,
+        ))
+    event = _ai_event(user_id=user.id, session_id=chat_session.id, model=runs[1].model)
+    event.run_id = runs[1].id
+    _seed([*runs, *messages, event])
+
+    admin_response = client.get(f"/admin/metrics/events/{event.id}/conversation")
+    assert admin_response.status_code == 200
+    audited = admin_response.json()["data"]["messages"]
+    assert [message.get("is_event_reply") for message in audited] == [None, True, None]
+    assert [message["run_model"] for message in audited] == [run.model for run in runs]
+    assert all("run_id" not in message for message in audited)
+
+    owner_response = client.get(f"/api/v1/users/chat-sessions/{chat_session.id}/messages")
+    assert owner_response.status_code == 200
+    history = owner_response.json()["data"]
+    assert [message["run_id"] for message in history] == [run.id for run in runs]
+    assert [message["run_model"] for message in history] == [run.model for run in runs]
+    assert all(not message["trace_events"] for message in history)
 
 
 def test_event_conversation_requires_admin(app: FastAPI) -> None:

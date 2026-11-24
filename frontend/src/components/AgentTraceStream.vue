@@ -16,7 +16,7 @@
       </div>
       <!-- Keep the completed trace disclosure within the metadata row. -->
       <button
-        v-if="finished"
+        v-if="finished && (events.length || completionSummary || visualAnalysis)"
         type="button"
         class="agent-trace__summary-row"
         :aria-expanded="summaryExpanded"
@@ -151,6 +151,7 @@ const props = defineProps<{
   running?: boolean
   toolNameMap?: ToolNameMap
   onCancel?: () => void | Promise<void>
+  runModel?: string
   completionSummary?: AgentCompletionSummary | null
   visualAnalysis?: string | null
   visualImageCount?: number
@@ -166,7 +167,7 @@ const agentName = computed(() => {
 })
 const runtimeModel = computed(() => {
   const route = runtime.value.routes[runtime.value.routes.length - 1]
-  const model = route?.model || props.completionSummary?.model || ''
+  const model = route?.model || props.runModel || props.completionSummary?.model || ''
   const providerPrefix = route ? `${route.provider}/` : ''
   return providerPrefix && model.startsWith(providerPrefix) ? model.slice(providerPrefix.length) : model
 })
@@ -186,6 +187,7 @@ const hasContent = computed(
     cards.value.length > 0 ||
     running.value ||
     !!terminal.value ||
+    !!runtimeModel.value ||
     availableSkills.value.length > 0 ||
     loadedSkills.value.length > 0 ||
     !!props.completionSummary ||

@@ -90,13 +90,27 @@ describe('AgentTraceStream', () => {
         kind: 'raven_route', provider: 'raven-yinhe', model: 'raven-yinhe/yinhe-thinking' },
       ...normalFixture,
     ]
-    const app = createSSRApp({ render: () => h(AgentTraceStream, { events }) })
+    const app = createSSRApp({ render: () => h(AgentTraceStream, { events, runModel: 'recorded-fallback' }) })
     app.use(i18n)
     const html = await renderToString(app)
     expect(html).toContain('yinhe-thinking')
     expect(html).not.toContain('previous-model')
+    expect(html).not.toContain('recorded-fallback')
     expect(html).toContain('Claude Agent SDK')
     expect(html).not.toContain('raven-yinhe')
+  })
+
+  it('shows the recorded model when a historical reply has no trace', async () => {
+    const app = createSSRApp({ render: () => h(AgentTraceStream, {
+      events: [],
+      runModel: 'raven-openai/gpt-6.2-sol',
+      running: false,
+    }) })
+    app.use(i18n)
+
+    const html = await renderToString(app)
+    expect(html).toContain('raven-openai/gpt-6.2-sol')
+    expect(html).not.toContain('aria-expanded')
   })
 
   it('shows a completed trace without adding an empty Skills section', async () => {

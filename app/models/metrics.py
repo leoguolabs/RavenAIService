@@ -507,6 +507,8 @@ class AdminConversationMessage(PublicShareMessage):
     """
 
     images: List[AdminConversationImage] = Field(default_factory=list)
+    run_model: Optional[str] = None
+    is_event_reply: Optional[bool] = None
 
 
 class AdminConversationDetail(BaseModel):

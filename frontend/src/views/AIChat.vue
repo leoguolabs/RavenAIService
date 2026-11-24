@@ -2242,12 +2242,14 @@ const openShareModal = () => {
                 v-if="
                   (msg.traceEvents && msg.traceEvents.length > 0) ||
                   msg.traceRunning ||
+                  msg.runModel ||
                   getAgentMessageView(msg.content).completionSummary ||
                   visualAnalysisForMessage(msg, msgIndex)
                 "
                 class="rw-ai-trace"
                 :events="msg.traceEvents || []"
                 :running="!!msg.traceRunning"
+                :run-model="msg.runModel"
                 :completion-summary="getAgentMessageView(msg.content).completionSummary"
                 :visual-analysis="visualAnalysisForMessage(msg, msgIndex)?.text"
                 :visual-image-count="visualAnalysisForMessage(msg, msgIndex)?.imageCount"
@@ -2289,24 +2291,14 @@ const openShareModal = () => {
                     </button>
                   </div>
                   <div class="rw-ai-run-meta">
-                    <span v-if="getAgentMessageView(msg.content).completionSummary?.model" class="rw-ai-run-model">
-                      {{ t('aiChat.export.modelMeta', {
-                        model: getAgentMessageView(msg.content).completionSummary?.model,
-                      }) }}
-                    </span>
                     <template v-if="getAgentMessageView(msg.content).completionSummary?.duration">
-                      <span class="rw-ai-run-separator" aria-hidden="true"></span>
                       <span>
                         {{ t('aiChat.export.durationMeta', {
                           duration: getAgentMessageView(msg.content).completionSummary?.duration,
                         }) }}
                       </span>
+                      <span class="rw-ai-run-separator" aria-hidden="true"></span>
                     </template>
-                    <span
-                      v-if="getAgentMessageView(msg.content).completionSummary?.model"
-                      class="rw-ai-run-separator"
-                      aria-hidden="true"
-                    ></span>
                     <span class="rw-ai-disclaimer">{{ t('aiChat.disclaimer') }}</span>
                     <span
                       v-if="getAgentMessageView(msg.content).completionSummary?.packageBuildCompleted"
@@ -3060,12 +3052,6 @@ const openShareModal = () => {
   line-height: 1.3;
   letter-spacing: .01em;
 }
-.rw-ai-run-model {
-  max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .rw-ai-run-separator {
   width: 3px;
   height: 3px;
@@ -3082,9 +3068,6 @@ const openShareModal = () => {
   .rw-ai-run-meta {
     justify-content: flex-start;
     width: 100%;
-  }
-  .rw-ai-run-model {
-    max-width: min(70vw, 280px);
   }
 }
 .rw-thinking {

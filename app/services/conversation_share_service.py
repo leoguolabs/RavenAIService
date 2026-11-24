@@ -24,8 +24,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation_share import ConversationShare
-from app.models.user import ChatAgentRun, ChatMessage, ChatSession
+from app.models.user import ChatMessage, ChatSession
 from app.services.base import BaseService
+from app.services.chat_history_service import chat_history_service
 
 # Public-snapshot messages keep ``role`` / ``content`` / ``created_at`` plus an
 # AI-only ``trace_events`` capture. Run ids and owner identity MUST NOT leak
@@ -78,7 +79,8 @@ class ConversationShareService(BaseService):
         *,
         session_id: str,
         user_id: str,
-        include_images: bool = False,
+        include_admin_details: bool = False,
+        event_run_id: str | None = None,
     ) -> list[dict]:
         """Build a read-only message snapshot from the current session state.
 
@@ -90,11 +92,8 @@ class ConversationShareService(BaseService):
         renders an identical reasoning trace. Owner identity, ``session_id`` and
         run ids are never persisted.
 
-        ``include_images`` adds the metadata for images attached to a user turn.
-        It defaults off and must stay off for public shares: the bytes are only
-        served by authenticated endpoints, so a public snapshot carrying image
-        metadata would render nothing but broken thumbnails. The admin audit read
-        opts in — it has an authenticated bytes endpoint of its own.
+        The admin audit read also includes attachment metadata and each reply's
+        recorded model. The event's run ID identifies which reply to focus.
         """
         result = await db.execute(
             select(ChatMessage)
@@ -103,20 +102,9 @@ class ConversationShareService(BaseService):
         )
         records = list(result.scalars().all())
 
-        # Persisted agent runs hold the trace (thinking + tool steps). Match them
-        # to AI turns by answer text — the same association the owner-side
-        # ``GET /chat-sessions/{id}/messages`` uses — popping on match so repeated
-        # answers can't bind the same run twice.
-        runs_result = await db.execute(
-            select(ChatAgentRun)
-            .where(
-                ChatAgentRun.user_id == user_id,
-                ChatAgentRun.session_id == session_id,
-                ChatAgentRun.trace_events_json.is_not(None),
-            )
-            .order_by(ChatAgentRun.finished_at.asc(), ChatAgentRun.started_at.asc())
+        runs_by_message, _ = await chat_history_service.match_assistant_runs(
+            db, user_id=user_id, session_id=session_id, records=records,
         )
-        unmatched_runs = list(runs_result.scalars().all())
 
         snapshot: list[dict] = []
         for record in records:
@@ -128,11 +116,17 @@ class ConversationShareService(BaseService):
                     record.created_at.isoformat() if record.created_at else None
                 ),
             }
-            if role == "ai" and record.content:
-                trace_events = self._pop_trace_events(unmatched_runs, record.content)
+            run = runs_by_message.get(record.id)
+            if run is not None:
+                trace_events = chat_history_service.parse_run_trace(run)
                 if trace_events:
                     message["trace_events"] = trace_events
-            if include_images and role == "user":
+                if include_admin_details:
+                    if run.model:
+                        message["run_model"] = run.model
+                    if run.id == event_run_id:
+                        message["is_event_reply"] = True
+            if include_admin_details and role == "user":
                 images = self._parse_images(record.images_json)
                 if images:
                     message["images"] = images
@@ -155,33 +149,6 @@ class ConversationShareService(BaseService):
         if not isinstance(parsed, list):
             return []
         return [item for item in parsed if isinstance(item, dict) and item.get("id")]
-
-    @staticmethod
-    def _pop_trace_events(
-        unmatched_runs: list[ChatAgentRun],
-        content: str,
-    ) -> Optional[list[dict]]:
-        """Pop the run whose answer equals ``content`` and return its trace.
-
-        Returns the parsed event list, or ``None`` when no run matches or the
-        stored JSON is unusable / empty. Popping guarantees one run binds to at
-        most one message even when answers repeat across turns.
-        """
-        matched_index: Optional[int] = None
-        for idx, run in enumerate(unmatched_runs):
-            if (run.answer or "") == content:
-                matched_index = idx
-                break
-        if matched_index is None:
-            return None
-        run = unmatched_runs.pop(matched_index)
-        try:
-            parsed = json.loads(run.trace_events_json or "[]")
-        except (ValueError, TypeError):
-            return None
-        if isinstance(parsed, list) and parsed:
-            return parsed
-        return None
 
     async def _generate_unique_token(self, db: AsyncSession) -> str:
         """Generate a high-entropy token, retrying on the rare unique clash."""

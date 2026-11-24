@@ -60,6 +60,7 @@ export type ChatEntry = {
   kind?: 'plan' | 'device_action' | 'answer' | 'user'
   traceEvents?: AgentTraceEvent[]
   traceRunning?: boolean
+  runModel?: string
   /** Raw provider increments, kept separate from their readable answer projection. */
   streamedAnswer?: string
   /** Pace newly generated answers only; persisted history is shown immediately. */
@@ -707,6 +708,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
         target.content += chunk
       }
     } else if (type === 'done') {
+      if (typeof payload?.model === 'string' && payload.model) target.runModel = payload.model
       if (typeof payload?.answer === 'string' && payload.answer) {
         target.animateAnswer = true
         target.content = payload.answer.trimStart()
@@ -844,6 +846,9 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
     const target = ensureAnswerMessage(state, state.currentAnswerId)
     target.traceEvents = []
     target.traceRunning = state.runStatus === 'running'
+    if (!target.traceRunning && typeof snapshot.model === 'string' && snapshot.model) {
+      target.runModel = snapshot.model
+    }
     target.animateAnswer = false
     target.streamedAnswer = ''
     const snapshotSeq = new Set<number>()
@@ -1021,6 +1026,7 @@ export const useConversationRunsStore = defineStore('conversationRuns', () => {
                 ? (item.trace_events as AgentTraceEvent[])
                 : undefined,
               traceRunning: item.run_status === 'running',
+              runModel: item.run_model || undefined,
             }))
             // Resolve attached-image bytes in the background so the message
             // list paints immediately; each thumbnail appears as it arrives.

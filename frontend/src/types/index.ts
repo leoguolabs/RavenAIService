@@ -656,6 +656,7 @@ export interface ChatMessageRecord {
   run_id?: string | null
   run_status?: string | null
   run_agent_kind?: string | null
+  run_model?: string | null
   trace_events?: unknown[] | null
   /** Metadata for images attached to a user turn; bytes come from the chat-images endpoint. */
   images?: ChatMessageImage[] | null
@@ -895,9 +896,10 @@ export interface AdminConversationImage {
   size: number | null
 }
 
-/** The admin view of a message: the public shape plus the turn's attachments. */
 export interface AdminConversationMessage extends PublicShareMessage {
   images?: AdminConversationImage[]
+  run_model?: string
+  is_event_reply?: boolean
 }
 
 export interface AdminConversationDetail {

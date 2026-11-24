@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElDialog } from 'element-plus'
 import AdminMermaidPreview from '@/components/AdminMermaidPreview.vue'
 import { streamAdminFollowUp, type TemporaryTurn } from '@/api/adminFollowUp'
@@ -97,6 +97,11 @@ const loadingConversation = ref(false)
 const conversationLoadError = ref('')
 const conversation = ref<AdminConversationDetail | null>(null)
 const conversationThreadRef = ref<HTMLElement | null>(null)
+
+watch(conversationThreadRef, (thread) => {
+  const reply = thread?.querySelector<HTMLElement>('[data-event-reply]')
+  if (thread && reply) thread.scrollTop = reply.offsetTop - thread.clientTop
+}, { flush: 'post' })
 
 // The transcript is behind the loading branch, so render Mermaid only after
 // its template ref is actually mounted (rather than while the loader is shown).
@@ -1362,6 +1367,7 @@ onMounted(() => {
             v-for="({ message, logResult }, index) in conversationMessages"
             :key="`${message.created_at || 'message'}-${index}`"
             :class="['admin-conversation-message', message.role === 'user' ? 'is-user' : 'is-ai']"
+            :data-event-reply="message.is_event_reply || undefined"
           >
             <template v-if="message.role === 'user'">
               <!-- The originals behind the OCR text the agent actually saw. -->
@@ -1388,11 +1394,17 @@ onMounted(() => {
               <div class="admin-message-label">{{ t('sharedConversation.userLabel') }}</div>
             </template>
             <template v-else>
-              <div class="admin-ai-label">{{ t('sharedConversation.aiLabel') }}</div>
+              <div class="admin-ai-label">
+                {{ t('sharedConversation.aiLabel') }}
+                <span v-if="message.is_event_reply" class="admin-event-reply-label">
+                  {{ t('admin.metrics.eventReply') }}
+                </span>
+              </div>
               <AgentTraceStream
-                v-if="conversationTraceEvents(message.trace_events).length"
+                v-if="message.run_model || conversationTraceEvents(message.trace_events).length"
                 class="admin-ai-trace"
                 :events="conversationTraceEvents(message.trace_events)"
+                :run-model="message.run_model"
                 :running="false"
               />
               <details v-if="logResult" class="admin-ai-run-summary">
@@ -2125,6 +2137,7 @@ onMounted(() => {
 }
 
 .admin-conversation-thread {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 1.7rem;
@@ -2212,6 +2225,14 @@ onMounted(() => {
   margin-top: 0.35rem;
   color: var(--admin-muted);
   font-size: 0.7rem;
+}
+
+.admin-event-reply-label {
+  margin-inline-start: 0.5rem;
+  padding: 0.18rem 0.38rem;
+  border-radius: 0.3rem;
+  color: var(--admin-accent-soft-ink);
+  background: var(--admin-accent-soft-bg);
 }
 
 .admin-conversation-message.is-ai {

@@ -1385,6 +1385,7 @@ export default {
       imageUnavailable: '图片已不可用',
       adminConversationBadge: '管理员专属 · 只读',
       conversationTitle: '完整对话记录',
+      eventReply: '本次用量对应回复',
       conversationMessageCount: '{count} 条消息',
       deletedConversation: '会话已被用户删除',
       loadingConversation: '正在加载完整对话…',
@@ -1703,7 +1704,6 @@ export default {
       canvasCtxFail: 'Canvas 2D 上下文不可用',
       pdfDownloadStarted: 'PDF 已开始下载',
       pdfExportFailed: '导出 PDF 失败，请稍后重试',
-      modelMeta: '模型：{model}',
       durationMeta: '耗时：{duration}',
     },
     menu: {

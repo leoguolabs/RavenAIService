@@ -1390,6 +1390,7 @@ export default {
       imageUnavailable: 'Image unavailable',
       adminConversationBadge: 'Admin only · Read-only',
       conversationTitle: 'Full conversation',
+      eventReply: 'Reply for this usage event',
       conversationMessageCount: '{count} messages',
       deletedConversation: 'Deleted by user',
       loadingConversation: 'Loading full conversation…',
@@ -1708,7 +1709,6 @@ export default {
       canvasCtxFail: 'Canvas 2D context unavailable',
       pdfDownloadStarted: 'PDF download started',
       pdfExportFailed: 'Failed to export PDF, please try again',
-      modelMeta: 'Model: {model}',
       durationMeta: 'Duration: {duration}',
     },
     menu: {

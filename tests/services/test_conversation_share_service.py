@@ -136,7 +136,7 @@ async def test_snapshot_includes_images_when_opted_in(session: AsyncSession, use
     await session.commit()
 
     snapshot = await conversation_share_service.build_live_snapshot(
-        session, session_id=sid, user_id=user.id, include_images=True
+        session, session_id=sid, user_id=user.id, include_admin_details=True
     )
     user_turn = next(m for m in snapshot if m["role"] == "user")
     assert user_turn["images"] == images
@@ -156,7 +156,7 @@ async def test_snapshot_tolerates_unusable_images_json(session: AsyncSession, us
     await session.commit()
 
     snapshot = await conversation_share_service.build_live_snapshot(
-        session, session_id=sid, user_id=user.id, include_images=True
+        session, session_id=sid, user_id=user.id, include_admin_details=True
     )
     assert len(snapshot) == 2
     assert all("images" not in m for m in snapshot)
