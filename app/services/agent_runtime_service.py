@@ -133,6 +133,10 @@ def gateway_endpoint(agent_kind: str = ""):
     if agent_kind == "title_generator":
         # The title service owns its Magpie calls, including provider fallback.
         return None
+    if agent_kind == "raven_client":
+        # The desktop capability API uses direct provider slots. Keep the
+        # server-side Magpie credential in the agent runtime.
+        return None
     config = get_config()
     if not config.enabled:
         return None

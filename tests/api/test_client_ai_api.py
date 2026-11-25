@@ -19,7 +19,7 @@ from app.api.users import get_current_user
 from app.config import settings
 from app.models.database import Base, db_manager
 from app.models.metrics import MetricEvent
-from app.services import model_router
+from app.services import agent_runtime_service, model_router
 
 
 @pytest.fixture
@@ -149,6 +149,26 @@ def test_capabilities_preserve_route_order_and_credentials(
     assert response.headers["pragma"] == "no-cache"
     assert response.headers["expires"] == "0"
     assert response.headers["vary"] == "Authorization"
+
+
+def test_capabilities_use_direct_route_when_server_agents_use_magpie(
+    client: TestClient, monkeypatch, routes
+) -> None:
+    config = agent_runtime_service.RuntimeConfig(
+        enabled=True, api_key="gateway-private", model="group/default"
+    )
+    monkeypatch.setattr(agent_runtime_service, "get_config", lambda: config)
+    monkeypatch.setattr(settings, "model_router_enabled", False)
+    monkeypatch.setattr(model_router, "_resolve", lambda *_args, **_kwargs: routes[0])
+
+    response = client.get("/api/v1/client-ai/capabilities")
+
+    assert response.status_code == 200
+    route, = response.json()["data"]["routes"]
+    assert route["slot"] == "primary"
+    assert route["provider"] == routes[0].provider
+    assert route["api_key"] == routes[0].api_key
+    assert "gateway-private" not in response.text
 
 
 def test_openai_route_declares_responses_protocol_and_vision(client, monkeypatch):
