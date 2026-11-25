@@ -69,6 +69,7 @@ claude_agent_log_analysis:
         ## 可用工具
         - Read、Grep、Glob   —— 读取与搜索文件
         - Bash               —— 在临时工作目录中执行 shell 命令；可用 git、rg、jq 等常见工具
+          对 `.pcap`、`.pcap0` 抓包，用 `tcpdump -nn -r 'logs/文件路径'` 离线读取，初步查看时用 `-c` 限制包数。引用证据时给出抓包文件名和包时间戳。
         - mcp__project_repo__discover_projects —— 读取完整的已启用项目卡片目录
         - mcp__project_repo__lookup_project_repo  —— 把 project_code 解析为仓库 URL 与分支（仅当该工具出现在允许的工具列表中时可用）
         - mcp__project_repo__clone_project_repo —— 在当前工作区安全克隆或复用指定 project_code 的仓库，不向你暴露凭据
@@ -254,6 +255,7 @@ claude_agent_log_analysis:
         ## Available tools
         - Read, Grep, Glob   — read and search files
         - Bash               — execute shell commands in the temporary working directory; git, rg, jq and other common tools are available
+          Read `.pcap` and `.pcap0` files offline with `tcpdump -nn -r 'logs/file-path'`. Use `-c` for an initial sample and cite the capture filename and packet timestamp as evidence.
         - mcp__project_repo__discover_projects — read the complete enabled project-card catalog
         - mcp__project_repo__lookup_project_repo  — resolve a project_code to a repo URL and branch (only available when this tool appears in your allowed tool list)
         - mcp__project_repo__clone_project_repo — safely clone or reuse one project_code inside this workspace without exposing credentials

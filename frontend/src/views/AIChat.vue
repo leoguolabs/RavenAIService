@@ -79,15 +79,16 @@ const projectExpertAgentOption: AgentOption = {
   descriptionKey: 'aiChat.agentDescriptions.projectExpert'
 }
 
-// Archive packages (decompressed server-side) plus plain-text logs (analyzed as-is).
+// The archive list also controls whether a related project must be selected.
 const acceptedLogArchiveExtensions = ['.zip', '.tar', '.tgz', '.gz', '.tar.gz', '.tar.bz2', '.bz2', '.tar.xz', '.xz', '.7z', '.rar']
 const acceptedLogTextExtensions = [
   '.log', '.txt', '.out', '.err', '.trace', '.json', '.xml', '.csv', '.tsv',
   '.md', '.markdown', '.ini', '.cfg', '.conf', '.yaml', '.yml', '.toml', '.properties'
 ]
 const acceptedLogSpreadsheetExtensions = ['.xls', '.xlsx', '.xlsm']
-const acceptedLogArchiveTypes = [
-  ...acceptedLogArchiveExtensions, ...acceptedLogTextExtensions, ...acceptedLogSpreadsheetExtensions
+const acceptedLogFileTypes = [
+  ...acceptedLogArchiveExtensions, ...acceptedLogTextExtensions, ...acceptedLogSpreadsheetExtensions,
+  '.pcap', '.pcap0'
 ].join(',')
 
 function isArchiveLogFile(file: File): boolean {
@@ -2370,7 +2371,12 @@ const openShareModal = () => {
       <div v-else-if="logAnalysisNoAttachmentWarning" class="rw-composer-alert is-warn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         <span>
-          <strong>{{ t('aiChat.agents.logAnalysis') }}</strong>{{ t('aiChat.alerts.logAttachmentBefore') }} <code>.zip</code> <code>.tar.gz</code> <code>.tgz</code> <code>.tar.bz2</code> <code>.tar.xz</code> <code>.7z</code> <code>.rar</code> {{ t('aiChat.alerts.logAttachmentMiddle') }} <code>.log</code> <code>.txt</code> <code>.json</code> <code>.xml</code> <code>.csv</code> <code>.md</code> <code>.ini</code> <code>.yaml</code> <code>.toml</code> <code>.xls</code> <code>.xlsx</code> {{ t('aiChat.alerts.logAttachmentAfter') }}
+          <strong>{{ t('aiChat.agents.logAnalysis') }}</strong>{{ t('aiChat.alerts.logAttachmentBefore') }}
+          <code>.zip</code> <code>.tar.gz</code> <code>.tgz</code> <code>.tar.bz2</code>
+          <code>.tar.xz</code> <code>.7z</code> <code>.rar</code> {{ t('aiChat.alerts.logAttachmentMiddle') }}
+          <code>.log</code> <code>.txt</code> <code>.json</code> <code>.xml</code> <code>.csv</code>
+          <code>.md</code> <code>.ini</code> <code>.yaml</code> <code>.toml</code> <code>.xls</code>
+          <code>.xlsx</code> <code>.pcap</code> <code>.pcap0</code> {{ t('aiChat.alerts.logAttachmentAfter') }}
           <button type="button" class="rw-alert-link" @click="toggleProjectExpertAgent">{{ t('aiChat.agents.projectExpert') }}</button>{{ t('aiChat.sentencePeriod') }}
         </span>
       </div>
@@ -2489,7 +2495,7 @@ const openShareModal = () => {
             ref="logFileInputRef"
             class="rw-file-input"
             type="file"
-            :accept="acceptedLogArchiveTypes"
+            :accept="acceptedLogFileTypes"
             multiple
             @change="handleLogFileChange"
           />

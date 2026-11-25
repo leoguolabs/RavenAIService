@@ -14,6 +14,7 @@ from app.exceptions import (
     FileSizeExceededError,
     ValidationError
 )
+from app.tools.archive_tool import SUPPORTED_PACKET_CAPTURE_EXTS
 
 
 # 支持的日志文件类型
@@ -23,6 +24,7 @@ SUPPORTED_LOG_EXTENSIONS = [
     '.md', '.markdown', '.ini', '.cfg', '.conf', '.yaml', '.yml', '.toml', '.properties',
     '.gz', '.zip', '.tar', '.bz2', '.tgz', '.rar',
     '.xls', '.xlsx', '.xlsm',
+    *SUPPORTED_PACKET_CAPTURE_EXTS,
 ]
 
 SUPPORTED_MIME_TYPES = [
@@ -48,6 +50,8 @@ SUPPORTED_MIME_TYPES = [
     'application/x-bzip2',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.ms-excel.sheet.macroEnabled.12',
+    'application/vnd.tcpdump.pcap',
+    'application/x-pcap',
     'application/octet-stream'  # 允许二进制文件，但会进一步验证扩展名
 ]
 
@@ -140,17 +144,13 @@ class FileValidator:
                 raise UnsupportedFileTypeError(content_type, self.supported_mime_types)
 
     async def _validate_file_size(self, file: UploadFile):
-        """验证文件大小"""
-        # 重置文件指针
+        """优先使用 multipart 解析器累计的文件大小。"""
         await file.seek(0)
-        
-        # 读取文件内容计算大小
-        content = await file.read()
-        file_size = len(content)
-        
-        # 重置文件指针
-        await file.seek(0)
-        
+        file_size = file.size
+        if file_size is None:
+            file_size = len(await file.read())
+            await file.seek(0)
+
         if file_size > self.max_file_size:
             raise FileSizeExceededError(file_size, self.max_file_size)
 

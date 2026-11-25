@@ -273,6 +273,8 @@ const supportedLogFileSuffixes = [
   '.tar.xz',
   '.7z',
   '.rar',
+  '.pcap',
+  '.pcap0',
 ]
 const acceptedLogFileTypes = supportedLogFileSuffixes.join(',')
 

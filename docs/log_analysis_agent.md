@@ -57,9 +57,11 @@ OpenAI 原生 `/v1/responses`（`store=false`）。文字、截图、工具返�
 附件准备或持久化失败会回滚并清理本次新目录。
 
 主对话支持直接上传 Markdown（`.md`、`.markdown`）、配置文本（`.ini`、`.cfg`、
-`.conf`、`.yaml`、`.yml`、`.toml`、`.properties`）以及 Excel（`.xls`、`.xlsx`、
-`.xlsm`），并保留已有日志文本和压缩包格式。文本原样放入 `logs/`；Excel 按
-`spreadsheet` 识别并完整保留，旧版 `.xls` 可通过运行镜像中的 `xlrd` 读取。
+`.conf`、`.yaml`、`.yml`、`.toml`、`.properties`）、Excel（`.xls`、`.xlsx`、
+`.xlsm`）和抓包文件（`.pcap`、`.pcap0`）。原始文件保存在 `logs/`。Excel
+按 `spreadsheet` 识别，旧版 `.xls` 可通过运行镜像中的 `xlrd` 读取。抓包按
+`pcap` 识别，直接上传时需选择关联项目。日志分析 Agent 使用运行镜像中的
+`tcpdump -nn -r 'logs/文件路径'` 离线读取原始包。
 
 主对话在保存任何附件前校验整批文件。格式不支持时，SSE 返回 `event=error`、
 `reason=unsupported_format`、`filename`，以及包含文件名、拒绝类型、支持扩展名和

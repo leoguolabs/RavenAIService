@@ -451,7 +451,7 @@ class LogAnalysisChatService:
                         "这个附件里没有找到 metadata.json，我无法自动识别它属于哪个项目。"
                         "请在输入框上方的「关联项目」下拉菜单中手动选择对应项目后重新发送，"
                         "或改用一个包含 metadata.json 的日志压缩包。"
-                        "（纯文本日志不含 metadata.json，必须手动选择关联项目。）"
+                        "（纯文本日志、表格和抓包文件需手动选择关联项目。）"
                     ),
                 }
             )
@@ -501,9 +501,8 @@ class LogAnalysisChatService:
                     "event": "error",
                     "reason": "unsupported_format",
                     "message": (
-                        "这个附件既不是受支持的日志压缩包，也不是可识别的纯文本日志或 Excel 表格。"
-                        "请上传 .zip/.tar.gz/.7z/.rar 等压缩包，"
-                        "或 .log/.txt/.json/.xml/.csv/.xlsx/.xlsm 等文件后再试。"
+                        "请上传受支持的日志压缩包、文本日志、Excel 表格或抓包文件后再试。"
+                        "抓包文件支持 .pcap 和 .pcap0。"
                     ),
                 }
             )

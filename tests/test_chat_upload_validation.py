@@ -58,6 +58,30 @@ async def test_excel_attachment_is_preserved_as_binary(tmp_path, extension, mime
     assert (logs / filename).read_bytes() == payload
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extension,mime", [
+    ("pcap", "application/vnd.tcpdump.pcap"),
+    ("pcap0", "application/octet-stream"),
+    ("PCAP0", "application/x-pcap"),
+])
+async def test_capture_attachment_is_preserved_as_binary(tmp_path, extension, mime):
+    payload = bytes.fromhex("d4c3b2a1 02000400 00000000 00000000 ffff0000 01000000")
+    filename = f"capture.segment.{extension}"
+    upload = UploadFile(
+        filename=filename, size=len(payload), file=io.BytesIO(payload),
+        headers=Headers({"content-type": mime}),
+    )
+    assert await FileValidator().validate_upload_file(upload) == (True, "")
+    source = tmp_path / f"stored-{filename}"
+    source.write_bytes(await upload.read())
+
+    logs = tmp_path / "logs"
+    kind, attachment = populate_logs_dir(source, logs, preferred_name=filename)
+    assert kind == "pcap"
+    assert attachment == logs / filename
+    assert attachment.read_bytes() == payload
+
+
 @pytest.fixture
 def upload_client(monkeypatch, tmp_path):
     service = LogAnalysisChatService()
@@ -74,7 +98,7 @@ def upload_client(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("locale", ["zh", "en"])
-@pytest.mark.parametrize("filename,mime", [("report.pdf", "application/pdf"), ("capture.pcap", "application/octet-stream"), ("README", "text/plain")])
+@pytest.mark.parametrize("filename,mime", [("report.pdf", "application/pdf"), ("capture.pcap1", "application/octet-stream"), ("README", "text/plain")])
 def test_multipart_unknown_format_returns_actionable_sse_before_any_save(upload_client, locale, filename, mime):
     client, create_context, service = upload_client
     response = client.post(
@@ -91,7 +115,7 @@ def test_multipart_unknown_format_returns_actionable_sse_before_any_save(upload_
     assert error["reason"] == "unsupported_format"
     assert error["filename"] == filename
     assert filename in error["message"]
-    assert ".md" in error["message"] and ".xls" in error["message"]
+    assert all(ext in error["message"] for ext in (".md", ".xls", ".pcap", ".pcap0"))
     assert ("尚未保存" if locale == "zh" else "No files in this batch were saved") in error["message"]
     assert "准备日志分析工作区时遇到了问题" not in error["message"]
     create_context.assert_not_awaited()

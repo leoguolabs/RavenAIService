@@ -11,7 +11,11 @@ from typing import Any, Dict, List, Optional
 
 from app.config import settings
 from app.agents.xml_utils import wrap_file_list, wrap_metadata
-from app.tools.archive_tool import SUPPORTED_ARCHIVE_EXTS, guess_archive_type
+from app.tools.archive_tool import (
+    SUPPORTED_ARCHIVE_EXTS,
+    SUPPORTED_PACKET_CAPTURE_EXTS,
+    guess_archive_type,
+)
 
 
 def _is_in_allowed_root(path: str) -> bool:
@@ -121,7 +125,7 @@ def _derive_package_metadata(files: List[Dict[str, str]], source: str) -> Dict[s
             types.add("text")
         elif name.endswith((".json")):
             types.add("json")
-        elif name.endswith((".pcap", ".pcapng")):
+        elif name.endswith((*SUPPORTED_PACKET_CAPTURE_EXTS, ".pcapng")):
             types.add("pcap")
         elif name.endswith((".csv")):
             types.add("csv")

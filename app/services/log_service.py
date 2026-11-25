@@ -33,6 +33,7 @@ from app.exceptions import (
     FileNotFoundError, FileUploadError, StorageError,
     FileProcessingError, BatchOperationError
 )
+from app.tools.archive_tool import SUPPORTED_PACKET_CAPTURE_EXTS
 from app.utils.validation import file_validator
 from app.utils.storage_utils import ensure_free_space
 import glob
@@ -1932,8 +1933,9 @@ class LogService(BaseCRUDService[LogRecord]):
             log_record: 日志记录
         """
         try:
-            # 检查文件名是否包含"stack"关键字（全量日志的文件名同样包含 stack）
-            if "stack" in log_record.original_filename.lower():
+            # 抓包文件名也可能含有 stack，但无需协议栈日志解压。
+            filename = log_record.original_filename.lower()
+            if "stack" in filename and Path(filename).suffix not in SUPPORTED_PACKET_CAPTURE_EXTS:
                 logger.info(f"LogService - 检测到协议栈日志，准备启动处理任务: {log_record.original_filename}")
                 # 动态导入避免循环导入
                 from app.tasks.log_processing import process_protocol_stack_log

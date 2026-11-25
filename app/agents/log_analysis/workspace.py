@@ -54,7 +54,7 @@ class MissingMetadataJsonError(WorkspaceError):
 
 
 class UnsupportedUploadFormatError(WorkspaceError):
-    """上传的附件既不是受支持的压缩包，也不是可识别的纯文本日志。"""
+    """上传的附件无法解压或作为受支持的单文件分析。"""
 
 
 # ─────────────────────── Data Structures ───────────────────────────
@@ -380,16 +380,6 @@ def _place_single_file(src: Path, dest_dir: Path, max_bytes: int, *, preferred_n
     return out
 
 
-def _place_text_file(src: Path, dest_dir: Path, max_bytes: int, *, preferred_name: str = "") -> Path:
-    """Copy a plain-text log file into ``dest_dir`` under a safe name."""
-    return _place_single_file(src, dest_dir, max_bytes, preferred_name=preferred_name)
-
-
-def _place_spreadsheet_file(src: Path, dest_dir: Path, max_bytes: int, *, preferred_name: str = "") -> Path:
-    """Copy a spreadsheet file into ``dest_dir`` without unpacking it."""
-    return _place_single_file(src, dest_dir, max_bytes, preferred_name=preferred_name)
-
-
 def _attachment_dirname(index: int, filename: str) -> str:
     """Return a stable, traversal-safe directory name for one upload."""
     safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", Path(filename).name).strip("._")
@@ -428,7 +418,7 @@ def populate_logs_dir(
 
     Returns:
         (upload_kind, attachment_path)：``attachment_path`` 仅在单文件
-        （text/spreadsheet）时非 None。
+        （text/spreadsheet/pcap）时非 None。
 
     Raises:
         UnsupportedUploadFormatError / WorkspaceExtractTooLarge / WorkspaceError
@@ -439,20 +429,14 @@ def populate_logs_dir(
     attachment_path: Optional[Path] = None
     if upload_kind == "archive":
         _extract_archive(archive_path, logs_dir, max_bytes)
-    elif upload_kind == "text":
-        attachment_path = _place_text_file(
-            archive_path, logs_dir, max_bytes,
-            preferred_name=preferred_name or archive_path.name,
-        )
-    elif upload_kind == "spreadsheet":
-        attachment_path = _place_spreadsheet_file(
-            archive_path, logs_dir, max_bytes,
-            preferred_name=preferred_name or archive_path.name,
+    elif upload_kind in ("text", "spreadsheet", "pcap"):
+        attachment_path = _place_single_file(
+            archive_path, logs_dir, max_bytes, preferred_name=preferred_name
         )
     else:
         raise UnsupportedUploadFormatError(
-            f"Upload {archive_path.name!r} is neither a supported archive "
-            f"nor a recognizable plain-text log or spreadsheet"
+            f"Upload {archive_path.name!r} is not a supported archive, "
+            "plain-text log, spreadsheet or packet capture"
         )
     return upload_kind, attachment_path
 
@@ -496,9 +480,6 @@ def prepare(log_record: Any, *, require_metadata: bool = True) -> WorkspaceConte
         logs_dir.mkdir(parents=True, exist_ok=True)
         repo_dir.mkdir(parents=True, exist_ok=True)
 
-        # Pre-judge the upload: a recognized archive is decompressed into logs/,
-        # a plain-text log is copied in verbatim, anything else is rejected up
-        # front (before we ever try to extract a binary blob).
         max_bytes = settings.ai_analysis_max_extract_bytes
         try:
             upload_kind, attachment_path = populate_logs_dir(
