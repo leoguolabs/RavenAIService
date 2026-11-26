@@ -55,6 +55,10 @@ celery_app.conf.beat_schedule = {
         'task': 'app.tasks.cleanup_tasks.cleanup_expired_logs',
         'schedule': crontab(hour=3, minute=30),  # 每天03:30清理超过30天的日志
     },
+    'cleanup-idle-chat-workspaces-daily': {
+        'task': 'app.tasks.cleanup_tasks.cleanup_idle_chat_workspaces',
+        'schedule': crontab(hour=4, minute=0),
+    },
 }
 
 if __name__ == '__main__':

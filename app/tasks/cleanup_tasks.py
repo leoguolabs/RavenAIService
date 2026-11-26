@@ -5,8 +5,11 @@
 
 import asyncio
 import logging
+
 from app.celery_app import celery_app
-from app.models.database import db_manager
+from app.config import settings
+from app.models.database import DatabaseManager, db_manager
+from app.services.chat_workspace_cleanup import cleanup_idle_chat_workspaces as remove_idle_workspaces
 from app.services.log_service import log_service
 from app.utils.temp_directory_cleaner import temp_directory_cleaner
 
@@ -90,3 +93,30 @@ def cleanup_expired_logs(self):
             "status": "failed",
             "error": str(e)
         }
+
+
+@celery_app.task(name="app.tasks.cleanup_tasks.cleanup_idle_chat_workspaces")
+def cleanup_idle_chat_workspaces():
+    """每天回收超过 30 天未活动的持久会话工作区。"""
+
+    async def run_cleanup():
+        # Celery 每次通过 asyncio.run 创建新事件循环，连接池随任务创建和关闭。
+        database = DatabaseManager()
+        database.initialize()
+        try:
+            async with database.session_factory() as session:
+                return await remove_idle_workspaces(session, settings.code_repo_clone_base_dir)
+        finally:
+            await database.engine.dispose()
+
+    stats = asyncio.run(run_cleanup())
+    logger.info(
+        "会话工作区清理完成，删除 %d 个，跳过 %d 个，失败 %d 个",
+        stats["deleted"],
+        stats["skipped"],
+        stats["failed"],
+    )
+    return {
+        "status": "partial" if stats["failed"] else "success",
+        "stats": stats,
+    }

@@ -46,6 +46,10 @@ OpenAI 原生 `/v1/responses`（`store=false`）。文字、截图、工具返�
 
 ## 1. 工作区布局
 
+日志分析、项目专家和配置管理员的持久会话工作区共用 `code_repo_clone_base_dir`，Compose 默认路径为 `/app/temp/code_repos`。
+Celery Beat 每天 04:00 按 `CELERY_TIMEZONE` 投递清理任务。维护 worker 删除超过 30 天未活动的整个工作区，包括解包日志和仓库副本，并跳过正在使用或排队的会话。
+过期会话的聊天记录和源日志上传仍按各自的保留策略管理。更新时将后端、维护 worker 和 Beat 部署到同一版本。
+
 日志详情的“Fork 到我的对话”调用 `POST /api/v1/logs/{log_id}/analysis/fork`，
 要求登录。服务端按已保存轮次复制问答，从全部原日志附件重新建立 UUID 工作目录，
 绑定当前用户的新会话及 `owner_user_id`；代码在首次追问时按正常 Agent 流程独立克隆。

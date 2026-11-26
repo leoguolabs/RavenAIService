@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 import time
 
@@ -9,6 +10,7 @@ import pytest
 
 from app.agents.log_analysis.workspace import WorkspaceContext
 from app.services.log_analysis_chat_service import AgentJob, LogAnalysisChatService
+from app.utils.chat_workspace import workspace_lock
 
 
 def _decode_sse_event(chunk: str) -> dict:
@@ -189,12 +191,12 @@ async def test_sse_disconnect_does_not_cancel_agent_job(monkeypatch, tmp_path):
 
     agent_started = threading.Event()
     agent_finished = threading.Event()
+    finish_agent = threading.Event()
 
     class SlowAgent:
         def run_sync(self, _ctx, cancel_event=None, trace_emitter=None, _clarification_binding=None):  # noqa: ARG002
             agent_started.set()
-            # Sleep long enough that the SSE consumer disconnects first.
-            time.sleep(0.4)
+            finish_agent.wait(timeout=5)
             agent_finished.set()
             return {
                 "status": "ok",
@@ -243,11 +245,17 @@ async def test_sse_disconnect_does_not_cancel_agent_job(monkeypatch, tmp_path):
     job = service._jobs.get("session-disconnect")
     assert job is not None
 
-    # Wait for the Agent thread to complete despite the SSE having gone away.
-    for _ in range(50):
-        if job.done:
-            break
-        await asyncio.sleep(0.05)
+    # The workspace remains leased by the background job after the SSE closes.
+    try:
+        with workspace_lock(tmp_path, exclusive=True) as locked:
+            assert not locked
+    finally:
+        finish_agent.set()
+    await asyncio.wait_for(job.task, timeout=5)
+    if os.name == "posix":
+        with workspace_lock(tmp_path, exclusive=True) as locked:
+            assert locked
+
     assert job.done, "Agent task must complete even after SSE disconnect"
     assert agent_finished.is_set()
     assert job.result is not None

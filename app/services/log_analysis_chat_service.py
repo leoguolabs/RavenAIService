@@ -14,6 +14,7 @@ import re
 import threading
 import time
 import uuid
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -48,6 +49,7 @@ from app.services.agent_session_title import PendingSessionTitle, generate_after
 from app.services.chat_history_service import chat_history_service
 from app.services.log_service import log_service
 from app.utils.validation import file_validator
+from app.utils.chat_workspace import CHAT_WORKSPACE_REGISTRIES, WORKSPACE_EXPIRED_MESSAGE, workspace_lock
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +115,7 @@ class LogAnalysisChatService:
     """Run LogAnalysisAgent from the main chat composer."""
 
     def __init__(self) -> None:
-        self.registry_dir = Path(settings.code_repo_clone_base_dir) / "chat_log_analysis_sessions"
+        self.registry_dir = Path(settings.code_repo_clone_base_dir) / CHAT_WORKSPACE_REGISTRIES["log_analysis"]
         self.registry_dir.mkdir(parents=True, exist_ok=True)
         # In-process Job registry. Single-process uvicorn deployment is assumed.
         # If we move to multi-worker, swap this for a Redis-backed registry.
@@ -236,6 +238,7 @@ class LogAnalysisChatService:
                 return
 
         # Start a new Job.
+        workspace_lease = ExitStack()
         try:
             if uploaded_filenames:
                 # Validate the complete batch before any upload is persisted.
@@ -304,6 +307,16 @@ class LogAnalysisChatService:
 
             if not question:
                 question = "请分析这些日志附件，给出概览、可疑异常和下一步建议。"
+
+            if not workspace_lease.enter_context(workspace_lock(ctx.temp_dir)):
+                yield self._sse_event(
+                    {
+                        "event": "error",
+                        "reason": "workspace_expired",
+                        "message": WORKSPACE_EXPIRED_MESSAGE,
+                    }
+                )
+                return
 
             # Minted before OCR so the OCR usage event carries the same run_id as
             # the agent run it preprocesses for — that pairing is what lets the
@@ -430,6 +443,8 @@ class LogAnalysisChatService:
             # the active-run endpoint and sidebar overlay can show it.
             await self._register_chat_run(job, ctx)
             job.task = asyncio.create_task(self._run_job_async(job, ctx))
+            lease = workspace_lease.pop_all()
+            job.task.add_done_callback(lambda _: lease.close())
 
             logger.info(
                 "log-analysis chat: agent job scheduled session_id=%s task_id=%s temp_dir=%s",
@@ -537,6 +552,8 @@ class LogAnalysisChatService:
                 }
             )
             return
+        finally:
+            workspace_lease.close()
 
         try:
             async for chunk in self._subscribe(job):

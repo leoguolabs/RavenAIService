@@ -33,6 +33,7 @@ import shutil
 import threading
 import time
 import uuid
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -60,6 +61,7 @@ from app.models.user import User
 from app.services import chat_image_store, ocr_service
 from app.services.chat_history_service import chat_history_service
 from app.utils.storage_utils import get_free_bytes
+from app.utils.chat_workspace import CHAT_WORKSPACE_REGISTRIES, WORKSPACE_EXPIRED_MESSAGE, workspace_lock
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +138,7 @@ class PackageSearchChatService:
 
     def __init__(self) -> None:
         self.registry_dir = (
-            Path(settings.code_repo_clone_base_dir) / "chat_package_search_sessions"
+            Path(settings.code_repo_clone_base_dir) / CHAT_WORKSPACE_REGISTRIES["package_search"]
         )
         self.registry_dir.mkdir(parents=True, exist_ok=True)
         # In-process Job registry. Single-process uvicorn deployment is assumed.
@@ -153,9 +155,10 @@ class PackageSearchChatService:
         """
         if not session_id:
             return False
+        self._evict_old_jobs()
         if session_id in self._jobs:
             return True
-        return self._context_file(session_id).exists()
+        return self._load_context(session_id, user=None, ignore_owner=True) is not None
 
     def assert_session_access(
         self,
@@ -276,6 +279,7 @@ class PackageSearchChatService:
                 yield chunk
             return
 
+        workspace_lease = ExitStack()
         try:
             loaded = self._load_context(effective_session_id, user=user)
 
@@ -368,6 +372,16 @@ class PackageSearchChatService:
                         "message": "已复用当前配置管理员对话工作区，正在继续分析...",
                     }
                 )
+
+            if not workspace_lease.enter_context(workspace_lock(ctx.temp_dir)):
+                yield self._sse_event(
+                    {
+                        "event": "error",
+                        "reason": "workspace_expired",
+                        "message": WORKSPACE_EXPIRED_MESSAGE,
+                    }
+                )
+                return
 
             # Minted before file staging/OCR so every audit event carries the
             # same run_id as the Agent run it preprocesses for.
@@ -531,6 +545,8 @@ class PackageSearchChatService:
             if db is not None:
                 await db.close()
             job.task = asyncio.create_task(self._run_job_async(job, ctx))
+            lease = workspace_lease.pop_all()
+            job.task.add_done_callback(lambda _: lease.close())
 
             logger.info(
                 "package-search chat: agent job scheduled session_id=%s task_id=%s temp_dir=%s",
@@ -544,6 +560,8 @@ class PackageSearchChatService:
             )
             yield self._sse_event({"event": "error", "message": str(exc)})
             return
+        finally:
+            workspace_lease.close()
 
         try:
             async for chunk in self._subscribe(job):
